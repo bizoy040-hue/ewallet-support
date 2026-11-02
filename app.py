@@ -1498,8 +1498,8 @@ def home():
     expire_requests()
     req_open = q1("SELECT COUNT(*) c FROM requests WHERE user_id=? AND status='pending'", (u["id"],))["c"]
     return page("""<div class="card hero"><small>উপলব্ধ ব্যালেন্স</small><div class="bal">৳ {{money(u['balance'])}}</div>
-<div class="row"><a class="btn w" href="/deposit">➕ ডিপোজিট</a><a class="btn w" href="/withdraw">⬆ উইথড্র</a></div>
-<div class="row" style="margin-top:10px"><a class="btn w" href="/requests">📨 অনুরোধ{% if req_open %} <span style="background:#ef4444;border-radius:99px;font-size:12px;padding:1px 8px;margin-left:4px">{{req_open}}</span>{% endif %}</a></div></div>
+<div class="row"><a class="btn w" href="/deposit">➕ Add Money</a><a class="btn w" href="/withdraw">⬆ উইথড্র</a></div>
+<div class="row" style="margin-top:10px"><a class="btn w" href="/requests">📨 অনুরোধ{% if req_open %} <span style="background:#ef4444;border-radius:99px;font-size:12px;padding:1px 8px;margin-left:4px">{{req_open}}</span>{% endif %}</a><a class="btn w" href="/payment-numbers">💳 Payment Methods</a></div></div>
 <div class="g2"><div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">৳ {{money(s.pending)}}</div></div>
 <div class="card"><div class="k">মোট ডিপোজিট</div><div class="v">৳ {{money(s.deposit)}}</div></div>
 <div class="card"><div class="k">মোট উইথড্র</div><div class="v">৳ {{money(s.withdraw)}}</div></div>
