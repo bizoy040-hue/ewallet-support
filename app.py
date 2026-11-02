@@ -6,7 +6,7 @@ import os, re, sqlite3, secrets, hashlib, time, csv, io, tempfile, zipfile
 from datetime import datetime, timedelta
 from functools import wraps, lru_cache
 from flask import (Flask, request, redirect, session, render_template_string, g, flash,
-                   abort, send_file, jsonify, after_this_request)
+                   abort, send_file, jsonify, after_this_request, send_from_directory)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -926,6 +926,7 @@ CSS = """
 a{color:inherit;text-decoration:none}
 .lgsw{background:#ffffff33;border-radius:99px;padding:3px 11px;font-size:13px;margin-right:12px}.top b{flex:1}
 .top{background:linear-gradient(100deg,#1d4ed8,#16a34a);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5}
+.top .pwa-dl{background:#ffffff33;padding:0;width:30px;height:30px;border-radius:99px;font-size:15px;line-height:1;margin-right:10px;display:inline-flex;align-items:center;justify-content:center}.top .pwa-dl[hidden]{display:none}
 .top b{font-size:17px}.bell{position:relative;font-size:20px}.dot{position:absolute;top:-6px;right:-8px;background:#ef4444;border-radius:99px;font-size:11px;padding:0 5px}
 main{max-width:620px;margin:0 auto;padding:14px}
 .card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 4px 14px #0f172a14;border:1px solid var(--ln)}
@@ -1014,11 +1015,14 @@ if(document.body&&document.body.dataset.poll){pollNotif();setInterval(pollNotif,
 
 BASE = """<!doctype html><html lang="{{lang}}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{{site}}</title>
+<link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#1d4ed8"><meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png"><link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<script src="/static/pwa.js" defer></script>
 <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
 <style>{{css|safe}}</style>
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
 <body{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
-<div class="top"><b>{{site}}</b><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
+<div class="top"><b>{{site}}</b><button type="button" id="pwa-install" class="pwa-dl" hidden aria-label="Download App" title="Download App">📲</button><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
 {% if u and not u['is_admin'] %}<span><a class="bell" href="/notifications">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
@@ -4109,6 +4113,25 @@ def admin_ref_user(i):
                 active="/admin/referrals", x=x, by=by, kids=kids, paid=paid, st=st)
 
 
+
+
+# ---------------------------------------------------------------- PWA (installable app; only a static shell is ever cached - no private/financial data)
+PWA_DIR = os.path.join(app.root_path, "static")
+
+
+@app.route("/manifest.json")
+def pwa_manifest():
+    r = send_from_directory(PWA_DIR, "manifest.json", mimetype="application/manifest+json")
+    r.headers["Cache-Control"] = "public, max-age=3600"
+    return r
+
+
+@app.route("/service-worker.js")
+def pwa_service_worker():
+    r = send_from_directory(PWA_DIR, "service-worker.js", mimetype="application/javascript")
+    r.headers["Cache-Control"] = "no-cache"
+    r.headers["Service-Worker-Allowed"] = "/"
+    return r
 
 
 @app.route("/healthz")
