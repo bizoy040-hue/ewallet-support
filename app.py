@@ -22,7 +22,7 @@ DB = os.environ.get("DATABASE_PATH", "ewallet.db")
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(DB)), "uploads"))
 SITE = "E-Wallet Support"
 METHODS = ("bKash", "Nagad", "Rocket")
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 CODE_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 # ---------------------------------------------------------------- roles & permissions (enforced server-side)
@@ -32,13 +32,14 @@ PERM_LABELS = {
     "users_view": "ইউজার/লেনদেন দেখা", "users_manage": "ইউজার ব্লক ও রিসেট কোড", "adjust": "ব্যালেন্স সমন্বয়",
     "referrals": "রেফারেল অনুমোদন", "commissions": "কমিশন প্রদান", "tickets": "সাপোর্ট টিকিট",
     "notices": "নোটিশ প্রকাশ", "audit": "অডিট লগ দেখা"}
-PERM_LABELS.update({"requests": "ম্যানুয়াল রিকোয়েস্ট", "payment_numbers": "পেমেন্ট নম্বর দেখা"})
+PERM_LABELS.update({"requests": "ম্যানুয়াল রিকোয়েস্ট", "payment_numbers": "পেমেন্ট নম্বর দেখা", "pool_view": "কমিশন পুল দেখা",
+                    "reports": "আর্থিক রিপোর্ট দেখা", "rates": "ইউজার কমিশন রেট বদলানো"})
 ADMIN_ASSIGNABLE = tuple(PERM_LABELS)                       # what a Super Admin can grant to an "admin"
 ADMIN_DEFAULT = tuple(p for p in ADMIN_ASSIGNABLE if p != "adjust")
 ROLE_FIXED = {"finance": frozenset({"dashboard_fin", "deposits", "withdrawals", "users_view", "referrals", "commissions"}),
               "support": frozenset({"tickets", "users_view"})}
-ROLE_FIXED["finance"] = ROLE_FIXED["finance"] | frozenset({"requests", "payment_numbers"})
-SUPER_ONLY = frozenset({"staff", "settings", "backup"})
+ROLE_FIXED["finance"] = ROLE_FIXED["finance"] | frozenset({"requests", "payment_numbers", "pool_view", "reports"})
+SUPER_ONLY = frozenset({"staff", "settings", "backup", "pool_fund", "rates_global"})
 
 WELCOME_DEFAULT = ("আসসালামু আলাইকুম!\n\nআমাদের E-Wallet Support প্ল্যাটফর্মে আপনাকে স্বাগতম।\n\n"
                    "আপনার সময়, দক্ষতা ও প্রচেষ্টাকে কাজে লাগিয়ে আমাদের সঙ্গে কাজ করার সুযোগ গ্রহণ করুন।\n\n"
@@ -380,6 +381,98 @@ END $r$;
 """ % {"ID": _ID, "TS": _TS}
 
 
+# ---------------------------------------------------------------- Phase 2: additive schema (shared by SQLite and PostgreSQL)
+# Every change is "ADD COLUMN IF MISSING" or "CREATE TABLE IF NOT EXISTS". Nothing is dropped, renamed or rewritten.
+# (table, column, sqlite type, postgres type)
+V5_COLUMNS = [
+    ("users", "blocked_reason", "TEXT", "TEXT"), ("users", "blocked_at", "TEXT", "TEXT"),
+    ("notifications", "title_en", "TEXT", "TEXT"), ("notifications", "body_en", "TEXT", "TEXT"),
+    ("users", "comm_rate", "REAL", "NUMERIC(7,3)"),
+    ("requests", "flow", "TEXT", "TEXT"), ("requests", "commission", "REAL", "NUMERIC(14,2)"), ("requests", "commission_rate", "REAL", "NUMERIC(7,3)"),
+    ("requests", "purpose", "TEXT", "TEXT"), ("requests", "purpose_en", "TEXT", "TEXT"), ("requests", "client_decided_at", "TEXT", "TEXT"),
+    # @@COLUMNS
+]
+# (name, CREATE TABLE template, [index statements], immutable?)  {ID}=primary key, {BIG}=integer ref, {NUM}=money
+V5_TABLES = [
+    ("balance_adjustments",
+     "CREATE TABLE IF NOT EXISTS balance_adjustments(id {ID}, user_id {BIG} NOT NULL REFERENCES users(id), "
+     "direction TEXT NOT NULL CHECK(direction IN('credit','debit')), amount {NUM} NOT NULL CHECK(amount>0), reason TEXT NOT NULL, "
+     "reference TEXT, norm_ref TEXT, verified INTEGER DEFAULT 0, ledger_idem TEXT UNIQUE, actor TEXT, actor_id {BIG}, created TEXT NOT NULL)",
+     ["CREATE UNIQUE INDEX IF NOT EXISTS ux_adj_ref ON balance_adjustments(norm_ref) WHERE direction='credit' AND norm_ref IS NOT NULL",
+      "CREATE INDEX IF NOT EXISTS ix_adj_user ON balance_adjustments(user_id)"], True),
+    ("pool_account",
+     "CREATE TABLE IF NOT EXISTS pool_account(id {ID}, balance {NUM} NOT NULL DEFAULT 0 CHECK(balance>=0), updated TEXT)", [], False),
+    ("pool_ledger",
+     "CREATE TABLE IF NOT EXISTS pool_ledger(id {ID}, kind TEXT NOT NULL CHECK(kind IN('fund','payout','reversal','withdraw')), amount {NUM} NOT NULL, "
+     "source_type TEXT, holding_account TEXT, reference TEXT, norm_ref TEXT, event_date TEXT, user_id {BIG}, ref_type TEXT, ref_id {BIG}, "
+     "ledger_idem TEXT UNIQUE, idem TEXT NOT NULL UNIQUE, balance_after {NUM} NOT NULL, note TEXT, actor TEXT, created TEXT NOT NULL, "
+     "CHECK((kind IN('fund','reversal') AND amount>0) OR (kind IN('payout','withdraw') AND amount<0)))",
+     ["CREATE UNIQUE INDEX IF NOT EXISTS ux_pool_fund_ref ON pool_ledger(norm_ref) WHERE kind='fund' AND norm_ref IS NOT NULL",
+      "CREATE INDEX IF NOT EXISTS ix_pool_created ON pool_ledger(created)", "CREATE INDEX IF NOT EXISTS ix_pool_kind ON pool_ledger(kind)"], True),
+    ("company_ledger",
+     "CREATE TABLE IF NOT EXISTS company_ledger(id {ID}, kind TEXT NOT NULL CHECK(kind IN('client_payment')), amount {NUM} NOT NULL CHECK(amount>0), "
+     "user_id {BIG}, ref_type TEXT, ref_id {BIG}, idem TEXT NOT NULL UNIQUE, note TEXT, actor TEXT, created TEXT NOT NULL)", [], True),
+    ("commission_rate_log",
+     "CREATE TABLE IF NOT EXISTS commission_rate_log(id {ID}, scope TEXT NOT NULL, user_id {BIG}, old_rate {RATE}, new_rate {RATE}, reason TEXT NOT NULL, "
+     "idem TEXT UNIQUE, actor TEXT, actor_id {BIG}, created TEXT NOT NULL)", [], True),
+    ("pool_attestations",
+     "CREATE TABLE IF NOT EXISTS pool_attestations(id {ID}, declared_balance {NUM} NOT NULL, ledger_balance {NUM} NOT NULL, difference {NUM} NOT NULL, "
+     "holding_account TEXT NOT NULL, note TEXT, idem TEXT UNIQUE, actor TEXT, actor_id {BIG}, created TEXT NOT NULL)", [], True),
+    # @@TABLES
+]
+V5_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS ix_users_member ON users(member_id)",
+    "CREATE INDEX IF NOT EXISTS ix_ledger_created ON ledger(created)",
+    "CREATE INDEX IF NOT EXISTS ix_ledger_kind ON ledger(kind)",
+    "CREATE INDEX IF NOT EXISTS ix_tx_created ON tx(created)",
+    "CREATE INDEX IF NOT EXISTS ix_notif_user ON notifications(user_id)",
+]
+V5_NEW_TABLES = [t[0] for t in V5_TABLES]
+ID_TABLES = ID_TABLES | frozenset(V5_NEW_TABLES)  # @@IDTABLES_FIX
+TABLES = TABLES + V5_NEW_TABLES
+
+
+def _v5_tpl(sql, pg):
+    return sql.format(ID=_ID if pg else "INTEGER PRIMARY KEY", BIG="BIGINT" if pg else "INTEGER", NUM="NUMERIC(14,2)" if pg else "REAL",
+                      RATE="NUMERIC(7,3)" if pg else "REAL")
+
+
+def _v5_pg_ddl():
+    out = ["ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s;" % (t, c, p) for t, c, s, p in V5_COLUMNS]
+    for name, ddl, idx, immutable in V5_TABLES:
+        out.append(_v5_tpl(ddl, True) + ";")
+        out += [i + ";" for i in idx]
+        if immutable:
+            out.append("DROP TRIGGER IF EXISTS %s_immutable ON %s;" % (name, name))
+            out.append("CREATE TRIGGER %s_immutable BEFORE UPDATE OR DELETE ON %s FOR EACH ROW EXECUTE FUNCTION ewallet_forbid_change();" % (name, name))
+            out.append("DROP TRIGGER IF EXISTS %s_no_truncate ON %s;" % (name, name))
+            out.append("CREATE TRIGGER %s_no_truncate BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE FUNCTION ewallet_forbid_change();" % (name, name))
+    out += [i + ";" for i in V5_INDEXES]
+    out.append("DO $r2$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY[%s] LOOP "
+               "EXECUTE format('ALTER TABLE public.%%I ENABLE ROW LEVEL SECURITY', t); END LOOP; END $r2$;"
+               % ",".join("'%s'" % n for n in V5_NEW_TABLES))
+    return "\n".join(out).replace("%%I", "%I")
+
+
+PG_DDL += "\n" + _v5_pg_ddl()
+
+
+def _v5_schema_sqlite(c):
+    for t, col, sdecl, _p in V5_COLUMNS:
+        _addcol(c, t, col, sdecl)
+    for name, ddl, idx, immutable in V5_TABLES:
+        c.execute(_v5_tpl(ddl, False))
+        for i in idx:
+            c.execute(i)
+        if immutable:
+            for ev in ("update", "delete"):
+                c.execute("CREATE TRIGGER IF NOT EXISTS %s_no_%s BEFORE %s ON %s BEGIN SELECT RAISE(ABORT,'%s is immutable'); END"
+                          % (name, ev, ev.upper(), name, name))
+    for i in V5_INDEXES:
+        c.execute(i)
+
+
+
 @app.teardown_appcontext
 def _close(_):
     d = g.pop("db", None)
@@ -446,9 +539,12 @@ def _prebackup(c):
 def _seed_defaults(c):
     defaults = {"bkash": "", "nagad": "", "rocket": "", "min_deposit": "50", "min_withdraw": "100",
                 "telegram_url": "", "tg_enabled": "1", "tg_username": "", "tg_label_bn": "", "tg_label_en": "", "welcome": WELCOME_DEFAULT, "commission_note": "", "referral_bonus": "50",
-                "site_name": SITE, "default_theme": "auto", "signup_open": "1", "notif_sound": "1", "req_expiry_hours": "24"}
+                "site_name": SITE, "default_theme": "auto", "signup_open": "1", "notif_sound": "1", "req_expiry_hours": "24",
+                "comm_rate_default": "5", "comm_rate_max": "10", "report_tz_hours": "6"}
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (k, v))
+    c.execute("INSERT OR IGNORE INTO pool_account(id,balance,updated) VALUES(1,0,?)", (now(),))  # the single pool row; starts at 0
+    c.execute("INSERT OR IGNORE INTO meta VALUES('pool_since',?)", (now(),))  # commission/bonus credits before this moment are "pre-pool legacy"; after it, every one must be pool-backed
 
 
 def _sync_admin(c):
@@ -587,6 +683,7 @@ def migrate():
     _addcol(c, "tickets", "replied_by", "TEXT")
     _addcol(c, "tickets", "replied_at", "TEXT")
     _addcol(c, "notifications", "link", "TEXT")
+    _v5_schema_sqlite(c)  # Phase 2 additive schema
     # preserve existing member ids; assign new ones only to users lacking one
     nxt = c.execute("SELECT COALESCE(MAX(CAST(member_id AS INTEGER)),1499) FROM users WHERE member_id GLOB '[0-9]*'").fetchone()[0]
     for r in c.execute("SELECT id,is_admin FROM users WHERE member_id IS NULL ORDER BY id").fetchall():
@@ -679,9 +776,9 @@ class atomic:
         return False
 
 
-def notify(user_id, title, body="", link=None):
-    db().execute("INSERT INTO notifications(user_id,title,body,created,link) VALUES(?,?,?,?,?)",
-                 (user_id, title, body, now(), link))
+def notify(user_id, title, body="", link=None, title_en=None, body_en=None):
+    db().execute("INSERT INTO notifications(user_id,title,body,created,link,title_en,body_en) VALUES(?,?,?,?,?,?,?)",
+                 (user_id, title, body, now(), link, title_en, body_en))
 
 
 def audit(action, detail="", actor=None):
@@ -819,7 +916,7 @@ def _ctx():
     if u:
         unread = admin_unread(u) if u["is_admin"] else q1("SELECT COUNT(*) c FROM notifications WHERE is_read=0 AND user_id=?", (u["id"],))["c"]
     return dict(csrf_token=csrf(), u=u, site=(setting("site_name") or SITE)[:60], unread=unread, money=money, can=has_perm,
-                role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang())
+                role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label)
 
 
 CSS = """
@@ -941,7 +1038,8 @@ ADMIN_TABS = [("/admin", "ড্যাশবোর্ড", None), ("/admin/alert
               ("/admin/requests", "রিকোয়েস্ট", "requests"), ("/admin/deposits", "ডিপোজিট", "deposits"),
               ("/admin/withdrawals", "উইথড্র", "withdrawals"), ("/admin/users", "ইউজার", "users_view"),
               ("/admin/payment-numbers", "পেমেন্ট নম্বর", "payment_numbers"),
-              ("/admin/referrals", "রেফারেল", "referrals"), ("/admin/commission", "কমিশন", "commissions"),
+              ("/admin/referrals", "রেফারেল", "referrals"), ("/admin/commission", "কমিশন", "commissions"), ("/admin/pool", "কমিশন পুল", "pool_view"),
+              ("/admin/reports", "রিপোর্ট", "reports"), ("/admin/reconcile", "মিলানো", "reports"),
               ("/admin/staff", "স্টাফ", "staff"), ("/admin/tickets", "টিকিট", "tickets"),
               ("/admin/notices", "নোটিশ", "notices"), ("/admin/content", "কনটেন্ট", "notices"), ("/admin/settings", "সেটিংস", "settings"),
               ("/admin/audit", "অডিট লগ", "audit"), ("/admin/profile", "প্রোফাইল", None)]
@@ -980,7 +1078,7 @@ DISCLAIMER = "এটি একটি স্বাধীন প্ল্যাট
 
 # ---------------------------------------------------------------- Phase 1: language (bn/en), Telegram support, editable Terms
 import json as _json
-from urllib.parse import urlparse as _urlparse
+from urllib.parse import urlparse as _urlparse, urlencode
 
 LANGS = ("bn", "en")
 TG_HOSTS = ("t.me", "telegram.me", "telegram.dog")
@@ -1054,7 +1152,7 @@ EN_PHRASES = {
     # admin tabs
     "ড্যাশবোর্ড": "Dashboard", "ইউজার": "Users", "পেমেন্ট নম্বর": "Payment numbers", "রেফারেল": "Referrals",
     "কমিশন": "Commission", "স্টাফ": "Staff", "টিকিট": "Tickets", "নোটিশ": "Notices", "অডিট লগ": "Audit log",
-    "প্রোফাইল": "Profile", "কনটেন্ট": "Content", "🔔 নোটিফিকেশন": "🔔 Notifications",
+    "প্রোফাইল": "Profile", "কনটেন্ট": "Content", "কমিশন পুল": "Commission pool", "রিপোর্ট": "Reports", "মিলানো": "Reconciliation", "🔔 নোটিফিকেশন": "🔔 Notifications",
     "সুপার অ্যাডমিন": "Super admin", "অ্যাডমিন": "Admin", "ফাইন্যান্স স্টাফ": "Finance staff", "সাপোর্ট স্টাফ": "Support staff",
     "সেভ": "Save", "সেভ হয়েছে।": "Saved.",
     # request kinds
@@ -1066,6 +1164,18 @@ EN_PHRASES = {
     "জানান": "Tell us", "আমাদের সেবা কেমন লাগছে বা কী উন্নতি করা যায়": "How do you like our service, or what can we improve",
     "নির্দেশনা": "Instructions", "পেমেন্ট মাধ্যম": "Payment method", "পেমেন্ট নম্বর": "Payment number",
     "← সব অনুরোধ": "← All requests",
+    "ডিপোজিট রিকোয়েস্ট": "Deposit request", "উইথড্র/পেমেন্ট রিকোয়েস্ট": "Withdrawal / payment request", "উদ্দেশ্য": "Purpose",
+    "উদ্দেশ্য (Purpose)": "Purpose", "মূল পরিমাণ (আপনার ওয়ালেট থেকে কাটা হবে)": "Principal (will be deducted from your wallet)",
+    "কমিশন": "Commission", "নিট ওয়ালেট পরিবর্তন": "Net wallet change", "বর্তমান ব্যালেন্স": "Current balance", "অনুমোদনের পর ব্যালেন্স": "Balance after approval",
+    "✅ অনুমোদন করুন": "✅ Approve", "❌ বাতিল করুন": "❌ Reject", "আপনার রেট": "Your rate", "রেট": "Rate",
+    "কমিশন কোম্পানির প্রচারণা পুল থেকে দেওয়া হয়": "Commission is paid from the company promotional pool",
+    "আপনার ব্যালেন্স এই অনুরোধের জন্য পর্যাপ্ত নয়।": "Your balance is not enough for this request.",
+    "অনুমোদন করলে সঙ্গে সঙ্গে সম্পন্ন হবে; আর কোনো অ্যাডমিন অনুমোদন লাগবে না। বাতিল করলে আপনার ব্যালেন্স অপরিবর্তিত থাকবে।":
+        "Approving completes it immediately; no further admin approval is needed. If you reject, your balance does not change.",
+    "উদ্দেশ্য, মূল পরিমাণ ও কমিশন দেখে নিশ্চিত?": "Have you checked the purpose, principal and commission? Confirm?",
+    "অনুরোধটির মেয়াদ শেষ হয়েছে।": "This request has expired.",
+    "আপনার ব্যালেন্স অপর্যাপ্ত — কিছুই কাটা হয়নি।": "Your balance is insufficient; nothing was deducted.",
+    "অনুরোধ বাতিল করা হয়েছে।": "Request rejected.",
 }
 _EN_RE = re.compile(r"(?<![\u0980-\u09FF])(" + "|".join(re.escape(k) for k in sorted(EN_PHRASES, key=len, reverse=True))
                     + r")(?![\u0980-\u09FF])")
@@ -1373,7 +1483,7 @@ def stats(uid):
     s["deposit"] = one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE user_id=? AND kind='deposit' AND status='approved')"
                        "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE user_id=? AND kind='deposit' AND status='approved') s", (uid, uid))
     s["withdraw"] = one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE user_id=? AND kind='withdraw' AND status IN('approved','paid'))"
-                        "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE user_id=? AND kind='withdraw' AND status='approved') s", (uid, uid))
+                        "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE user_id=? AND kind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved') s", (uid, uid))
     s["pending"] = one("SELECT COALESCE(SUM(amount),0) s FROM tx WHERE user_id=? AND kind='withdraw' AND status IN('pending','processing')", (uid,))
     s["today"] = one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE user_id=? AND kind IN('commission','referral_bonus') AND date(created)=date('now')", (uid,))
     return s
@@ -1393,11 +1503,11 @@ def home():
 <div class="g2"><div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">৳ {{money(s.pending)}}</div></div>
 <div class="card"><div class="k">মোট ডিপোজিট</div><div class="v">৳ {{money(s.deposit)}}</div></div>
 <div class="card"><div class="k">মোট উইথড্র</div><div class="v">৳ {{money(s.withdraw)}}</div></div>
-<div class="card"><div class="k">মোট কমিশন</div><div class="v">৳ {{money(u['commission'])}}</div></div>
+<div class="card"><div class="k">মোট কমিশন</div><div class="v">৳ {{money(u['commission'])}}</div><div class="k">আপনার রেট: {{rate|pct}}%</div></div>
 <div class="card"><div class="k">আজকের আয়</div><div class="v">৳ {{money(s.today)}}</div></div>
 <div class="card"><div class="k">মেম্বার আইডি</div><div class="v">#{{u['member_id']}}</div></div></div>
 {% if notices %}{% for n in notices %}<div class="card"><b>📢 {{n['title']}}</b><div class="k">{{n['body']}}</div></div>{% endfor %}{% endif %}
-<div class="card welcome">{{welcome}}</div>""", active="/", s=stats(u["id"]), req_open=req_open,
+<div class="card welcome">{{welcome}}</div>""", active="/", s=stats(u["id"]), req_open=req_open, rate=effective_rate(u),
                 notices=qa("SELECT * FROM notifications WHERE user_id IS NULL ORDER BY id DESC LIMIT 3"),
                 welcome=setting("welcome", WELCOME_DEFAULT))
 
@@ -1531,7 +1641,7 @@ def notifications():
     rows = qa("SELECT * FROM notifications WHERE user_id=? OR user_id IS NULL ORDER BY id DESC LIMIT 50", (u["id"],))
     db().execute("UPDATE notifications SET is_read=1 WHERE user_id=?", (u["id"],))
     return page("""<h2>নোটিফিকেশন</h2>{% if not rows %}<div class="card empty">কোনো নোটিফিকেশন নেই</div>{% endif %}
-{% for n in rows %}<div class="card"><b>{{n['title']}}</b><div>{{n['body']}}</div><div class="k">{{n['created'][:16]}}</div>
+{% for n in rows %}<div class="card"><b>{{(n['title_en'] if lang=='en' and n['title_en'] else n['title'])}}</b><div>{{(n['body_en'] if lang=='en' and n['body_en'] else n['body'])}}</div><div class="k">{{n['created'][:16]}}</div>
 {% if n['link'] %}<a class="btn sm" href="{{n['link']}}" style="margin-top:8px">খুলুন</a>{% endif %}</div>{% endfor %}""", rows=rows)
 
 
@@ -1555,7 +1665,7 @@ def series(uid, days):
         dep.append(round(f("SELECT COALESCE(SUM(amount),0) s FROM tx WHERE %skind='deposit' AND status='approved' AND date(updated)=?" % w)
                          + f("SELECT COALESCE(SUM(amount),0) s FROM requests WHERE %skind='deposit' AND status='approved' AND date(decided_at)=?" % w), 2))
         wd.append(round(f("SELECT COALESCE(SUM(amount),0) s FROM tx WHERE %skind='withdraw' AND status IN('approved','paid') AND date(updated)=?" % w)
-                        + f("SELECT COALESCE(SUM(amount),0) s FROM requests WHERE %skind='withdraw' AND status='approved' AND date(decided_at)=?" % w), 2))
+                        + f("SELECT COALESCE(SUM(amount),0) s FROM requests WHERE %skind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved' AND date(decided_at)=?" % w), 2))
         com.append(f("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE %skind IN('commission','referral_bonus') AND date(created)=?" % w))
     return dict(labels=labels, deposit=dep, withdraw=wd, commission=com, t=[round(sum(x), 2) for x in (dep, wd, com)])
 
@@ -1718,8 +1828,8 @@ REF_SQL = """SELECT r.*, rf.member_id rf_mid, rf.name rf_name, rf.phone rf_phone
 
 REF_LIST = """{% if not rows %}<div class="card empty">কোনো রেফারেল রিকোয়েস্ট নেই</div>{% endif %}
 {% for r in rows %}<div class="card"><div class="row" style="align-items:center"><b>৳ {{money(r['amount'])}}</b><span class="pill {{r['status']}}" style="flex:0">{{r['status']}}</span></div>
-<div class="k">রেফারার: <b>#{{r['rf_mid']}} {{r['rf_name']}}</b> · {{r['rf_phone']}}</div>
-<div class="k">নতুন ইউজার: <b>#{{r['x_mid']}} {{r['x_name']}}</b> · {{r['x_phone']}} · {{r['created'][:16]}}</div>
+<div class="k">রেফারার: <a href="/admin/referrals/user/{{r['referrer_id']}}"><b>#{{r['rf_mid']}} {{r['rf_name']}}</b></a> · {{r['rf_phone']}}</div>
+<div class="k">নতুন ইউজার: <a href="/admin/referrals/user/{{r['referred_id']}}"><b>#{{r['x_mid']}} {{r['x_name']}}</b></a> · {{r['x_phone']}} · {{r['created'][:16]}}</div>
 {% if r['same_ip'] and r['status']=='pending' %}<div class="msg error" style="margin:6px 0">⚠ একই আইপি থেকে সাইন আপ/লগইন — যাচাই করুন</div>{% endif %}
 {% if r['status']!='pending' %}<div class="k">সিদ্ধান্ত: {{r['decided_by']}} · {{(r['decided_at'] or '')[:16]}}{% if r['note'] %} · {{r['note']}}{% endif %}</div>
 {% elif can('referrals') %}<form method="post" action="/admin/referrals/{{r['id']}}" style="margin-top:8px" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
@@ -1755,7 +1865,7 @@ def admin_home():
              blocked=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=1"),
              active30=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=0 AND last_login>=datetime('now','-30 days')"),
              pend_req=one("SELECT COUNT(*) s FROM requests WHERE status IN('submitted','review')"))
-    bad, pend, acts = [], [], []
+    bad, pend, acts, rc = [], [], [], None
     if fin:
         s.update(
             liability=one("SELECT COALESCE(SUM(balance),0) s FROM users WHERE is_admin=0"),
@@ -1764,7 +1874,7 @@ def admin_home():
             dep_vol=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved')"
                         "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved') s"),
             wd_vol=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='withdraw' AND status IN('approved','paid'))"
-                       "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='withdraw' AND status='approved') s"),
+                       "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved') s"),
             comm=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission'"),
             comm_today=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission' AND date(created)=date('now')"),
             ref_paid=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='referral_bonus'"),
@@ -1773,6 +1883,9 @@ def admin_home():
             today_dep=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved' AND date(updated)=date('now'))"
                           "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved' AND date(decided_at)=date('now')) s"))
         bad = reconcile()
+        s.update(pool=pool_balance(), pool_res=pool_reserved())
+        if has_perm("reports", u):
+            rc = recon_overall(recon_checks())
     if has_perm("referrals", u):
         pend = qa(REF_SQL + " WHERE r.status='pending' ORDER BY r.id LIMIT 5")
     if has_perm("users_view", u):
@@ -1791,7 +1904,8 @@ def admin_home():
 <div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">{{s.pend_wd}}</div></div>
 <div class="card"><div class="k">রেফারেল বোনাস (প্রদত্ত)</div><div class="v">৳ {{money(s.ref_paid)}}</div></div>
 <div class="card"><div class="k">পেন্ডিং রেফারেল</div><div class="v">{{s.ref_pend_n}} <span class="k">(৳{{money(s.ref_pend_amt)}})</span></div></div>
-<div class="card"><div class="k">খোলা টিকিট</div><div class="v">{{s.open_tickets}}</div></div></div>
+<div class="card"><div class="k">খোলা টিকিট</div><div class="v">{{s.open_tickets}}</div></div>
+<div class="card"><div class="k">কমিশন পুল</div><div class="v">৳ {{money(s.pool)}}</div><div class="k">প্রতিশ্রুত ৳{{money(s.pool_res)}}</div></div></div>
 {% else %}<div class="g2"><div class="card"><div class="k">খোলা টিকিট</div><div class="v">{{s.open_tickets}}</div></div>
 <div class="card"><div class="k">মোট ইউজার</div><div class="v">{{s.total}}</div></div>
 {% if can('requests') %}<div class="card"><div class="k">পেন্ডিং রিকোয়েস্ট (ম্যানুয়াল)</div><div class="v">{{s.pend_req}}</div></div>{% endif %}</div>{% endif %}
@@ -1800,9 +1914,10 @@ def admin_home():
 {% if fin %}<div class="card"><b>লেজার রিকনসিলিয়েশন:</b>
 {% if bad %}<span class="pill rejected">{{bad|length}}টি অমিল</span>{% for b in bad %}<div class="k">#{{b['member_id']}}: ব্যালেন্স {{b['balance']}} ≠ লেজার {{b['ledger_sum']}}</div>{% endfor %}
 {% else %}<span class="pill approved">সব মিলেছে ✅</span>{% endif %}</div>
+{% if rc %}<a class="card" href="/admin/reconcile" style="display:block"><b>🧮 পূর্ণ মিলানো (ওয়ালেট · পুল · কোম্পানি-লেজার):</b> <span class="pill {{'approved' if rc=='ok' else 'rejected'}}">{{'সব মিলেছে ✅' if rc=='ok' else ('দেখা দরকার ⚠' if rc=='warn' else 'গরমিল ❌')}}</span></a>{% endif %}
 <div class="card"><h3>গত ১৪ দিন</h3><canvas id="ch"></canvas></div>
 <script>fetch('/insight/data?days=14').then(r=>r.json()).then(j=>bars('ch',j.labels,[j.deposit,j.withdraw,j.commission],['#3b82f6','#ef4444','#22c55e']))</script>{% endif %}""",
-                active="/admin", s=s, bad=bad, rows=pend, fin=fin, acts=acts)
+                active="/admin", s=s, bad=bad, rows=pend, fin=fin, acts=acts, rc=rc)
 
 
 # ---------------------------------------------------------------- admin: deposits / withdrawals
@@ -1879,6 +1994,26 @@ def admin_tx(i):
 
 
 # ---------------------------------------------------------------- admin: users
+PER_PAGE = 25
+
+
+def make_pg(total, per=PER_PAGE):
+    """Pagination helper: ?p=N, always clamped to a valid page."""
+    pages = max(1, (total + per - 1) // per)
+    p = min(max(1, request.args.get("p", type=int) or 1), pages)
+
+    def url(n):
+        a = {k: v for k, v in request.args.items() if k != "p"}
+        a["p"] = n
+        return request.path + "?" + urlencode(a)
+    return {"p": p, "pages": pages, "total": total, "per": per, "off": (p - 1) * per, "prev": url(p - 1), "next": url(p + 1)}
+
+
+PAGER = """{% if pg and pg.pages>1 %}<div class="row" style="justify-content:space-between;align-items:center;margin:10px 0">
+{% if pg.p>1 %}<a class="btn sm s" href="{{pg.prev}}">← আগের</a>{% else %}<span></span>{% endif %}<span class="k">পেজ {{pg.p}} / {{pg.pages}} · মোট {{pg.total}}</span>
+{% if pg.p<pg.pages %}<a class="btn sm s" href="{{pg.next}}">পরের →</a>{% else %}<span></span>{% endif %}</div>{% endif %}"""
+
+
 @app.route("/admin/users")
 @staff_required("users_view")
 def admin_users():
@@ -1887,15 +2022,30 @@ def admin_users():
     like = "%" + s + "%"
     cond = {"active": " AND blocked=0", "blocked": " AND blocked=1", "funded": " AND balance>0",
             "new": " AND created>=datetime('now','-7 days')"}.get(f, "")
-    rows = qa("SELECT * FROM users WHERE is_admin=0 AND (?='' OR name LIKE ? OR phone LIKE ? OR member_id LIKE ?)" + cond +
-              " ORDER BY id DESC LIMIT 100", (s, like, like, like))
-    return page("""<div class="card"><form><input name="q" value="{{s}}" placeholder="নাম / ফোন / মেম্বার আইডি">
+    where = "is_admin=0 AND (?='' OR name LIKE ? OR phone LIKE ? OR member_id LIKE ? OR referral_code LIKE ?)" + cond
+    args = (s, like, like, like, like)
+    total = q1("SELECT COUNT(*) n FROM users WHERE " + where, args)["n"]
+    pg = make_pg(total)
+    rows = qa("SELECT u.*, (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id=u.id) refn FROM users u WHERE " + where +
+              " ORDER BY u.id ASC LIMIT ? OFFSET ?", args + (pg["per"], pg["off"]))
+    return page("""<div class="card"><form><input name="q" value="{{s}}" placeholder="নাম / ফোন / মেম্বার আইডি / রেফারেল কোড">
 <select name="f"><option value="all" {{'selected' if f=='all'}}>সব ইউজার</option><option value="active" {{'selected' if f=='active'}}>ব্লক নয়</option>
 <option value="blocked" {{'selected' if f=='blocked'}}>ব্লকড</option><option value="funded" {{'selected' if f=='funded'}}>ব্যালেন্স আছে</option>
 <option value="new" {{'selected' if f=='new'}}>গত ৭ দিনের নতুন</option></select><button style="width:100%">খুঁজুন</button></form></div>
 {% if not rows %}<div class="card empty">কোনো ইউজার নেই</div>{% endif %}
-{% for x in rows %}<a href="/admin/users/{{x['id']}}"><div class="card"><b>#{{x['member_id']}} {{x['name']}}</b> {% if x['blocked'] %}<span class="pill rejected">blocked</span>{% endif %}
-<div class="k">{{x['phone']}} · ৳ {{money(x['balance'])}}</div></div></a>{% endfor %}""", active="/admin/users", rows=rows, s=s, f=f)
+{% for x in rows %}<a href="/admin/users/{{x['id']}}"><div class="card"><b>{{pg.off+loop.index}}. #{{x['member_id']}} {{x['name']}}</b> {% if x['blocked'] %}<span class="pill rejected">blocked</span>{% endif %}
+<div class="k">{{x['phone']}} · ৳ {{money(x['balance'])}} · কমিশন ৳ {{money(x['commission'])}} · রেফার {{x['refn']}} · {{(x['created'] or '')[:10]}}</div></div></a>{% endfor %}"""
+                + PAGER, active="/admin/users", rows=rows, s=s, f=f, pg=pg)
+
+
+def user_summary(i):
+    r = q1("""SELECT
+      COALESCE(SUM(CASE WHEN kind IN ('deposit','request_deposit') AND amount>0 THEN amount END),0) dep,
+      COALESCE(SUM(CASE WHEN kind IN ('commission','commission_reversal') THEN amount END),0) com,
+      COALESCE(SUM(CASE WHEN kind='referral_bonus' THEN amount END),0) refb,
+      COALESCE(SUM(CASE WHEN kind='admin_adjust' THEN amount END),0) adj FROM ledger WHERE user_id=?""", (i,))
+    s = stats(i)
+    return {"dep": s["deposit"], "wd": s["withdraw"], "pending": s["pending"], "com": r["com"], "refb": r["refb"], "adj": r["adj"]}
 
 
 @app.route("/admin/users/<int:i>")
@@ -1905,35 +2055,158 @@ def admin_user(i):
     if not x:
         abort(404)
     full = has_perm("dashboard_fin") or has_perm("users_manage")
-    led = qa("SELECT * FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT 100", (i,)) if full else []
+    pg = make_pg(q1("SELECT COUNT(*) n FROM ledger WHERE user_id=?", (i,))["n"], 30) if full else None
+    led = qa("SELECT * FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?", (i, 30, pg["off"])) if full else []
+    comm = qa("SELECT * FROM ledger WHERE user_id=? AND kind IN ('commission','commission_reversal','referral_bonus') ORDER BY id DESC LIMIT 30", (i,)) if full else []
+    adjs = qa("SELECT * FROM balance_adjustments WHERE user_id=? ORDER BY id DESC LIMIT 15", (i,)) if full else []
     logs = qa("SELECT * FROM login_history WHERE user_id=? ORDER BY id DESC LIMIT 10", (i,)) if has_perm("users_manage") else []
     txs = qa("SELECT * FROM tx WHERE user_id=? ORDER BY id DESC LIMIT 30", (i,))
-    refs = q1("SELECT COUNT(*) n, COALESCE(SUM(status='approved'),0) a FROM referrals WHERE referrer_id=?", (i,))
+    reqs = qa("SELECT id,order_id,kind,amount,status,created FROM requests WHERE user_id=? ORDER BY id DESC LIMIT 15", (i,)) if has_perm("requests") else []
+    reffed = qa("SELECT r.*, x.member_id mid, x.name nm FROM referrals r JOIN users x ON x.id=r.referred_id WHERE r.referrer_id=? ORDER BY r.id DESC LIMIT 50", (i,))
+    refs = q1("SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END),0) a FROM referrals WHERE referrer_id=?", (i,))
     by = q1("SELECT member_id,name FROM users WHERE id=?", (x["referred_by"],)) if x["referred_by"] else None
-    return page("""<div class="card"><h2>#{{x['member_id']}} {{x['name']}}</h2><p>📱 {{x['phone']}} · ব্যালেন্স <b>৳ {{money(x['balance'])}}</b> · কমিশন ৳ {{money(x['commission'])}}<br>
-<span class="k">সর্বশেষ লগইন: {{x['last_login'] or '-'}} · রেফারেল কোড: {{x['referral_code']}} · রেফার করেছেন: {{refs['n']}} (অনুমোদিত {{refs['a']}}){% if by %} · রেফারার: #{{by['member_id']}} {{by['name']}}{% endif %}</span></p>
-{% if can('users_manage') %}<div class="row"><form method="post" action="/admin/users/{{x['id']}}/block" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<button class="btn {{'g' if x['blocked'] else 'r'}}">{{'আনব্লক' if x['blocked'] else 'ব্লক'}}</button></form>
-<form method="post" action="/admin/users/{{x['id']}}/resetcode" data-confirm="নতুন রিসেট কোড তৈরি করবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn s">পাসওয়ার্ড রিসেট কোড</button></form></div>{% endif %}</div>
-{% if can('adjust') %}<div class="card"><h3>ব্যালেন্স সমন্বয় (কারণ আবশ্যক)</h3><form method="post" action="/admin/users/{{x['id']}}/adjust" data-confirm="লেজারে স্থায়ীভাবে রেকর্ড হবে। নিশ্চিত?">
-<input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}">
-<label>পরিমাণ (যোগ: 100, বিয়োগ: -100)</label><input name="amount" type="number" step="0.01" required><label>কারণ</label><input name="reason" required maxlength="200"><button style="width:100%">সমন্বয় করুন</button></form></div>{% endif %}
+    byrow = q1("SELECT created,status FROM referrals WHERE referred_id=?", (i,)) if x["referred_by"] else None
+    return page("""<div class="card"><h2>#{{x['member_id']}} {{x['name']}} {% if x['blocked'] %}<span class="pill rejected">blocked</span>{% else %}<span class="pill approved">active</span>{% endif %}</h2>
+<p>📱 {{x['phone']}} · ব্যালেন্স <b>৳ {{money(x['balance'])}}</b> · কমিশন ৳ {{money(x['commission'])}}<br>
+<span class="k">যোগদান: {{(x['created'] or '-')[:16]}} · সর্বশেষ লগইন: {{x['last_login'] or '-'}} · রেফারেল কোড: {{x['referral_code']}}</span></p>
+{% if x['blocked'] and x['blocked_reason'] %}<div class="msg error">ব্লকের কারণ: {{x['blocked_reason']}} ({{(x['blocked_at'] or '')[:16]}})</div>{% endif %}
+<div class="g2"><div class="card"><div class="k">মোট ডিপোজিট</div><div class="v">৳ {{money(sm.dep)}}</div></div><div class="card"><div class="k">মোট উইথড্র</div><div class="v">৳ {{money(sm.wd)}}</div></div>
+<div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">৳ {{money(sm.pending)}}</div></div><div class="card"><div class="k">কমিশন (লেজার)</div><div class="v">৳ {{money(sm.com)}}</div></div></div>
+{% if can('rates') %}<form method="post" action="/admin/commission/rate" data-confirm="কমিশন রেট বদলাবেন?" style="margin-bottom:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{ridem}}"><input type="hidden" name="scope" value="user"><input type="hidden" name="uid" value="{{x['id']}}">
+<h4>কমিশন রেট</h4><div class="k">কার্যকর রেট: <b>{{eff}}%</b> {% if x['comm_rate'] is not none %}(ইউজার-নির্দিষ্ট){% else %}(গ্লোবাল){% endif %} · সর্বোচ্চ {{rmax}}%</div>
+<select name="op"><option value="set">সেট করুন</option><option value="inc">বাড়ান (+)</option><option value="dec">কমান (−)</option><option value="reset">গ্লোবালে ফিরুন</option></select>
+<input name="value" type="number" step="0.01" min="0" max="10" placeholder="% মান" value="0"><input name="reason" placeholder="কারণ" required minlength="3" maxlength="200"><button class="s" style="width:100%">রেট আপডেট</button></form>{% endif %}
+{% if can('users_manage') %}<form method="post" action="/admin/users/{{x['id']}}/block" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<input type="hidden" name="act" value="{{'unblock' if x['blocked'] else 'block'}}"><label>{{'আনব্লকের নোট (ঐচ্ছিক)' if x['blocked'] else 'ব্লকের কারণ (আবশ্যক)'}}</label><input name="reason" maxlength="200" {{'' if x['blocked'] else 'required'}}>
+<button class="btn {{'g' if x['blocked'] else 'r'}}" style="width:100%">{{'🔓 আনব্লক' if x['blocked'] else '🔒 ব্লক'}}</button></form>
+<form method="post" action="/admin/users/{{x['id']}}/resetcode" data-confirm="নতুন রিসেট কোড তৈরি করবেন?" style="margin-top:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn s" style="width:100%">পাসওয়ার্ড রিসেট কোড</button></form>{% endif %}
+{% if can('requests') %}<a class="btn s" style="width:100%;margin-top:8px" href="/admin/requests/new?uid={{x['id']}}">📨 এই ইউজারের জন্য রিকোয়েস্ট তৈরি</a>{% endif %}{% if can('reports') %}<a class="btn s" style="width:100%;margin-top:8px" href="/admin/reports/user/{{x['id']}}">📊 ইউজার রিপোর্ট</a>{% endif %}</div>
+{% if can('adjust') %}<div class="card"><h3>ব্যালেন্স সমন্বয় (কারণ আবশ্যক)</h3><p class="k">যোগ করতে বৈধ রেফারেন্স (TrxID / অনুরোধ নম্বর / রসিদ নম্বর) লাগবে এবং একই রেফারেন্স দুবার ব্যবহার করা যায় না। সীমা: ৳{{money(adj_cap)}}।</p>
+<form method="post" action="/admin/users/{{x['id']}}/adjust" data-confirm="লেজারে স্থায়ীভাবে রেকর্ড হবে। নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}">
+<label>ধরন</label><select name="direction"><option value="credit">➕ ব্যালেন্স যোগ</option><option value="debit">➖ ব্যালেন্স বিয়োগ</option></select>
+<label>পরিমাণ (৳)</label><input name="amount" type="number" step="0.01" min="0.01" required><label>রেফারেন্স (যোগের জন্য আবশ্যক)</label><input name="reference" maxlength="40">
+<label>কারণ (কমপক্ষে ৫ অক্ষর)</label><input name="reason" required minlength="5" maxlength="200"><button style="width:100%">সমন্বয় করুন</button></form></div>{% endif %}
+{% if can('notices') %}<div class="card"><h3>ব্যক্তিগত নোটিশ / নির্দেশনা</h3><form method="post" action="/admin/users/{{x['id']}}/notice" data-confirm="ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<select name="kind"><option value="notice">📌 নোটিশ</option><option value="instruction">📋 নির্দেশনা</option></select>
+<label>শিরোনাম (বাংলা)</label><input name="title_bn" required maxlength="80"><label>বার্তা (বাংলা)</label><textarea name="body_bn" required rows="3" maxlength="1000"></textarea>
+<label>Title (English, optional)</label><input name="title_en" maxlength="80"><label>Message (English, optional)</label><textarea name="body_en" rows="3" maxlength="1000"></textarea>
+<button style="width:100%">পাঠান</button></form></div>{% endif %}
+<div class="card"><h3>রেফারেল তথ্য {% if can('referrals') %}<a class="k" href="/admin/referrals/user/{{x['id']}}">বিস্তারিত →</a>{% endif %}</h3><p class="k">রেফার করেছেন: {{refs['n']}} (অনুমোদিত {{refs['a']}}){% if by %} · রেফারার: <a href="/admin/users/{{x['referred_by']}}">#{{by['member_id']}} {{by['name']}}</a> ({{(byrow['created'] or '')[:10]}}, {{byrow['status']}}){% else %} · কারও রেফারে আসেননি{% endif %}</p>
+{% if reffed %}<div class="tw"><table><tr><th>সদস্য</th><th>তারিখ</th><th>বোনাস</th><th>অবস্থা</th></tr>{% for r in reffed %}<tr><td><a href="/admin/users/{{r['referred_id']}}">#{{r['mid']}} {{r['nm']}}</a></td><td>{{r['created'][:10]}}</td><td>{{money(r['amount'])}}</td><td>{{r['status']}}</td></tr>{% endfor %}</table></div>{% endif %}</div>
+{% if comm %}<div class="card"><h3>কমিশন / বোনাস ইতিহাস</h3><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>নোট</th><th>সময়</th></tr>
+{% for l in comm %}<tr><td>{{l['kind']}}</td><td>{{money(l['amount'])}}</td><td>{{l['note'] or ''}}</td><td>{{l['created'][:16]}}</td></tr>{% endfor %}</table></div></div>{% endif %}
+{% if adjs %}<div class="card"><h3>ব্যালেন্স সমন্বয়ের ইতিহাস</h3><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>রেফারেন্স</th><th>কারণ</th><th>কে</th><th>সময়</th></tr>
+{% for a in adjs %}<tr><td>{{a['direction']}}</td><td>{{money(a['amount'])}}</td><td>{{a['reference'] or '-'}} {{'✔' if a['verified']}}</td><td>{{a['reason']}}</td><td>{{a['actor']}}</td><td>{{a['created'][:16]}}</td></tr>{% endfor %}</table></div></div>{% endif %}
 {% if led %}<div class="card"><h3>ওয়ালেট লেজার</h3><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>নোট</th><th>কে</th><th>সময়</th></tr>
-{% for l in led %}<tr><td>{{l['kind']}}</td><td>{{money(l['amount'])}}</td><td>{{l['note'] or ''}}</td><td>{{l['actor']}}</td><td>{{l['created'][:16]}}</td></tr>{% endfor %}</table></div></div>{% endif %}
-<div class="card"><h3>লেনদেন</h3><div class="tw"><table>{% for t in txs %}<tr><td>{{t['kind']}}</td><td>{{money(t['amount'])}}</td><td>{{t['status']}}</td><td>{{(t['trx'] or t['number'] or '')}}</td></tr>{% endfor %}</table></div></div>
-{% if pns %}<div class="card"><h3>পেমেন্ট নম্বর</h3><div class="tw"><table><tr><th>মাধ্যম</th><th>ধরন</th><th>নম্বর</th><th>জমা</th><th>আপডেট</th></tr>{% for p in pns %}<tr><td>{{p['method']}}</td><td>{{p['account_type']}}</td><td>{{p['number']}}</td><td>{{p['created'][:10]}}</td><td>{{p['updated'][:10]}}</td></tr>{% endfor %}</table></div></div>{% endif %}
+{% for l in led %}<tr><td>{{l['kind']}}</td><td>{{money(l['amount'])}}</td><td>{{l['note'] or ''}}</td><td>{{l['actor']}}</td><td>{{l['created'][:16]}}</td></tr>{% endfor %}</table></div>""" + PAGER + """</div>{% endif %}
+<div class="card"><h3>লেনদেন</h3><div class="tw"><table>{% for t in txs %}<tr><td>{{t['kind']}}</td><td>{{money(t['amount'])}}</td><td>{{t['status']}}</td><td>{{(t['trx'] or t['number'] or '')}}</td><td>{{(t['created'] or '')[:16]}}</td></tr>{% endfor %}</table></div></div>
+{% if reqs %}<div class="card"><h3>রিকোয়েস্ট</h3><div class="tw"><table>{% for r in reqs %}<tr><td><a href="/admin/requests/{{r['id']}}">{{r['order_id']}}</a></td><td>{{r['kind']}}</td><td>{{money(r['amount'])}}</td><td>{{r['status']}}</td></tr>{% endfor %}</table></div></div>{% endif %}
+{% if pns %}<div class="card"><h3>পেমেন্ট নম্বর</h3><div class="tw"><table><tr><th>মাধ্যম</th><th>ধরন</th><th>নম্বর</th><th>জমা</th><th>আপডেট</th></tr>{% for p in pns %}<tr><td>{{p['method']}}</td><td>{{p['account_type']}}</td><td>{{p['number']}}</td><td>{{(p['created'] or '')[:16]}}</td><td>{{(p['updated'] or '')[:16]}}</td></tr>{% endfor %}</table></div></div>{% endif %}
 {% if logs %}<div class="card"><h3>লগইন ইতিহাস</h3><div class="tw"><table>{% for h in logs %}<tr><td>{{h['created'][:16]}}</td><td>{{h['ip']}}</td><td>{{'✅' if h['ok'] else '❌'}}</td></tr>{% endfor %}</table></div></div>{% endif %}""",
-                active="/admin/users", x=x, led=led, logs=logs, txs=txs, refs=refs, by=by, idem=secrets.token_hex(8),
-                pns=qa("SELECT * FROM payment_numbers WHERE user_id=? ORDER BY id", (i,)) if has_perm("payment_numbers") else [])
+                active="/admin/users", x=x, led=led, logs=logs, txs=txs, reqs=reqs, refs=refs, by=by, byrow=byrow, reffed=reffed, comm=comm, adjs=adjs,
+                sm=user_summary(i), pg=pg, idem=secrets.token_hex(8), adj_cap=adjust_cap(me()),
+                pns=qa("SELECT * FROM payment_numbers WHERE user_id=? ORDER BY id", (i,)) if has_perm("payment_numbers") else []
+                , eff=effective_rate(x), rmax=rate_cfg()[1], ridem=secrets.token_hex(8)
+                )
 
 
 @app.route("/admin/users/<int:i>/block", methods=["POST"])
 @staff_required("users_manage")
 def admin_block(i):
-    with atomic():
-        db().execute("UPDATE users SET blocked=1-blocked, session_ver=session_ver+1 WHERE id=? AND is_admin=0", (i,))
-        audit("toggle_block", "user#%d" % i)
+    x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (i,))
+    if not x:
+        abort(404)
+    act = request.form.get("act", "")
+    reason = request.form.get("reason", "").strip()[:200]
+    if act not in ("block", "unblock"):
+        act = "unblock" if x["blocked"] else "block"
+    want = 1 if act == "block" else 0
+    if want and len(reason) < 3:
+        err("ব্লকের কারণ লিখুন (কমপক্ষে ৩ অক্ষর)।"); return redirect("/admin/users/%d" % i)
+    with atomic():  # idempotent: only flips when the state really is the opposite (double-click safe)
+        cur = db().execute("UPDATE users SET blocked=?, blocked_reason=?, blocked_at=?, session_ver=session_ver+1 WHERE id=? AND is_admin=0 AND COALESCE(blocked,0)=?",
+                           (want, reason if want else None, now() if want else None, i, 1 - want))
+        if cur.rowcount == 1:
+            audit("block" if want else "unblock", "user#%d %s" % (i, reason))
+            if not want:
+                notify(i, "অ্যাকাউন্ট চালু হয়েছে", "আপনার অ্যাকাউন্ট আবার চালু করা হয়েছে।", None, "Account reactivated", "Your account has been reactivated.")
+            flash("ইউজার ব্লক করা হয়েছে।" if want else "ইউজার আনব্লক করা হয়েছে।")
+        else:
+            flash("অবস্থা আগেই বদলে গেছে — কিছু পরিবর্তন হয়নি।")
     return redirect("/admin/users/%d" % i)
+
+
+@app.route("/admin/users/<int:i>/notice", methods=["POST"])
+@staff_required("notices")
+def admin_user_notice(i):
+    f = request.form
+    kind = "instruction" if f.get("kind") == "instruction" else "notice"
+    tb, bb = f.get("title_bn", "").strip()[:80], f.get("body_bn", "").strip()[:1000]
+    te, be = f.get("title_en", "").strip()[:80], f.get("body_en", "").strip()[:1000]
+    if not q1("SELECT 1 FROM users WHERE id=? AND is_admin=0", (i,)):
+        abort(404)
+    if not tb or not bb:
+        err("বাংলা শিরোনাম ও বার্তা দিন।"); return redirect("/admin/users/%d" % i)
+    pre = "📋 " if kind == "instruction" else "📌 "
+    with atomic():
+        notify(i, pre + tb, bb, None, (pre + te) if te else None, be or None)
+        audit("personal_notice", "user#%d %s %s" % (i, kind, tb))
+    flash("ব্যক্তিগত %s পাঠানো হয়েছে।" % ("নির্দেশনা" if kind == "instruction" else "নোটিশ"))
+    return redirect("/admin/users/%d" % i)
+
+
+ADJ_REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _\-/#.:]{3,39}")
+ADJ_HARD = 1_000_000
+
+
+def adjust_cap(u):
+    if u and u["role"] == "super_admin":
+        return float(ADJ_HARD)
+    return min(float(ADJ_HARD), parse_amount(setting("adjust_limit", "50000")) or 50000.0)
+
+
+@app.route("/admin/users/<int:i>/adjust", methods=["POST"])
+@staff_required("adjust")
+def admin_adjust(i):
+    a, f = me(), request.form
+    back_u = "/admin/users/%d" % i
+    amt, direction = parse_amount(f.get("amount")), f.get("direction", "")
+    reason, ref = f.get("reason", "").strip()[:200], f.get("reference", "").strip()[:40]
+    token = re.sub(r"\W", "", f.get("idem", ""))[:32]
+    if direction not in ("credit", "debit") or amt <= 0 or len(reason) < 5 or len(token) < 6:
+        err("ধরন, সঠিক পরিমাণ ও কারণ (কমপক্ষে ৫ অক্ষর) দিন।"); return redirect(back_u)
+    if (direction == "credit" or ref) and not ADJ_REF_RE.fullmatch(ref):
+        err("বৈধ রেফারেন্স দিন (৪–৪০ অক্ষর: TrxID / অনুরোধ নম্বর / রসিদ নম্বর)। ব্যালেন্স যোগ করতে এটা আবশ্যক।"); return redirect(back_u)
+    cap = adjust_cap(a)
+    if amt > cap:
+        err("আপনার সমন্বয় সীমা ৳%s। এর বেশি হলে সুপার অ্যাডমিনকে জানান।" % money(cap)); return redirect(back_u)
+    if not q1("SELECT 1 FROM users WHERE id=? AND is_admin=0", (i,)):
+        abort(404)
+    nref = norm_trx(ref)
+    verified = 1 if nref and (q1("SELECT 1 FROM tx WHERE norm_trx=?", (nref,)) or q1("SELECT 1 FROM requests WHERE norm_trx=? OR order_id=?", (nref, ref.upper()))) else 0
+    if direction == "credit" and not verified and a["role"] != "super_admin":
+        err("এই রেফারেন্স সিস্টেমের কোনো লেনদেন/অনুরোধে পাওয়া যায়নি। এমন রেফারেন্সে যোগ করতে সুপার অ্যাডমিন লাগবে।"); return redirect(back_u)
+    signed = amt if direction == "credit" else -amt
+    idem = "adj:" + token
+    note = ("ref:%s | %s" % (ref, reason) if ref else reason)[:300]
+    try:
+        with atomic():
+            if post(i, "admin_adjust", signed, idem, "admin", None, note, a["member_id"]):
+                db().execute("INSERT INTO balance_adjustments(user_id,direction,amount,reason,reference,norm_ref,verified,ledger_idem,actor,actor_id,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                             (i, direction, amt, reason, ref or None, nref or None, verified, idem, a["member_id"], a["id"], now()))
+                audit("adjust", "user#%d %s ৳%s ref=%s verified=%d %s" % (i, direction, money(amt), ref or "-", verified, reason))
+                if direction == "credit":
+                    notify(i, "ব্যালেন্স সমন্বয়", "৳%s যোগ হয়েছে — %s" % (money(amt), reason), None, "Balance adjustment", "৳%s was added — %s" % (money(amt), reason))
+                else:
+                    notify(i, "ব্যালেন্স সমন্বয়", "৳%s কাটা হয়েছে — %s" % (money(amt), reason), None, "Balance adjustment", "৳%s was deducted — %s" % (money(amt), reason))
+                flash("সমন্বয় হয়েছে।")
+            else:
+                flash("এই অপারেশন আগেই হয়েছে (ডুপ্লিকেট সাবমিট)।")
+    except INTEGRITY:
+        err("এই রেফারেন্স দিয়ে আগেই ব্যালেন্স যোগ করা হয়েছে — একই রেফারেন্স দুবার ব্যবহার করা যায় না।")
+    except LedgerError as e:
+        err("ব্যর্থ (কিছুই বদলায়নি): " + str(e))
+    return redirect(back_u)
 
 
 @app.route("/admin/users/<int:i>/resetcode", methods=["POST"])
@@ -1951,32 +2224,6 @@ def admin_resetcode(i):
     return redirect("/admin/users/%d" % i)
 
 
-@app.route("/admin/users/<int:i>/adjust", methods=["POST"])
-@staff_required("adjust")
-def admin_adjust(i):
-    try:
-        amt = round(float(request.form.get("amount", "0")), 2)
-    except ValueError:
-        amt = 0
-    reason = request.form.get("reason", "").strip()[:200]
-    idem = "adj:" + re.sub(r"\W", "", request.form.get("idem", ""))[:32]
-    if not amt or amt != amt or not reason or abs(amt) > 10_000_000 or len(idem) < 6:
-        err("সঠিক পরিমাণ ও কারণ দিন।"); return redirect("/admin/users/%d" % i)
-    if not q1("SELECT 1 FROM users WHERE id=? AND is_admin=0", (i,)):
-        abort(404)
-    try:
-        with atomic():
-            if post(i, "admin_adjust", amt, idem, "admin", None, reason, me()["member_id"]):
-                audit("adjust", "user#%d %+.2f %s" % (i, amt, reason))
-                notify(i, "ব্যালেন্স সমন্বয়", "৳%s — %s" % (money(amt), reason))
-                flash("সমন্বয় হয়েছে।")
-            else:
-                flash("এই অপারেশন আগেই হয়েছে।")
-    except LedgerError as e:
-        err("ব্যর্থ: " + str(e))
-    return redirect("/admin/users/%d" % i)
-
-
 # ---------------------------------------------------------------- admin: referrals
 @app.route("/admin/referrals")
 @staff_required("referrals")
@@ -1987,11 +2234,12 @@ def admin_referrals():
     rows = qa(REF_SQL + (" WHERE r.status=?" if st != "all" else " WHERE ?='all'") + " ORDER BY r.id DESC LIMIT 100", (st,))
     sm = q1("""SELECT COALESCE(SUM(status='pending'),0) p, COALESCE(SUM(status='approved'),0) a, COALESCE(SUM(status='rejected'),0) r,
                COALESCE(SUM(CASE WHEN status='pending' THEN amount END),0) pa, COALESCE(SUM(CASE WHEN status='approved' THEN amount END),0) aa FROM referrals""")
-    return page("""<div class="g2"><div class="card"><div class="k">পেন্ডিং</div><div class="v">{{sm['p']}} <span class="k">(৳{{money(sm['pa'])}})</span></div></div>
+    return page("""<div class="row" style="margin-bottom:10px;align-items:center"><a class="btn sm" href="/admin/referrals">📋 তালিকা</a><a class="btn sm s" href="/admin/referrals/network">🌐 নেটওয়ার্ক</a>{% if can('pool_view') %}<span class="k">পুলে উপলব্ধ: ৳{{money(pool_av)}}</span>{% endif %}</div>
+<div class="g2"><div class="card"><div class="k">পেন্ডিং</div><div class="v">{{sm['p']}} <span class="k">(৳{{money(sm['pa'])}})</span></div></div>
 <div class="card"><div class="k">অনুমোদিত (প্রদত্ত)</div><div class="v">{{sm['a']}} <span class="k">(৳{{money(sm['aa'])}})</span></div></div>
 <div class="card"><div class="k">বাতিল</div><div class="v">{{sm['r']}}</div></div></div>
 <div class="row" style="margin-bottom:10px">{% for k,l in [('pending','পেন্ডিং'),('approved','অনুমোদিত'),('rejected','বাতিল'),('all','সব')] %}<a class="btn sm {{'' if k==st else 's'}}" href="?status={{k}}">{{l}}</a>{% endfor %}</div>"""
-                + REF_LIST, active="/admin/referrals", rows=rows, sm=sm, st=st)
+                + REF_LIST, active="/admin/referrals", rows=rows, sm=sm, st=st, pool_av=pool_available())
 
 
 @app.route("/admin/referrals/<int:i>", methods=["POST"])
@@ -2021,67 +2269,361 @@ def admin_ref_act(i):
             if cur.rowcount != 1:
                 raise LedgerError("duplicate decision")
             if act == "approve":
-                if not post(rf["id"], "referral_bonus", r["amount"], "ref:%d:bonus" % i, "referral", i,
-                            "Referral bonus for #%s" % x["member_id"], a["member_id"]):
-                    raise LedgerError("duplicate credit")
+                if float(r["amount"]) > 0 and not pool_pay(rf["id"], "referral_bonus", r["amount"], "ref:%d:bonus" % i, "referral", i,
+                                                            "Referral bonus for #%s" % x["member_id"], a["member_id"]):
+                    raise LedgerError("duplicate credit")  # referral rewards are paid ONLY from the funded Commission Pool
                 notify(rf["id"], "রেফারেল বোনাস অনুমোদিত", "#%s-এর রেফারেলের জন্য ৳%s আপনার ওয়ালেটে যুক্ত হয়েছে।" % (x["member_id"], money(r["amount"])))
             else:
                 notify(rf["id"], "রেফারেল বাতিল", "#%s-এর রেফারেল বোনাস অনুমোদিত হয়নি।%s" % (x["member_id"], (" কারণ: " + note) if note else ""))
             audit("referral_" + act, "ref#%d referrer#%s referred#%s ৳%s" % (i, rf["member_id"], x["member_id"], r["amount"]))
-    except LedgerError as e:
-        err("ব্যর্থ: " + str(e)); return back("/admin/referrals")
+    except (LedgerError, PoolError) as e:
+        err("ব্যর্থ (কিছুই পরিবর্তন হয়নি): " + str(e)); return back("/admin/referrals")
     flash("রেফারেল %s।" % ("অনুমোদিত হয়েছে" if act == "approve" else "বাতিল হয়েছে"))
     return back("/admin/referrals")
 
 
-# ---------------------------------------------------------------- admin: manual commission
+# ---------------------------------------------------------------- admin: commission (rates, pool-backed manual commission, history)
+def _tok(name="idem", n=32):
+    return re.sub(r"\W", "", request.form.get(name, ""))[:n]
+
+
+@app.route("/admin/commission/rate", methods=["POST"])
+@staff_required("rates")
+def admin_comm_rate():
+    a = me()
+    scope = request.form.get("scope", "user")
+    op = request.form.get("op", "set")
+    reason = request.form.get("reason", "").strip()[:200]
+    tok = _tok()
+    back_to = request.form.get("back") if request.form.get("back", "").startswith("/admin/") else "/admin/commission"
+    try:
+        val = round(float(request.form.get("value", "") or 0), 3)
+    except ValueError:
+        val = -1
+    if scope not in ("user", "global", "max") or op not in ("set", "inc", "dec", "reset") or len(reason) < 3 or len(tok) < 6 or val != val or val < 0:
+        err("সঠিক মান, কারণ (কমপক্ষে ৩ অক্ষর) দিন।"); return redirect(back_to)
+    if scope in ("global", "max") and not has_perm("rates_global", a):
+        abort(403)
+    d, m = rate_cfg()
+    uid = request.form.get("uid", type=int)
+    x = None
+    if scope == "user":
+        x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (uid,)) if uid else None
+        if not x:
+            abort(404)
+        back_to = "/admin/users/%d" % x["id"] if back_to == "/admin/commission" else back_to
+        old = None if x["comm_rate"] is None else float(x["comm_rate"])
+        base = effective_rate(x)
+    elif scope == "global":
+        old, base = d, d
+    else:
+        old, base = m, m
+    if op == "reset":
+        if scope != "user":
+            err("রিসেট শুধু ইউজার-নির্দিষ্ট রেটের জন্য।"); return redirect(back_to)
+        new = None
+    else:
+        new = round({"set": val, "inc": base + val, "dec": base - val}[op], 3)
+        top = m if scope != "max" else COMM_RATE_CEILING
+        if new < 0 or new > top + 1e-9:
+            err("রেট ০%% থেকে %s%% এর মধ্যে হতে হবে (সর্বোচ্চ সীমা ১০%%)।" % ("%g" % top)); return redirect(back_to)
+        if scope == "global" and new > m:
+            err("গ্লোবাল রেট সর্বোচ্চ রেটের (%g%%) বেশি হতে পারে না।" % m); return redirect(back_to)
+        if scope == "max" and new < d:
+            err("সর্বোচ্চ রেট ডিফল্ট রেটের (%g%%) কম হতে পারে না — আগে ডিফল্ট কমান।" % d); return redirect(back_to)
+    try:
+        with atomic():
+            db().execute("INSERT INTO commission_rate_log(scope,user_id,old_rate,new_rate,reason,idem,actor,actor_id,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                         (scope, x["id"] if x else None, old, new, reason, "rate:" + tok, a["member_id"], a["id"], now()))
+            if scope == "user":
+                db().execute("UPDATE users SET comm_rate=? WHERE id=?", (new, x["id"]))
+                shown = effective_rate({"comm_rate": new}) if new is not None else d
+                notify(x["id"], "কমিশন রেট আপডেট", "আপনার কমিশন রেট এখন %g%%।" % shown, None,
+                       "Commission rate updated", "Your commission rate is now %g%%." % shown)
+            else:
+                db().execute("INSERT OR REPLACE INTO settings VALUES(?,?)", ("comm_rate_default" if scope == "global" else "comm_rate_max", "%g" % new))
+            audit("comm_rate", "scope=%s user=%s %s -> %s reason=%s" % (scope, x["id"] if x else "-", old, new, reason))
+    except INTEGRITY:
+        flash("এই পরিবর্তন আগেই হয়েছে (ডুপ্লিকেট সাবমিট)।"); return redirect(back_to)
+    flash("রেট আপডেট হয়েছে।")
+    return redirect(back_to)
+
+
 @app.route("/admin/commission", methods=["GET", "POST"])
-@staff_required("commissions")
+@staff_required("commissions", "rates")
 def admin_commission():
     a = me()
     if request.method == "POST":
+        if not has_perm("commissions", a):
+            abort(403)
+        op = request.form.get("op", "give")
         uid = request.form.get("uid", type=int)
         amt = parse_amount(request.form.get("amount"))
         reason = request.form.get("reason", "").strip()[:200]
-        token = re.sub(r"\W", "", request.form.get("idem", ""))[:32]
+        token = _tok()
         x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (uid,)) if uid else None
-        if not x or x["blocked"] or amt <= 0 or len(reason) < 3 or len(token) < 6:
-            err("ইউজার নির্বাচন করুন এবং সঠিক পরিমাণ ও কারণ (কমপক্ষে ৩ অক্ষর) দিন।"); return redirect("/admin/commission" + ("?uid=%d" % uid if uid else ""))
-        idem = "com:" + token
+        back_to = "/admin/commission" + ("?uid=%d" % uid if uid else "")
+        if op not in ("give", "reverse") or not x or (x["blocked"] and op == "give") or amt <= 0 or len(reason) < 3 or len(token) < 6:
+            err("ইউজার নির্বাচন করুন এবং সঠিক পরিমাণ ও কারণ (কমপক্ষে ৩ অক্ষর) দিন।"); return redirect(back_to)
         try:
             with atomic():
-                cur = db().execute("INSERT OR IGNORE INTO commissions(user_id,amount,reason,given_by_id,given_by,idem,created) VALUES(?,?,?,?,?,?,?)",
-                                   (x["id"], amt, reason, a["id"], "%s (%s)" % (a["name"], a["member_id"]), idem, now()))
-                if cur.rowcount == 0:
-                    flash("এই কমিশন আগেই দেওয়া হয়েছে (ডুপ্লিকেট সাবমিট)।")
+                if op == "give":
+                    idem = "com:" + token
+                    cur = db().execute("INSERT OR IGNORE INTO commissions(user_id,amount,reason,given_by_id,given_by,idem,created) VALUES(?,?,?,?,?,?,?)",
+                                       (x["id"], amt, reason, a["id"], "%s (%s)" % (a["name"], a["member_id"]), idem, now()))
+                    if cur.rowcount == 0:
+                        flash("এই কমিশন আগেই দেওয়া হয়েছে (ডুপ্লিকেট সাবমিট)।")
+                    else:
+                        pool_pay(x["id"], "commission", amt, idem, "commission", cur.lastrowid, reason, a["member_id"])
+                        notify(x["id"], "কমিশন", "৳%s কমিশন যুক্ত হয়েছে — %s" % (money(amt), reason), None,
+                               "Commission", "৳%s commission added — %s" % (money(amt), reason))
+                        audit("commission", "#%s ৳%s (from pool) %s" % (x["member_id"], money(amt), reason))
+                        flash("৳%s কমিশন #%s-কে দেওয়া হয়েছে (পুল থেকে)।" % (money(amt), x["member_id"]))
                 else:
-                    if not post(x["id"], "commission", amt, idem, "commission", cur.lastrowid, reason, a["member_id"]):
-                        raise LedgerError("duplicate credit")
-                    notify(x["id"], "কমিশন", "৳%s কমিশন যুক্ত হয়েছে — %s" % (money(amt), reason))
-                    audit("commission", "#%s ৳%s %s" % (x["member_id"], money(amt), reason))
-                    flash("৳%s কমিশন #%s-কে দেওয়া হয়েছে।" % (money(amt), x["member_id"]))
+                    if amt > float(x["commission"] or 0) + 0.004:
+                        raise PoolError("কাটার পরিমাণ ইউজারের মোট কমিশনের (৳%s) বেশি হতে পারে না।" % money(x["commission"]))
+                    idem = "comrev:" + token
+                    if pool_return(x["id"], amt, idem, "commission", None, reason, a["member_id"]):
+                        notify(x["id"], "কমিশন সমন্বয়", "৳%s কমিশন কাটা হয়েছে — %s" % (money(amt), reason), None,
+                               "Commission adjustment", "৳%s commission deducted — %s" % (money(amt), reason))
+                        audit("commission_reverse", "#%s ৳%s (back to pool) %s" % (x["member_id"], money(amt), reason))
+                        flash("৳%s কমিশন কাটা হয়েছে এবং পুলে ফেরত গেছে।" % money(amt))
+                    else:
+                        flash("এই অপারেশন আগেই হয়েছে।")
+        except PoolError as e:
+            err("ব্যর্থ, কিছুই পরিবর্তন হয়নি: " + str(e))
         except LedgerError as e:
-            err("ব্যর্থ: " + str(e))
-        return redirect("/admin/commission")
+            err("ব্যর্থ, কিছুই পরিবর্তন হয়নি: " + str(e))
+        return redirect(back_to)
     s = request.args.get("q", "").strip().lstrip("#")[:40]
     like = "%" + s + "%"
     found = qa("SELECT * FROM users WHERE is_admin=0 AND (member_id=? OR name LIKE ? OR phone LIKE ?) ORDER BY id LIMIT 10", (s, like, like)) if s else []
     uid = request.args.get("uid", type=int)
     sel = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (uid,)) if uid else None
-    hist = qa("SELECT c.*,u.member_id m,u.name n FROM commissions c JOIN users u ON u.id=c.user_id ORDER BY c.id DESC LIMIT 50")
-    return page("""<div class="card"><h2>ম্যানুয়াল কমিশন</h2><p class="k">শুধু সম্পন্ন কাজ/সার্ভিসের বিনিময়ে দিন। কারণ বাধ্যতামূলক এবং ব্যবহারকারী নোটিফিকেশন পাবেন।</p>
+    where, args = "l.kind IN ('commission','commission_reversal')", []
+    if sel:
+        where += " AND l.user_id=?"; args.append(sel["id"])
+    pg = make_pg(q1("SELECT COUNT(*) n FROM ledger l WHERE " + where, args)["n"], 30)
+    hist = qa("SELECT l.*,u.member_id m,u.name n,(SELECT 1 FROM pool_ledger p WHERE p.ledger_idem=l.idem) pooled FROM ledger l JOIN users u ON u.id=l.user_id "
+              "WHERE " + where + " ORDER BY l.id DESC LIMIT ? OFFSET ?", args + [30, pg["off"]])
+    d, m = rate_cfg()
+    custom = qa("SELECT id,member_id,name,comm_rate FROM users WHERE is_admin=0 AND comm_rate IS NOT NULL ORDER BY id LIMIT 30")
+    rlog = qa("SELECT * FROM commission_rate_log ORDER BY id DESC LIMIT 10")
+    bal, res = pool_balance(), pool_reserved()
+    return page("""<div class="g2"><div class="card"><div class="k">পুল ব্যালেন্স</div><div class="v">৳ {{money(bal)}}</div></div>
+<div class="card"><div class="k">কমিশন দেওয়ার জন্য উপলব্ধ</div><div class="v">৳ {{money(bal-res)}}</div><div class="k">(প্রতিশ্রুত ৳{{money(res)}} বাদে)</div></div></div>
+{% if can('pool_view') %}<a class="btn s" href="/admin/pool" style="width:100%;margin-bottom:10px">🏦 কমিশন পুল দেখুন / ফান্ড ইতিহাস</a>{% endif %}
+<div class="card"><h3>কমিশন রেট</h3><p class="k">গ্লোবাল (ডিফল্ট): <b>{{d}}%</b> · সর্বোচ্চ: <b>{{m}}%</b> (কোনোভাবেই ১০%-এর বেশি নয়)। ইউজারের নিজস্ব রেট থাকলে সেটাই প্রযোজ্য।</p>
+{% if can('rates_global') %}<form method="post" action="/admin/commission/rate" data-confirm="গ্লোবাল রেট বদলাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}1"><input type="hidden" name="scope" value="global">
+<select name="op"><option value="set">সেট করুন</option><option value="inc">বাড়ান (+)</option><option value="dec">কমান (−)</option></select>
+<input name="value" type="number" step="0.01" min="0" max="10" placeholder="% মান" required><input name="reason" placeholder="কারণ" required minlength="3" maxlength="200"><button style="width:100%">গ্লোবাল রেট আপডেট</button></form>
+<form method="post" action="/admin/commission/rate" data-confirm="সর্বোচ্চ রেট বদলাবেন?" style="margin-top:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}2"><input type="hidden" name="scope" value="max"><input type="hidden" name="op" value="set">
+<input name="value" type="number" step="0.01" min="0" max="10" placeholder="সর্বোচ্চ রেট %" required><input name="reason" placeholder="কারণ" required minlength="3" maxlength="200"><button class="s" style="width:100%">সর্বোচ্চ রেট আপডেট</button></form>{% endif %}
+{% if custom %}<h4>ইউজার-নির্দিষ্ট রেট</h4><div class="tw"><table>{% for c in custom %}<tr><td><a href="/admin/users/{{c['id']}}">#{{c['member_id']}} {{c['name']}}</a></td><td>{{'%g'|format(c['comm_rate'])}}%</td></tr>{% endfor %}</table></div>{% endif %}
+{% if rlog %}<h4>রেট পরিবর্তনের ইতিহাস</h4><div class="tw"><table><tr><th>স্কোপ</th><th>পুরনো</th><th>নতুন</th><th>কারণ</th><th>কে</th><th>সময়</th></tr>{% for r in rlog %}<tr><td>{{r['scope']}}{% if r['user_id'] %} #{{r['user_id']}}{% endif %}</td><td>{{r['old_rate'] if r['old_rate'] is not none else '-'}}</td><td>{{r['new_rate'] if r['new_rate'] is not none else 'গ্লোবাল'}}</td><td>{{r['reason']}}</td><td>{{r['actor']}}</td><td>{{r['created'][:16]}}</td></tr>{% endfor %}</table></div>{% endif %}</div>
+{% if can('commissions') %}<div class="card"><h2>ম্যানুয়াল কমিশন (পুল থেকে)</h2><p class="k">কমিশন সবসময় কমিশন পুল থেকে যায়; পুলে ফান্ড না থাকলে দেওয়া যায় না। কারণ বাধ্যতামূলক এবং ইউজার নোটিফিকেশন পাবেন।</p>
 <form><label>ইউজার খুঁজুন (মেম্বার আইডি / নাম / ফোন)</label><input name="q" value="{{s}}" required><button style="width:100%">খুঁজুন</button></form>
 {% for f in found %}<a href="?uid={{f['id']}}&q={{s|urlencode}}"><div class="card" style="margin:10px 0 0"><b>#{{f['member_id']}} {{f['name']}}</b> {% if f['blocked'] %}<span class="pill rejected">blocked</span>{% endif %}
-<div class="k">{{f['phone']}} · ৳ {{money(f['balance'])}}</div></div></a>{% endfor %}
+<div class="k">{{f['phone']}} · ৳ {{money(f['balance'])}} · কমিশন ৳{{money(f['commission'])}}</div></div></a>{% endfor %}
 {% if s and not found %}<div class="empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}</div>
-{% if sel %}<div class="card"><h3>প্রাপক: #{{sel['member_id']}} {{sel['name']}}</h3>
-{% if sel['blocked'] %}<div class="msg error">ইউজারটি ব্লকড — কমিশন দেওয়া যাবে না।</div>{% else %}
-<form method="post" data-confirm="লেজারে স্থায়ীভাবে রেকর্ড হবে। নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}"><input type="hidden" name="uid" value="{{sel['id']}}">
-<label>কমিশনের পরিমাণ (৳)</label><input name="amount" type="number" step="0.01" min="0.01" required><label>কারণ (আবশ্যক)</label><input name="reason" required minlength="3" maxlength="200">
-<button style="width:100%" class="g">কমিশন দিন</button></form>{% endif %}</div>{% endif %}
-<div class="card"><h3>কমিশন ইতিহাস</h3><div class="tw"><table><tr><th>ইউজার</th><th>৳</th><th>কারণ</th><th>কে দিয়েছেন</th><th>সময়</th></tr>
-{% for h in hist %}<tr><td>#{{h['m']}} {{h['n']}}</td><td>{{money(h['amount'])}}</td><td>{{h['reason']}}</td><td>{{h['given_by']}}</td><td>{{h['created'][:16]}}</td></tr>{% endfor %}</table></div></div>""",
-                active="/admin/commission", s=s, found=found, sel=sel, hist=hist, idem=secrets.token_hex(8))
+{% if sel %}<div class="card"><h3>প্রাপক: #{{sel['member_id']}} {{sel['name']}} <span class="k">(কমিশন মোট ৳{{money(sel['commission'])}})</span></h3>
+<form method="post" data-confirm="লেজারে স্থায়ীভাবে রেকর্ড হবে। নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}3"><input type="hidden" name="uid" value="{{sel['id']}}">
+<label>ধরন</label><select name="op"><option value="give">➕ কমিশন দিন (পুল থেকে)</option><option value="reverse">➖ কমিশন কাটুন (পুলে ফেরত)</option></select>
+<label>পরিমাণ (৳)</label><input name="amount" type="number" step="0.01" min="0.01" required><label>কারণ (আবশ্যক)</label><input name="reason" required minlength="3" maxlength="200">
+<button style="width:100%" class="g">সম্পন্ন করুন</button></form></div>{% endif %}{% endif %}
+<div class="card"><h3>কমিশন ইতিহাস{% if sel %} — #{{sel['member_id']}}{% endif %}</h3><div class="tw"><table><tr><th>ইউজার</th><th>৳</th><th>উৎস</th><th>কারণ</th><th>সময়</th></tr>
+{% for h in hist %}<tr><td>#{{h['m']}} {{h['n']}}</td><td>{{money(h['amount'])}}</td><td>{{'পুল' if h['pooled'] else 'পুল-পূর্ব'}}</td><td>{{h['note'] or ''}}</td><td>{{h['created'][:16]}}</td></tr>{% endfor %}</table></div></div>""" + PAGER,
+                active="/admin/commission", s=s, found=found, sel=sel, hist=hist, pg=pg, d=d, m=m, custom=custom, rlog=rlog,
+                bal=bal, res=res, idem=secrets.token_hex(8))
+
+
+# ---------------------------------------------------------------- admin: Commission Pool
+@app.route("/admin/pool")
+@staff_required("pool_view")
+def admin_pool():
+    kd = request.args.get("kind", "")
+    where, args = "1=1", []
+    if kd in ("fund", "payout", "reversal", "withdraw"):
+        where, args = "kind=?", [kd]
+    pg = make_pg(q1("SELECT COUNT(*) n FROM pool_ledger WHERE " + where, args)["n"], 30)
+    rows = qa("SELECT * FROM pool_ledger WHERE " + where + " ORDER BY id DESC LIMIT ? OFFSET ?", args + [30, pg["off"]])
+    t = q1("SELECT COALESCE(SUM(CASE WHEN kind='fund' THEN amount END),0) f, COALESCE(SUM(CASE WHEN kind='payout' THEN -amount END),0) p, "
+           "COALESCE(SUM(CASE WHEN kind='reversal' THEN amount END),0) r, COALESCE(SUM(CASE WHEN kind='withdraw' THEN -amount END),0) w FROM pool_ledger")
+    bal, res = pool_balance(), pool_reserved()
+    att = q1("SELECT * FROM pool_attestations ORDER BY id DESC LIMIT 1")
+    atts = qa("SELECT * FROM pool_attestations ORDER BY id DESC LIMIT 5")
+    ledger_sum = round(float(q1("SELECT COALESCE(SUM(amount),0) s FROM pool_ledger")["s"]), 2)
+    by_src = qa("SELECT source_type k, COALESCE(SUM(amount),0) s, COUNT(*) n FROM pool_ledger WHERE kind='fund' GROUP BY source_type ORDER BY s DESC")
+    by_use = qa("SELECT COALESCE(ref_type,'-') k, COALESCE(SUM(-amount),0) s, COUNT(*) n FROM pool_ledger WHERE kind='payout' GROUP BY ref_type ORDER BY s DESC")
+    return page("""<div class="g2"><div class="card"><div class="k">পুল ব্যালেন্স</div><div class="v">৳ {{money(bal)}}</div></div>
+<div class="card"><div class="k">উপলব্ধ (প্রতিশ্রুত বাদে)</div><div class="v">৳ {{money(bal-res)}}</div><div class="k">প্রতিশ্রুত: ৳{{money(res)}}</div></div>
+<div class="card"><div class="k">মোট যোগ হয়েছে</div><div class="v">৳ {{money(t['f'])}}</div></div>
+<div class="card"><div class="k">কমিশন/বোনাস দেওয়া হয়েছে</div><div class="v">৳ {{money(t['p'])}}</div><div class="k">ফেরত: ৳{{money(t['r'])}} · তোলা: ৳{{money(t['w'])}}</div></div></div>
+{% if ledger_sum != bal %}<div class="msg error">⚠ পুল ব্যালেন্স (৳{{money(bal)}}) এবং পুল-লেজারের যোগফল (৳{{money(ledger_sum)}}) মিলছে না! অডিট করুন।</div>{% endif %}
+<div class="card"><h3>বাস্তব ফান্ডের সঙ্গে মিলানো</h3><p class="k">পুলের টাকা বাস্তবে আলাদা অ্যাকাউন্টে (যেমন ব্যাংক/মোবাইল ওয়ালেট) থাকতে হবে এবং এখানকার ব্যালেন্সের সমান হতে হবে। নিয়মিত সেই অ্যাকাউন্টের আসল ব্যালেন্স এখানে রেকর্ড করুন।</p>
+{% if att %}<div class="{{'msg ok' if att['difference']|abs < 0.005 else 'msg error'}}">সর্বশেষ ({{att['created'][:16]}}): ঘোষিত ৳{{money(att['declared_balance'])}} — লেজার ৳{{money(att['ledger_balance'])}} — {% if att['difference']|abs < 0.005 %}✅ মিলেছে{% else %}⚠ পার্থক্য ৳{{money(att['difference'])}}{% endif %} ({{att['holding_account']}})</div>
+{% else %}<div class="k">এখনো কোনো মিলানো রেকর্ড নেই।</div>{% endif %}
+{% if can('pool_fund') %}<form method="post" action="/admin/pool/attest" data-confirm="স্থায়ীভাবে রেকর্ড হবে। নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}a">
+<label>আলাদা অ্যাকাউন্টে এখন আসল ব্যালেন্স (৳)</label><input name="declared" type="number" step="0.01" min="0" required>
+<label>কোন অ্যাকাউন্ট (নাম/শেষ ৪ ডিজিট)</label><input name="holding" required minlength="3" maxlength="80"><input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><button class="s" style="width:100%">মিলানো রেকর্ড করুন</button></form>{% endif %}
+{% for x in atts[1:] %}<div class="k">{{x['created'][:16]}} · ঘোষিত ৳{{money(x['declared_balance'])}} · পার্থক্য ৳{{money(x['difference'])}}</div>{% endfor %}</div>
+{% if can('pool_fund') %}<div class="card"><h3>➕ পুলে ফান্ড যোগ করুন (শুধু সুপার অ্যাডমিন)</h3><p class="k">শুধু বাস্তবে আলাদা রাখা প্রচারণা/ব্যবসায়িক ফান্ড যোগ করুন। উৎস, তারিখ ও রেফারেন্স স্থায়ীভাবে সংরক্ষিত হবে; একই রেফারেন্স দুবার ব্যবহার করা যায় না।</p>
+<form method="post" action="/admin/pool/fund" data-confirm="পুলে ফান্ড যোগ করবেন? এটি স্থায়ী রেকর্ড।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}f">
+<label>উৎস</label><select name="source">{% for k,l in sources.items() %}<option value="{{k}}">{{l}}</option>{% endfor %}</select>
+<label>পরিমাণ (৳)</label><input name="amount" type="number" step="0.01" min="0.01" required><label>তারিখ</label><input name="event_date" type="date" value="{{today}}" required>
+<label>ফান্ড যে অ্যাকাউন্টে আছে (নাম/শেষ ৪ ডিজিট)</label><input name="holding" required minlength="3" maxlength="80"><label>রেফারেন্স (ব্যাংক স্লিপ / TrxID / ভাউচার নং)</label><input name="reference" required minlength="4" maxlength="60">
+<input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><button class="g" style="width:100%">ফান্ড যোগ করুন</button></form></div>
+<div class="card"><h3>➖ পুল থেকে ফান্ড ফেরত নেওয়া / সংশোধন (সুপার অ্যাডমিন)</h3><p class="k">শুধু প্রতিশ্রুত কমিশনের বাইরের উপলব্ধ ফান্ড তোলা যায়।</p>
+<form method="post" action="/admin/pool/withdraw" data-confirm="পুল থেকে তুলবেন? স্থায়ী রেকর্ড।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{idem}}w">
+<input name="amount" type="number" step="0.01" min="0.01" placeholder="পরিমাণ ৳" required><input name="reason" placeholder="কারণ (কমপক্ষে ৫ অক্ষর)" required minlength="5" maxlength="200"><button class="r" style="width:100%">পুল থেকে বিয়োগ</button></form></div>{% endif %}
+<div class="card"><h3>ফান্ডের উৎস (এ পর্যন্ত)</h3>{% for r in by_src %}<div class="row" style="justify-content:space-between"><span>{{sources.get(r['k'], r['k'])}} <span class="k">({{r['n']}}টি)</span></span><b>৳{{money(r['s'])}}</b></div>{% endfor %}{% if not by_src %}<div class="k">এখনো কোনো ফান্ড যোগ হয়নি</div>{% endif %}
+<h3 style="margin-top:12px">কীভাবে খরচ হয়েছে</h3>{% for r in by_use %}<div class="row" style="justify-content:space-between"><span>{{use_label.get(r['k'], r['k'])}} <span class="k">({{r['n']}}টি)</span></span><b>৳{{money(r['s'])}}</b></div>{% endfor %}{% if not by_use %}<div class="k">এখনো কোনো প্রদান হয়নি</div>{% endif %}
+{% if can('reports') %}<a class="btn sm s" style="margin-top:8px" href="/admin/reports/pool?fmt=csv&detail=1&from=2000-01-01&to=2099-12-31">⬇ পুল ইতিহাস CSV</a> <a class="btn sm s" style="margin-top:8px" href="/admin/reconcile">🧮 মিলানো</a>{% endif %}</div>
+<div class="card"><h3>পুল লেজার</h3><div class="row" style="margin-bottom:8px">{% for k,l in [('', 'সব'),('fund','ফান্ড'),('payout','প্রদত্ত'),('reversal','ফেরত'),('withdraw','তোলা')] %}<a class="btn sm {{'' if k==kd else 's'}}" href="?kind={{k}}">{{l}}</a>{% endfor %}</div>
+<div class="tw"><table><tr><th>সময়</th><th>ধরন</th><th>৳</th><th>ব্যালেন্স</th><th>উৎস/রেফারেন্স</th><th>কে</th></tr>
+{% for r in rows %}<tr><td>{{r['created'][:16]}}</td><td>{{r['kind']}}</td><td>{{money(r['amount'])}}</td><td>{{money(r['balance_after'])}}</td>
+<td>{% if r['kind']=='fund' %}{{sources.get(r['source_type'], r['source_type'])}} · {{r['reference']}} · {{r['event_date']}} · {{r['holding_account']}}{% else %}{% if r['user_id'] %}<a href="/admin/users/{{r['user_id']}}">ইউজার #{{r['user_id']}}</a> {% endif %}{{r['note'] or ''}}{% endif %}</td><td>{{r['actor']}}</td></tr>{% endfor %}</table></div></div>""" + PAGER,
+                active="/admin/pool", rows=rows, t=t, bal=bal, res=res, att=att, atts=atts, ledger_sum=ledger_sum, sources=POOL_SOURCES, kd=kd, pg=pg, by_src=by_src, by_use=by_use, use_label=POOL_USE,
+                idem=secrets.token_hex(8), today=datetime.utcnow().strftime("%Y-%m-%d"))
+
+
+def _pool_form_common():
+    return _tok(), request.form.get("amount", "")
+
+
+@app.route("/admin/pool/fund", methods=["POST"])
+@staff_required("pool_fund")
+def admin_pool_fund():
+    a = me()
+    tok = _tok()
+    amt = parse_amount(request.form.get("amount"))
+    src = request.form.get("source", "")
+    holding = request.form.get("holding", "").strip()[:80]
+    ref = request.form.get("reference", "").strip()[:60]
+    nref = re.sub(r"[^A-Z0-9]", "", ref.upper())
+    ev = request.form.get("event_date", "").strip()
+    try:
+        evd = datetime.strptime(ev, "%Y-%m-%d")
+    except ValueError:
+        evd = None
+    if src not in POOL_SOURCES or amt <= 0 or amt > 100_000_000 or len(holding) < 3 or len(nref) < 4 or len(tok) < 6 or not evd \
+            or evd > datetime.utcnow() + timedelta(days=1):
+        err("উৎস, পরিমাণ, বৈধ তারিখ (ভবিষ্যতের নয়), অ্যাকাউন্ট ও কমপক্ষে ৪ অক্ষরের রেফারেন্স দিন।"); return redirect("/admin/pool")
+    try:
+        with atomic():
+            if _pool_apply("fund", amt, "poolfund:" + tok, ref_type="fund", note=request.form.get("note", "").strip()[:200], actor=a["member_id"],
+                           source_type=src, holding=holding, reference=ref, norm_ref=nref, event_date=ev):
+                audit("pool_fund", "৳%s src=%s ref=%s acct=%s date=%s" % (money(amt), src, ref, holding, ev))
+                flash("৳%s পুলে যোগ হয়েছে।" % money(amt))
+            else:
+                flash("এই ফান্ডিং আগেই রেকর্ড হয়েছে (ডুপ্লিকেট সাবমিট)।")
+    except INTEGRITY:
+        err("এই রেফারেন্স দিয়ে আগেই ফান্ড যোগ করা হয়েছে।")
+    except PoolError as e:
+        err(str(e))
+    return redirect("/admin/pool")
+
+
+@app.route("/admin/pool/withdraw", methods=["POST"])
+@staff_required("pool_fund")
+def admin_pool_withdraw():
+    a = me()
+    tok = _tok()
+    amt = parse_amount(request.form.get("amount"))
+    reason = request.form.get("reason", "").strip()[:200]
+    if amt <= 0 or len(reason) < 5 or len(tok) < 6:
+        err("পরিমাণ ও কারণ (কমপক্ষে ৫ অক্ষর) দিন।"); return redirect("/admin/pool")
+    try:
+        with atomic():
+            if pool_available() + 0.004 < amt:
+                raise PoolError("উপলব্ধ ফান্ড (প্রতিশ্রুত কমিশন বাদে) ৳%s, কিন্তু চাওয়া ৳%s।" % (money(max(pool_available(), 0)), money(amt)))
+            if _pool_apply("withdraw", -amt, "poolwd:" + tok, ref_type="withdraw", note=reason, actor=a["member_id"]):
+                audit("pool_withdraw", "৳%s %s" % (money(amt), reason))
+                flash("পুল থেকে ৳%s বিয়োগ হয়েছে।" % money(amt))
+            else:
+                flash("এই অপারেশন আগেই হয়েছে।")
+    except PoolError as e:
+        err("ব্যর্থ, কিছুই পরিবর্তন হয়নি: " + str(e))
+    return redirect("/admin/pool")
+
+
+@app.route("/admin/pool/attest", methods=["POST"])
+@staff_required("pool_fund")
+def admin_pool_attest():
+    a = me()
+    tok = _tok()
+    try:
+        declared = round(float(request.form.get("declared", "")), 2)
+    except ValueError:
+        declared = -1
+    holding = request.form.get("holding", "").strip()[:80]
+    if declared < 0 or declared != declared or len(holding) < 3 or len(tok) < 6:
+        err("আসল ব্যালেন্স ও অ্যাকাউন্টের নাম দিন।"); return redirect("/admin/pool")
+    try:
+        with atomic():
+            led = pool_balance()
+            db().execute("INSERT INTO pool_attestations(declared_balance,ledger_balance,difference,holding_account,note,idem,actor,actor_id,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                         (declared, led, round(declared - led, 2), holding, request.form.get("note", "").strip()[:200], "att:" + tok, a["member_id"], a["id"], now()))
+            audit("pool_attest", "declared ৳%s ledger ৳%s acct=%s" % (money(declared), money(led), holding))
+    except INTEGRITY:
+        flash("আগেই রেকর্ড হয়েছে।"); return redirect("/admin/pool")
+    flash("মিলানো রেকর্ড হয়েছে।")
+    return redirect("/admin/pool")
+
+
+# ---------------------------------------------------------------- client decision for client_confirm requests
+@app.route("/requests/<int:i>/decide", methods=["POST"])
+@customer_required
+def request_decide(i):
+    u = me()
+    act = request.form.get("act", "")
+    if act not in ("approve", "reject"):
+        abort(400)
+    expire_requests()
+    back_to = "/requests/%d" % i
+    alert = None
+    try:
+        with atomic():
+            r = q1("SELECT * FROM requests WHERE id=? AND user_id=?", (i, u["id"]))
+            if not r or r["flow"] != "client_confirm":
+                abort(404)
+            if r["status"] != "pending":
+                raise ReqError("এই অনুরোধে এখন আর সিদ্ধান্ত নেওয়া যাবে না (হয়তো আগেই সম্পন্ন, বাতিল বা মেয়াদোত্তীর্ণ)।")
+            t = now()
+            if r["expires_at"] and r["expires_at"] <= t:
+                raise ReqError("অনুরোধটির মেয়াদ শেষ হয়েছে।")
+            cu = q1("SELECT blocked FROM users WHERE id=?", (u["id"],))
+            if not cu or cu["blocked"]:
+                raise ReqError("আপনার অ্যাকাউন্ট সক্রিয় নয়।")
+            new = "approved" if act == "approve" else "rejected"
+            cur = db().execute("UPDATE requests SET status=?, updated=?, decided_by_id=?, decided_by=?, decided_at=?, client_decided_at=? "
+                               "WHERE id=? AND user_id=? AND status='pending'", (new, t, u["id"], u["member_id"], t, t, i, u["id"]))
+            if cur.rowcount != 1:
+                raise ReqError("এই অনুরোধ আগেই প্রক্রিয়া হয়েছে।")
+            if act == "approve":
+                principal, com = round(float(r["amount"]), 2), round(float(r["commission"] or 0), 2)
+                if not post(u["id"], "request_payment", -principal, "req:%d:principal" % i, "request", i, "Order %s payment" % r["order_id"], u["member_id"]):
+                    raise ReqError("এই অনুরোধের লেজার এন্ট্রি আগেই আছে।")
+                company_post("client_payment", principal, "req:%d:receipt" % i, u["id"], "request", i, "Order %s" % r["order_id"], u["member_id"])
+                if com > 0:
+                    pool_pay(u["id"], "commission", com, "req:%d:commission" % i, "request", i, "Order %s commission" % r["order_id"], u["member_id"], own_req=i)
+            req_log(i, "client_" + act, "pending", new, u["member_id"], u["id"], "")
+            audit("req_client_" + act, "req#%d order=%s ৳%s commission ৳%s user#%d" % (i, r["order_id"], r["amount"], r["commission"] or 0, u["id"]), actor=u)
+            net = (-principal + com) if act == "approve" else 0
+            alert = ("ক্লায়েন্ট অনুরোধ " + ("অনুমোদন করেছে" if act == "approve" else "বাতিল করেছে"), "#%s Order %s (৳%s)" % (u["member_id"], r["order_id"], money(r["amount"])))
+    except ReqError as ex:
+        err(str(ex)); return redirect(back_to)
+    except LedgerError:
+        err("আপনার ব্যালেন্স অপর্যাপ্ত — কিছুই কাটা হয়নি।"); return redirect(back_to)
+    except PoolError:
+        err("কমিশন দেওয়ার ফান্ড এই মুহূর্তে উপলব্ধ নয় — কিছুই কাটা হয়নি। অ্যাডমিনকে জানানো হয়েছে।")
+        alert_admins("পুলে ফান্ড কম", "Order %s অনুমোদন আটকেছে" % r["order_id"], "/admin/pool", "pool_view")
+        return redirect(back_to)
+    if alert:
+        alert_admins(alert[0], alert[1], "/admin/requests/%d" % i, "requests")
+    flash("অনুমোদন সম্পন্ন। ওয়ালেট পরিবর্তন: ৳%s" % money(net) if act == "approve" else "অনুরোধ বাতিল করা হয়েছে।")
+    return redirect(back_to)
+
 
 
 # ---------------------------------------------------------------- admin: staff management (Super Admin only)
@@ -2237,7 +2779,7 @@ def admin_notices():
     rows = qa("SELECT * FROM notifications WHERE user_id IS NULL ORDER BY id DESC LIMIT 20")
     return page("""<div class="card"><h2>নোটিশ প্রকাশ</h2><form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>শিরোনাম</label><input name="title" required maxlength="100">
 <label>বিস্তারিত</label><textarea name="body" rows="3" maxlength="500"></textarea><button style="width:100%">প্রকাশ করুন</button></form></div>
-{% for n in rows %}<div class="card"><b>{{n['title']}}</b><div>{{n['body']}}</div><div class="k">{{n['created'][:16]}}</div></div>{% endfor %}""", active="/admin/notices", rows=rows)
+{% for n in rows %}<div class="card"><b>{{(n['title_en'] if lang=='en' and n['title_en'] else n['title'])}}</b><div>{{(n['body_en'] if lang=='en' and n['body_en'] else n['body'])}}</div><div class="k">{{n['created'][:16]}}</div></div>{% endfor %}""", active="/admin/notices", rows=rows)
 
 
 @app.route("/admin/tickets", methods=["GET", "POST"])
@@ -2659,6 +3201,172 @@ def admin_payment_numbers():
                 active="/admin/payment-numbers", rows=rows, logs=logs, q=q, m=m, t=t, tl=ACCT_LABEL, methods=METHODS, types=ACCT_TYPES)
 
 
+# ---------------------------------------------------------------- Phase 2B: commission rates, Commission Pool, admin-initiated flows
+from decimal import Decimal, ROUND_HALF_UP
+
+COMM_RATE_CEILING = 10.0  # business rule: the commission rate can never exceed 10%
+POOL_SOURCES = {"promo_budget": "প্রচারণা বাজেট (Promotional Budget)", "business_capital": "ব্যবসার পুঁজি (Business Capital)",
+                "merchant_fee": "মার্চেন্ট ফি", "service_revenue": "সার্ভিস আয়"}
+FLOW_LABEL = {"client_confirm": "ডিপোজিট রিকোয়েস্ট", "admin_review": "উইথড্র/পেমেন্ট রিকোয়েস্ট"}
+OPEN_REQ = ("pending", "submitted", "review")
+
+
+class PoolError(Exception):
+    pass
+
+
+def req_label(r):
+    try:
+        f = r["flow"]
+    except (KeyError, IndexError):
+        f = None
+    if f in FLOW_LABEL:
+        return FLOW_LABEL[f]
+    return REQ_KIND.get(r["kind"], r["kind"])
+
+
+def rate_cfg():
+    """(default %, max %). The max can never exceed COMM_RATE_CEILING (10%)."""
+    try:
+        m = float(setting("comm_rate_max", "10"))
+    except ValueError:
+        m = COMM_RATE_CEILING
+    try:
+        d = float(setting("comm_rate_default", "5"))
+    except ValueError:
+        d = 5.0
+    m = min(max(m, 0.0), COMM_RATE_CEILING)
+    return min(max(d, 0.0), m), m
+
+
+def effective_rate(u):
+    d, m = rate_cfg()
+    try:
+        r = u["comm_rate"] if u is not None else None
+    except (KeyError, IndexError):
+        r = None
+    r = d if r is None else float(r)
+    return round(min(max(r, 0.0), m), 3)
+
+
+@app.template_filter("pct")
+def _pct(r):
+    """5.0 -> '5', 7.5 -> '7.5' (no trailing zeros)."""
+    t = ("%.3f" % float(r or 0)).rstrip("0").rstrip(".")
+    return t or "0"
+
+
+def commission_for(amount, rate):
+    """Exact decimal math, half-up to 2 places (e.g. 333 x 5% = 16.65)."""
+    return float((Decimal(str(amount)) * Decimal(str(rate)) / Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def pool_balance():
+    r = q1("SELECT balance FROM pool_account WHERE id=1")
+    return round(float(r["balance"]), 2) if r else 0.0
+
+
+def pool_reserved(exclude=None):
+    """Commission already promised in open admin-initiated requests (must stay fundable)."""
+    sql = "SELECT COALESCE(SUM(commission),0) s FROM requests WHERE flow IN ('client_confirm','admin_review') AND status IN ('pending','submitted','review')"
+    a = ()
+    if exclude:
+        sql += " AND id<>?"; a = (exclude,)
+    return round(float(q1(sql, a)["s"]), 2)
+
+
+def pool_available(exclude=None):
+    return round(pool_balance() - pool_reserved(exclude), 2)
+
+
+def _pool_apply(kind, amount, idem, user_id=None, ref_type=None, ref_id=None, ledger_idem=None, note="", actor=None,
+                source_type=None, holding=None, reference=None, norm_ref=None, event_date=None):
+    """The ONLY writer of pool_account/pool_ledger. Caller holds atomic(). Never lets the pool go below zero
+    (checked here AND by CHECK(balance>=0) in the database). Returns False for a duplicate idempotency key."""
+    amount = round(float(amount), 2)
+    if not amount:
+        raise PoolError("amount is zero")
+    if q1("SELECT 1 FROM pool_ledger WHERE idem=?", (idem,)):
+        return False
+    n = "CAST(? AS NUMERIC)" if PG else "?"
+    cur = db().execute("UPDATE pool_account SET balance=round(balance+%s,2), updated=? WHERE id=1 AND round(balance+%s,2)>=0" % (n, n),
+                       (amount, now(), amount))
+    if cur.rowcount != 1:
+        raise PoolError("কমিশন পুলে পর্যাপ্ত ফান্ড নেই (উপলব্ধ ৳%s)" % money(pool_balance()))
+    a = actor if isinstance(actor, str) or actor is None else actor
+    who = a if isinstance(a, str) else (a["member_id"] if a else "system")
+    db().execute("INSERT INTO pool_ledger(kind,amount,source_type,holding_account,reference,norm_ref,event_date,user_id,ref_type,ref_id,"
+                 "ledger_idem,idem,balance_after,note,actor,created) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 (kind, amount, source_type, holding, reference, norm_ref, event_date, user_id, ref_type, ref_id, ledger_idem, idem,
+                  pool_balance(), (note or "")[:300], who, now()))
+    return True
+
+
+def pool_pay(user_id, ledger_kind, amount, idem, ref_type, ref_id, note, actor, own_req=None):
+    """Atomic: pool -amount AND user +amount (one transaction). Fails -> nothing changes. Never uses unbacked money."""
+    amount = round(float(amount), 2)
+    if amount <= 0:
+        raise PoolError("invalid amount")
+    if q1("SELECT 1 FROM pool_ledger WHERE idem=?", ("pool:" + idem,)):
+        return False
+    avail = pool_available(exclude=own_req)
+    if avail + 0.004 < amount:
+        raise PoolError("কমিশন পুলে পর্যাপ্ত ফান্ড নেই (উপলব্ধ ৳%s, দরকার ৳%s)" % (money(max(avail, 0)), money(amount)))
+    _pool_apply("payout", -amount, "pool:" + idem, user_id, ref_type, ref_id, idem, note, actor)
+    if not post(user_id, ledger_kind, amount, idem, ref_type, ref_id, note, actor if isinstance(actor, str) else (actor["member_id"] if actor else "system")):
+        raise PoolError("duplicate ledger entry")
+    return True
+
+
+def pool_return(user_id, amount, idem, ref_type, ref_id, note, actor):
+    """Commission reversal: user -amount (cannot go negative) AND pool +amount."""
+    amount = round(float(amount), 2)
+    if amount <= 0:
+        raise PoolError("invalid amount")
+    if q1("SELECT 1 FROM pool_ledger WHERE idem=?", ("pool:" + idem,)):
+        return False
+    if not post(user_id, "commission_reversal", -amount, idem, ref_type, ref_id, note, actor):
+        raise PoolError("duplicate ledger entry")
+    _pool_apply("reversal", amount, "pool:" + idem, user_id, ref_type, ref_id, idem, note, actor)
+    return True
+
+
+def company_post(kind, amount, idem, user_id, ref_type, ref_id, note, actor):
+    """Counter-entry (other side) of a client payment: principal received by the company. Idempotent, immutable."""
+    if q1("SELECT 1 FROM company_ledger WHERE idem=?", (idem,)):
+        return False
+    db().execute("INSERT INTO company_ledger(kind,amount,user_id,ref_type,ref_id,idem,note,actor,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                 (kind, round(float(amount), 2), user_id, ref_type, ref_id, idem, (note or "")[:300], actor, now()))
+    return True
+
+REQ_TYPES = {"client_confirm": ("withdraw", "client_confirm"), "admin_review": ("deposit", "admin_review"),
+             "deposit": ("deposit", None), "withdraw": ("withdraw", None)}
+
+
+def _confirm_view(r, u):
+    lang = cur_lang()
+    pur = (r["purpose_en"] if lang == "en" and r["purpose_en"] else r["purpose"]) or ""
+    principal, com = round(float(r["amount"]), 2), round(float(r["commission"] or 0), 2)
+    bal = round(float(u["balance"]), 2)
+    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">ডিপোজিট রিকোয়েস্ট</h2>
+<span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
+<div class="k" style="margin-top:10px">Order ID</div><div class="copybox">{{r['order_id']}}</div>
+<div class="k" style="margin-top:8px">উদ্দেশ্য (Purpose)</div><div class="hl" style="white-space:pre-line">{{pur}}</div>
+{% if r['instructions'] %}<div class="k" style="margin-top:8px">নির্দেশনা</div><div class="hl" style="white-space:pre-line">{{r['instructions']}}</div>{% endif %}
+<div class="tw" style="margin-top:10px"><table>
+<tr><td>মূল পরিমাণ (আপনার ওয়ালেট থেকে কাটা হবে)</td><td><b>− ৳ {{money(principal)}}</b></td></tr>
+<tr><td>কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%) — কোম্পানির প্রচারণা পুল থেকে যুক্ত হবে</td><td><b>+ ৳ {{money(com)}}</b></td></tr>
+<tr><td>নিট ওয়ালেট পরিবর্তন</td><td><b>− ৳ {{money(principal-com)}}</b></td></tr>
+<tr><td>বর্তমান ব্যালেন্স</td><td>৳ {{money(bal)}}</td></tr>
+<tr><td>অনুমোদনের পর ব্যালেন্স</td><td>৳ {{money(bal-principal+com)}}</td></tr></table></div>
+{% if r['expires_at'] and r['status']=='pending' %}<div class="k" style="margin-top:8px">⏳ মেয়াদ: {{r['expires_at'][:16]}} (UTC)</div>{% endif %}
+<div class="k" style="margin-top:8px">অনুমোদন করলে সঙ্গে সঙ্গে সম্পন্ন হবে; আর কোনো অ্যাডমিন অনুমোদন লাগবে না। বাতিল করলে আপনার ব্যালেন্স অপরিবর্তিত থাকবে।</div></div>
+{% if r['status']=='pending' %}<div class="card">{% if bal < principal %}<div class="msg error">আপনার ব্যালেন্স এই অনুরোধের জন্য পর্যাপ্ত নয়।</div>{% endif %}
+<form method="post" action="/requests/{{r['id']}}/decide" data-confirm="উদ্দেশ্য, মূল পরিমাণ ও কমিশন দেখে নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<div class="row"><button name="act" value="approve" class="btn g" {{'disabled' if bal < principal}}>✅ অনুমোদন করুন</button><button name="act" value="reject" class="btn r">❌ বাতিল করুন</button></div></form></div>{% endif %}
+<a class="btn s" href="/requests" style="width:100%">← সব অনুরোধ</a>""", active="/requests", r=r, pur=pur, principal=principal, com=com, bal=bal, labels=REQ_LABEL)
+
+
 # ---------------------------------------------------------------- manual requests (admin -> user)
 REQ_LABEL = {"pending": "অপেক্ষমাণ", "submitted": "জমা হয়েছে", "review": "যাচাইয়ে", "approved": "অনুমোদিত",
              "rejected": "রিজেক্ট", "expired": "মেয়াদোত্তীর্ণ", "cancelled": "বাতিল"}
@@ -2706,7 +3414,7 @@ def requests_list():
     return page("""<div class="card"><h2>অনুরোধ</h2><p class="k">অ্যাডমিনের পাঠানো ডিপোজিট/উইথড্র অনুরোধ এখানে দেখা যায়।</p></div>
 {% if not rows %}<div class="card empty">কোনো অনুরোধ নেই</div>{% endif %}
 {% for r in rows %}<a href="/requests/{{r['id']}}"><div class="card {{'new' if r['status']=='pending' else ''}}">
-<div class="row" style="align-items:center"><b>{{kinds[r['kind']]}} · ৳ {{money(r['amount'])}}</b><span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
+<div class="row" style="align-items:center"><b>{{rk(r)}} · ৳ {{money(r['amount'])}}</b><span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="k">Order: {{r['order_id']}} · {{r['method']}} · {{r['created'][:16]}}</div></div></a>{% endfor %}""",
                 active="/requests", rows=rows, kinds=REQ_KIND, labels=REQ_LABEL)
 
@@ -2719,6 +3427,10 @@ def request_view(i):
     r = q1("SELECT * FROM requests WHERE id=? AND user_id=?", (i, u["id"]))
     if not r:
         abort(404)
+    if r["flow"] == "client_confirm":
+        if request.method == "POST":
+            abort(400)  # decisions go through /requests/<id>/decide only
+        return _confirm_view(r, u)
     if request.method == "POST":
         back_to = "/requests/%d" % i
         if r["status"] != "pending":
@@ -2757,7 +3469,7 @@ def request_view(i):
                      "/admin/requests/%d" % i, "requests")
         alert_admins("ট্রানজেকশন স্ক্রিনশট আপলোড", "#%s Order %s" % (u["member_id"], r["order_id"]), "/admin/requests/%d" % i, "requests")
         flash("জমা হয়েছে। অ্যাডমিন যাচাই করবেন।"); return redirect(back_to)
-    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{kinds[r['kind']]}} অনুরোধ</h2>
+    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}} অনুরোধ</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="k" style="margin-top:10px">Order ID</div><div class="copybox">{{r['order_id']}}</div>
 <div class="k">পরিমাণ</div><div class="v">৳ {{money(r['amount'])}}</div>
@@ -2766,6 +3478,7 @@ def request_view(i):
 <button type="button" class="btn sm" style="flex:0" data-copy="{{r['pay_number']}}">📋 কপি</button></div>
 {% if r['instructions'] %}<div class="k" style="margin-top:8px">নির্দেশনা</div><div class="hl">{{r['instructions']}}</div>{% endif %}
 {% if r['expires_at'] and r['status']=='pending' %}<div class="k" style="margin-top:8px">⏳ মেয়াদ: {{r['expires_at'][:16]}} (UTC)</div>{% endif %}
+{% if r['flow']=='admin_review' and r['commission'] %}<div class="hl" style="margin-top:8px">🎁 কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%): ৳{{money(r['commission'])}} — কোম্পানির প্রচারণা পুল থেকে। অনুমোদনের পর মোট ৳{{money(r['amount']+r['commission'])}} ওয়ালেটে যুক্ত হবে (মূল ৳{{money(r['amount'])}} + কমিশন ৳{{money(r['commission'])}})।</div>{% endif %}
 <div class="k" style="margin-top:8px">{% if r['kind']=='deposit' %}অ্যাডমিন অনুমোদন করলে ৳{{money(r['amount'])}} আপনার ওয়ালেটে যুক্ত হবে।
 {% else %}অ্যাডমিন অনুমোদন করলে ৳{{money(r['amount'])}} আপনার ওয়ালেট থেকে কাটা হবে।{% endif %} জমা দিলে ব্যালেন্স নিজে থেকে বদলায় না।</div></div>
 {% if r['status']=='pending' %}<div class="card"><h3>পেমেন্টের তথ্য জমা দিন</h3>
@@ -2796,29 +3509,55 @@ def admin_request_new():
         if not x or x["blocked"]:
             err("সঠিক (ব্লক নয় এমন) ইউজার নির্বাচন করুন।"); return redirect("/admin/requests/new")
         back_to = "/admin/requests/new?uid=%d" % uid
-        kind, method = request.form.get("kind"), request.form.get("method")
+        rtype = request.form.get("type") or request.form.get("kind") or ""
+        if rtype not in REQ_TYPES:
+            err("অনুরোধের ধরন বাছাই করুন।"); return redirect(back_to)
+        kind, flow = REQ_TYPES[rtype]
+        method = request.form.get("method", "")
         order = re.sub(r"[^A-Z0-9_-]", "", request.form.get("order_id", "").upper())[:32]
         amt = parse_amount(request.form.get("amount"))
         num = request.form.get("number", "").strip()
         ins = request.form.get("instructions", "").strip()[:500]
+        purpose = request.form.get("purpose", "").strip()[:300]
+        purpose_en = request.form.get("purpose_en", "").strip()[:300]
         hrs_raw = request.form.get("hours", "").strip() or "0"
-        if kind not in REQ_KIND or method not in METHODS or len(order) < 4 or amt <= 0 or not PHONE_RE.fullmatch(num) \
-                or not re.fullmatch(r"\d{1,3}", hrs_raw) or int(hrs_raw) > 720:
-            err("ধরন, ৪+ অক্ষরের Order ID (A-Z, 0-9, -, _), সঠিক পরিমাণ, মাধ্যম, ১১ ডিজিটের নম্বর ও ০–৭২০ ঘণ্টার মেয়াদ দিন।")
+        if flow == "client_confirm":
+            method, num = "Wallet", "-"
+        bad = len(order) < 4 or amt <= 0 or amt > 100_000_000 or not re.fullmatch(r"\d{1,3}", hrs_raw) or int(hrs_raw) > 720
+        if flow != "client_confirm" and (method not in METHODS or not PHONE_RE.fullmatch(num)):
+            bad = True
+        if flow == "client_confirm" and len(purpose) < 5:
+            err("উদ্দেশ্য (Purpose) লিখুন — ক্লায়েন্টকে অনুমোদনের আগে এটি দেখানো হবে।"); return redirect(back_to)
+        if bad:
+            err("ধরন, ৪+ অক্ষরের Order ID (A-Z, 0-9, -, _), সঠিক পরিমাণ, মাধ্যম, ১১ ডিজিটের নম্বর (ক্লায়েন্ট-কনফার্ম ছাড়া) ও ০–৭২০ ঘণ্টার মেয়াদ দিন।")
             return redirect(back_to)
         hrs = int(hrs_raw)
         exp = (datetime.utcnow() + timedelta(hours=hrs)).strftime("%Y-%m-%d %H:%M:%S") if hrs else None
+        rate = effective_rate(x) if flow else None
+        com = commission_for(amt, rate) if flow else None
         if rate_hit("rqc:%d" % a["id"], 60, 3600):
             err("অনেক রিকোয়েস্ট হয়েছে।"); return redirect(back_to)
         try:
             with atomic():
+                if flow == "client_confirm" and float(q1("SELECT balance FROM users WHERE id=?", (x["id"],))["balance"]) + 1e-9 < amt:
+                    raise ReqError("ইউজারের বর্তমান ব্যালেন্স অনুরোধের পরিমাণের চেয়ে কম।")
+                if flow and com > 0 and pool_available() + 0.004 < com:
+                    raise PoolError("কমিশন পুলে পর্যাপ্ত ফান্ড নেই (উপলব্ধ ৳%s, দরকার ৳%s)। আগে পুলে ফান্ড যোগ করুন।" % (money(max(pool_available(), 0)), money(com)))
                 cur = db().execute("INSERT INTO requests(order_id,user_id,kind,amount,method,pay_number,instructions,expires_at,status,"
-                                   "created_by_id,created_by,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                   (order, x["id"], kind, amt, method, num, ins, exp, "pending", a["id"], a["member_id"], now(), now()))
+                                   "created_by_id,created_by,created,updated,flow,commission,commission_rate,purpose,purpose_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                   (order, x["id"], kind, amt, method, num, ins, exp, "pending", a["id"], a["member_id"], now(), now(),
+                                    flow, com, rate, purpose or None, purpose_en or None))
                 rid = cur.lastrowid
-                req_log(rid, "create", None, "pending", a["member_id"], a["id"], "%s ৳%s %s" % (kind, amt, method))
-                notify(x["id"], "নতুন অনুরোধ", "%s অনুরোধ — ৳%s (%s)। Order: %s" % (REQ_KIND[kind], money(amt), method, order), "/requests/%d" % rid)
-                audit("req_create", "req#%d order=%s %s ৳%s user#%d admin_id=%d" % (rid, order, kind, amt, x["id"], a["id"]))
+                req_log(rid, "create", None, "pending", a["member_id"], a["id"], "%s/%s ৳%s commission ৳%s" % (kind, flow or "-", amt, com or 0))
+                if flow == "client_confirm":
+                    notify(x["id"], "নতুন ডিপোজিট রিকোয়েস্ট", "৳%s কাটা হবে, কমিশন ৳%s। উদ্দেশ্য: %s। Order: %s" % (money(amt), money(com), purpose, order), "/requests/%d" % rid,
+                           "New deposit request", "৳%s will be deducted, commission ৳%s. Purpose: %s. Order: %s" % (money(amt), money(com), purpose_en or purpose, order))
+                else:
+                    notify(x["id"], "নতুন অনুরোধ", "%s অনুরোধ — ৳%s (%s)%s। Order: %s" % (REQ_KIND[kind], money(amt), method, (" + কমিশন ৳%s" % money(com)) if com else "", order),
+                           "/requests/%d" % rid)
+                audit("req_create", "req#%d order=%s %s/%s ৳%s commission ৳%s user#%d admin_id=%d" % (rid, order, kind, flow or "-", amt, com or 0, x["id"], a["id"]))
+        except (ReqError, PoolError) as ex:
+            err(str(ex)); return redirect(back_to)
         except INTEGRITY:
             err("এই Order ID আগেই ব্যবহার করা হয়েছে।"); return redirect(back_to)
         flash("অনুরোধ পাঠানো হয়েছে।"); return redirect("/admin/requests/%d" % rid)
@@ -2838,15 +3577,18 @@ def admin_request_new():
 {% else %}<div class="card"><h2>নতুন অনুরোধ</h2><div class="k">ইউজার: <b>#{{x['member_id']}} {{x['name']}}</b> · {{x['phone']}} · ব্যালেন্স ৳ {{money(x['balance'])}}</div>
 <a class="k" href="/admin/requests/new">← অন্য ইউজার বাছাই</a>
 <form method="post" data-confirm="অনুরোধটি ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" value="{{x['id']}}">
-<label>ধরন</label><select name="kind"><option value="deposit">ডিপোজিট (ওয়ালেটে যোগ হবে)</option><option value="withdraw">উইথড্র (ওয়ালেট থেকে কাটা হবে)</option></select>
+<label>ধরন</label><select name="type"><option value="client_confirm">ডিপোজিট রিকোয়েস্ট — ক্লায়েন্ট নিজে কনফার্ম করবে (মূল টাকা ওয়ালেট থেকে কাটা + কমিশন পুল থেকে)</option><option value="admin_review">উইথড্র/পেমেন্ট রিকোয়েস্ট — ক্লায়েন্ট পেমেন্ট জমা দেবে, অ্যাডমিন যাচাই করবে (মূল টাকা + কমিশন ওয়ালেটে যোগ)</option><option value="deposit">সাধারণ ডিপোজিট (কমিশন ছাড়া)</option><option value="withdraw">সাধারণ উইথড্র (কমিশন ছাড়া)</option></select>
+<div class="k">এই ইউজারের কমিশন রেট: <b>{{rate|pct}}%</b> · পুলে উপলব্ধ ফান্ড: <b>৳{{money(avail)}}</b> (কমিশন শুধু পুল থেকে যায়)</div>
+<label>উদ্দেশ্য — বাংলা (ক্লায়েন্ট-কনফার্মে আবশ্যক; ক্লায়েন্টকে অনুমোদনের আগে দেখানো হবে)</label><textarea name="purpose" rows="2" maxlength="300"></textarea>
+<label>Purpose — English (optional)</label><textarea name="purpose_en" rows="2" maxlength="300"></textarea>
 <label>Order ID</label><input name="order_id" required maxlength="32" value="{{oid}}" autocapitalize="characters">
 <label>পরিমাণ (৳ BDT)</label><input name="amount" type="number" step="0.01" min="0.01" required>
 <label>পেমেন্ট মাধ্যম</label><select name="method">{% for m in methods %}<option>{{m}}</option>{% endfor %}</select>
-<label>পেমেন্ট নম্বর (১১ ডিজিট)</label><input name="number" inputmode="numeric" maxlength="11" required>
+<label>পেমেন্ট নম্বর (১১ ডিজিট; ক্লায়েন্ট-কনফার্মে লাগবে না)</label><input name="number" inputmode="numeric" maxlength="11">
 <label>নির্দেশনা (ঐচ্ছিক)</label><textarea name="instructions" rows="3" maxlength="500"></textarea>
 <label>মেয়াদ (ঘণ্টা, ঐচ্ছিক; ০ = মেয়াদ নেই)</label><input name="hours" type="number" min="0" max="720" value="{{dh}}">
 <button style="width:100%">📨 ইউজারকে পাঠান</button></form></div>{% endif %}""",
-                active="/admin/requests", x=x, q=q, found=found, methods=METHODS, dh=dh, oid="ORD" + secrets.token_hex(4).upper())
+                active="/admin/requests", x=x, q=q, found=found, methods=METHODS, dh=dh, oid="ORD" + secrets.token_hex(4).upper(), rate=effective_rate(x) if x else 0, avail=pool_available())
 
 
 @app.route("/admin/requests")
@@ -2876,7 +3618,7 @@ def admin_requests():
 <select name="kind"><option value="">ডিপোজিট + উইথড্র</option>{% for k,l in kinds.items() %}<option value="{{k}}" {{'selected' if kd==k}}>{{l}}</option>{% endfor %}</select>
 <button style="width:100%">ফিল্টার</button></form></div>
 {% if not rows %}<div class="card empty">কোনো রিকোয়েস্ট নেই</div>{% endif %}
-{% for r in rows %}<a href="/admin/requests/{{r['id']}}"><div class="card"><div class="row" style="align-items:center"><b>{{kinds[r['kind']]}} · ৳ {{money(r['amount'])}}</b>
+{% for r in rows %}<a href="/admin/requests/{{r['id']}}"><div class="card"><div class="row" style="align-items:center"><b>{{rk(r)}} · ৳ {{money(r['amount'])}}</b>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="k">Order {{r['order_id']}} · {{r['method']}} · #{{r['member_id']}} {{r['name']}}</div>
 <div class="k">{{r['created'][:16]}}{% if r['trx'] %} · TrxID: {{r['trx']}}{% endif %}{% if r['screenshot'] %} · 🖼{% endif %}</div></div></a>{% endfor %}""",
@@ -2891,11 +3633,14 @@ def admin_request_view(i):
     if not r:
         abort(404)
     log = qa("SELECT * FROM request_log WHERE request_id=? ORDER BY id", (i,))
-    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{kinds[r['kind']]}} · ৳ {{money(r['amount'])}}</h2>
+    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}} · ৳ {{money(r['amount'])}}</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="k" style="margin-top:8px">Order ID: <b>{{r['order_id']}}</b> · {{r['method']}} · {{r['pay_number']}}</div>
 <div class="k"><a href="/admin/users/{{r['user_id']}}">#{{r['member_id']}} {{r['name']}}</a> · {{r['phone']}} · ব্যালেন্স ৳ {{money(r['balance'])}}</div>
 <div class="k">তৈরি: {{r['created'][:16]}} ({{r['created_by']}}){% if r['expires_at'] %} · মেয়াদ: {{r['expires_at'][:16]}} UTC{% endif %}</div>
+{% if r['flow'] %}<div class="hl" style="margin-top:6px"><b>{{rk(r)}}</b> · মূল ৳{{money(r['amount'])}} · কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%) ৳{{money(r['commission'] or 0)}}{% if r['purpose'] %}<br>উদ্দেশ্য: {{r['purpose']}}{% endif %}{% if r['purpose_en'] %}<br>Purpose: {{r['purpose_en']}}{% endif %}<br>
+{% if r['flow']=='client_confirm' %}ক্লায়েন্টের সিদ্ধান্তের অপেক্ষা — অ্যাডমিন অ্যাপ্রুভ/রিজেক্ট করতে পারবে না (শুধু বাতিল)।{% else %}অ্যাপ্রুভ করলে ওয়ালেটে যোগ: ৳{{money(r['amount']+(r['commission'] or 0))}}{% endif %}</div>
+{% if r['flow']=='admin_review' and r['status'] in ('submitted','review') and (r['commission'] or 0) > pool_av %}<div class="msg error" style="margin-top:8px">⚠ কমিশন পুলে পর্যাপ্ত ফান্ড নেই — অ্যাপ্রুভ করা যাবে না (উপলব্ধ ৳{{money(pool_av)}}) — আগে পুলে ফান্ড যোগ করুন।</div>{% endif %}{% endif %}
 {% if r['instructions'] %}<div class="hl" style="margin-top:6px">{{r['instructions']}}</div>{% endif %}
 {% if r['trx'] %}<div style="margin-top:8px">TrxID: <b>{{r['trx']}}</b> <span class="k">(জমা: {{(r['submitted_at'] or '')[:16]}})</span></div>{% endif %}
 {% if r['screenshot'] %}<a href="/shot/{{r['screenshot']}}" target="_blank"><img class="shot" src="/shot/{{r['screenshot']}}" alt="screenshot"></a>{% endif %}
@@ -2908,7 +3653,7 @@ def admin_request_view(i):
 {% if r['status'] in ('submitted','review') %}<button name="act" value="approve" class="btn sm g">✅ অ্যাপ্রুভ</button><button name="act" value="reject" class="btn sm r">❌ রিজেক্ট</button>{% endif %}
 <button name="act" value="cancel" class="btn sm s">বাতিল করুন</button></div></form></div>{% endif %}
 <div class="card"><h3>ইতিহাস</h3><div class="tw"><table>{% for l in log %}<tr><td>{{l['created'][:16]}}</td><td>{{l['action']}}</td><td>{{l['from_status'] or '-'}} → {{l['to_status']}}</td><td>{{l['actor']}}</td><td>{{l['note'] or ''}}</td></tr>{% endfor %}</table></div></div>
-<a class="btn s" href="/admin/requests" style="width:100%">← সব রিকোয়েস্ট</a>""", active="/admin/requests", r=r, log=log, kinds=REQ_KIND, labels=REQ_LABEL)
+<a class="btn s" href="/admin/requests" style="width:100%">← সব রিকোয়েস্ট</a>""", active="/admin/requests", r=r, log=log, kinds=REQ_KIND, labels=REQ_LABEL, pool_av=pool_available(exclude=i))
 
 
 @app.route("/admin/requests/<int:i>/act", methods=["POST"])
@@ -2930,6 +3675,8 @@ def admin_request_act(i):
                 abort(404)
             if r["status"] not in REQ_ALLOWED[act]:
                 raise ReqError("এই অনুরোধে এখন এই কাজ সম্ভব নয় (হয়তো আগেই সম্পন্ন হয়েছে)।")
+            if r["flow"] == "client_confirm" and act in ("review", "approve", "reject"):
+                raise ReqError("এই অনুরোধ ক্লায়েন্টের সিদ্ধান্তের অপেক্ষায় — অ্যাডমিন অনুমোদন/রিজেক্ট করতে পারবে না (শুধু বাতিল করা যায়)।")
             new, t = REQ_NEW[act], now()
             if act == "review":
                 cur = db().execute("UPDATE requests SET status='review', updated=? WHERE id=? AND status='submitted'", (t, i))
@@ -2951,6 +3698,9 @@ def admin_request_act(i):
                           "req:%d:approve" % i, "request", i, "Order %s" % r["order_id"], a["member_id"])
                 if not ok:
                     raise ReqError("এই অনুরোধের লেজার এন্ট্রি আগেই আছে — অ্যাপ্রুভ বাতিল করা হয়েছে।")
+                if r["flow"] == "admin_review" and float(r["commission"] or 0) > 0:  # same transaction: principal + commission, or nothing
+                    pool_pay(r["user_id"], "commission", r["commission"], "req:%d:commission" % i, "request", i,
+                             "Order %s commission" % r["order_id"], a["member_id"], own_req=i)
             req_log(i, act, r["status"], new, a["member_id"], a["id"], reason)
             audit("req_" + act, "req#%d order=%s %s ৳%s user#%d trx=%s admin_id=%d at=%s" %
                   (i, r["order_id"], r["kind"], r["amount"], r["user_id"], r["norm_trx"] or "-", a["id"], t))
@@ -2959,13 +3709,406 @@ def admin_request_act(i):
                                 % money(r["amount"]) + " Order %s" % r["order_id"]),
                     "reject": ("অনুরোধ রিজেক্ট", "Order %s গৃহীত হয়নি। কারণ: %s" % (r["order_id"], reason)),
                     "cancel": ("অনুরোধ বাতিল", "Order %s বাতিল করা হয়েছে।%s" % (r["order_id"], (" কারণ: " + reason) if reason else ""))}
+            if act == "approve" and r["flow"] == "admin_review" and float(r["commission"] or 0) > 0:
+                msgs["approve"] = ("অনুরোধ অনুমোদিত", "৳%s + কমিশন ৳%s আপনার ওয়ালেটে যুক্ত হয়েছে। Order %s" % (money(r["amount"]), money(r["commission"]), r["order_id"]))
             notify(r["user_id"], msgs[act][0], msgs[act][1], "/requests/%d" % i)
     except ReqError as ex:
         err(str(ex)); return redirect(back_to)
+    except PoolError as ex:
+        err("কমিশন পুলে পর্যাপ্ত ফান্ড নেই — অ্যাপ্রুভ হয়নি, কিছুই পরিবর্তন হয়নি: %s" % ex); return redirect(back_to)
     except LedgerError as ex:
         err("লেজার ত্রুটি, কিছুই পরিবর্তন হয়নি: %s" % ex); return redirect(back_to)
     flash("সম্পন্ন: %s" % REQ_LABEL[new])
     return redirect(back_to)
+
+
+# ================================================================ Phase 2C: referral network, financial reports + CSV, reconciliation
+# Read-only on money: nothing here creates or moves funds (referral rewards are paid by the pool engine above).
+from flask import Response
+
+LK_LABEL = {"deposit": "ডিপোজিট", "request_deposit": "অনুরোধ-ডিপোজিট", "withdraw_hold": "উইথড্র (হোল্ড)", "withdraw_release": "উইথড্র ফেরত",
+            "request_withdraw": "অনুরোধ-উইথড্র", "request_payment": "ক্লায়েন্ট পেমেন্ট", "commission": "কমিশন", "commission_reversal": "কমিশন ফেরত",
+            "referral_bonus": "রেফারেল বোনাস", "admin_adjust": "ব্যালেন্স সমন্বয়"}
+REPORT_KINDS = {"deposits": "ডিপোজিট", "withdrawals": "উইথড্র", "commissions": "কমিশন", "referrals": "রেফারেল বোনাস",
+                "payments": "ক্লায়েন্ট পেমেন্ট", "pool": "পুল"}
+POOL_USE = {"request": "অ্যাডমিন-পাঠানো রিকোয়েস্টের কমিশন", "commission": "ম্যানুয়াল কমিশন", "referral": "রেফারেল বোনাস"}
+
+
+# ---- time: stored timestamps are UTC; reports bucket by local (Bangladesh, UTC+6 by default) days
+def rtz():
+    try:
+        h = float(setting("report_tz_hours", "6") or 6)
+    except ValueError:
+        h = 6.0
+    return max(-12.0, min(14.0, h))
+
+
+def _d(s):
+    if not s or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        return None
+    try:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def local_today():
+    return (datetime.utcnow() + timedelta(hours=rtz())).date()
+
+
+def report_range():
+    """-> (d1, d2, utc_from, utc_to_exclusive, error or None). Bad input falls back to 'this month' and reports the problem."""
+    t, e = local_today(), None
+    f, to = request.args.get("from", ""), request.args.get("to", "")
+    d1, d2 = _d(f), _d(to)
+    if (f and not d1) or (to and not d2):
+        e = "তারিখ YYYY-MM-DD আকারে দিন।"
+    d1, d2 = d1 or t.replace(day=1), d2 or t
+    if not e and d1 > d2:
+        e = "শুরুর তারিখ শেষ তারিখের পরে হতে পারে না।"
+    if not e and (d2 - d1).days > 366:
+        e = "সর্বোচ্চ ৩৬৬ দিনের রিপোর্ট নেওয়া যায়।"
+    if e:
+        d1, d2 = t.replace(day=1), t
+    off = timedelta(hours=rtz())
+    fmt = "%Y-%m-%d %H:%M:%S"
+    u1 = (datetime.combine(d1, datetime.min.time()) - off).strftime(fmt)
+    u2 = (datetime.combine(d2 + timedelta(days=1), datetime.min.time()) - off).strftime(fmt)
+    return d1, d2, u1, u2, e
+
+
+def _loc(ts):
+    try:
+        return (datetime.strptime(str(ts)[:19], "%Y-%m-%d %H:%M:%S") + timedelta(hours=rtz())).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return str(ts or "")[:16]
+
+
+def _bucket(ts, period):
+    return _loc(ts)[:7 if period == "monthly" else 10]
+
+
+def _r2(x):
+    return round(float(x or 0), 2)
+
+
+def _m(x):
+    return Decimal(str(_r2(x))).quantize(Decimal("0.01"))
+
+
+# ---- report rows (single source of truth for pages, CSV and tests). amount: deposits/withdrawals/payments/referrals positive
+def report_rows(kind, u1, u2, uid=None):
+    ua, uq = ((uid,), " AND {c}.user_id=?") if uid else ((), "")
+    out = []
+    if kind in ("deposits", "commissions", "referrals", "payments", "withdrawals"):
+        kinds = {"deposits": ("deposit", "request_deposit"), "commissions": ("commission", "commission_reversal"),
+                 "referrals": ("referral_bonus",), "payments": ("request_payment",), "withdrawals": ("request_withdraw",)}[kind]
+        ph = ",".join("?" * len(kinds))
+        for r in qa("SELECT l.id, l.created ts, l.amount, l.user_id, u.member_id, u.name, l.kind what, l.ref_type, l.ref_id, l.note, "
+                    "EXISTS(SELECT 1 FROM pool_ledger p WHERE p.ledger_idem=l.idem) funded FROM ledger l JOIN users u ON u.id=l.user_id "
+                    "WHERE l.kind IN (%s) AND l.created>=? AND l.created<?%s ORDER BY l.created, l.id" % (ph, uq.format(c="l")),
+                    kinds + (u1, u2) + ua):
+            a = float(r["amount"])
+            out.append(dict(ts=r["ts"], amount=a if kind in ("commissions", "deposits", "referrals") else abs(a), uid=r["user_id"], member=r["member_id"],
+                            name=r["name"], what=LK_LABEL.get(r["what"], r["what"]), ref="%s#%s" % (r["ref_type"] or "-", r["ref_id"] or "-"),
+                            note=r["note"] or "", funded=bool(r["funded"])))
+    if kind == "withdrawals":  # user-initiated withdrawals are counted when approved/paid (same rule as the dashboards)
+        for r in qa("SELECT t.id, t.updated ts, t.amount, t.user_id, u.member_id, u.name, t.method, t.note FROM tx t JOIN users u ON u.id=t.user_id "
+                    "WHERE t.kind='withdraw' AND t.status IN ('approved','paid') AND t.updated>=? AND t.updated<?%s ORDER BY t.updated, t.id" % uq.format(c="t"),
+                    (u1, u2) + ua):
+            out.append(dict(ts=r["ts"], amount=float(r["amount"]), uid=r["user_id"], member=r["member_id"], name=r["name"], what="উইথড্র",
+                            ref="tx#%s" % r["id"], note=r["method"] or "", funded=False))
+        out.sort(key=lambda d: d["ts"])
+    if kind == "pool":
+        for r in qa("SELECT p.*, u.member_id, u.name FROM pool_ledger p LEFT JOIN users u ON u.id=p.user_id WHERE p.created>=? AND p.created<? ORDER BY p.created, p.id", (u1, u2)):
+            out.append(dict(ts=r["created"], amount=float(r["amount"]), uid=r["user_id"], member=r["member_id"] or "", name=r["name"] or "",
+                            what=r["kind"], ref=r["reference"] or ("%s#%s" % (r["ref_type"] or "-", r["ref_id"] or "-")),
+                            note=((POOL_SOURCES.get(r["source_type"], r["source_type"]) + " · ") if r["source_type"] else "") + (r["note"] or ""), funded=True))
+    return out
+
+
+SUM_COLS = (("deposits", "ডিপোজিট"), ("withdrawals", "উইথড্র"), ("commissions", "কমিশন (নিট)"), ("referrals", "রেফারেল বোনাস"), ("payments", "ক্লায়েন্ট পেমেন্ট"))
+
+
+def summary_table(u1, u2, period):
+    data = {}
+    for col, _l in SUM_COLS:
+        for r in report_rows(col, u1, u2):
+            d = data.setdefault(_bucket(r["ts"], period), {c: [0.0, 0] for c, _ in SUM_COLS})
+            d[col][0] += r["amount"]; d[col][1] += 1
+    rows = [(b, {c: (_r2(v[0]), v[1]) for c, v in d.items()}) for b, d in sorted(data.items())]
+    tot = {c: (_r2(sum(d[c][0] for _, d in rows)), sum(d[c][1] for _, d in rows)) for c, _ in SUM_COLS}
+    return rows, tot
+
+
+def bucket_table(rows, period):
+    d = {}
+    for r in rows:
+        b = d.setdefault(_bucket(r["ts"], period), [0.0, 0]); b[0] += r["amount"]; b[1] += 1
+    return [(k, _r2(v[0]), v[1]) for k, v in sorted(d.items())]
+
+
+def _csv_cell(v):
+    return "'" + v if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r") else v  # spreadsheet formula-injection guard
+
+
+def csv_download(fname, header, rows, what):
+    buf = io.StringIO(); w = csv.writer(buf, lineterminator="\r\n"); w.writerow(header)
+    for r in rows:
+        w.writerow([_csv_cell(x) for x in r])
+    audit("report_export", "%s file=%s rows=%d" % (what, fname, len(rows)))
+    return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % fname, "Cache-Control": "no-store"})
+
+
+def _want_csv():
+    return request.args.get("fmt") == "csv"
+
+
+def _rtabs(d1, d2, period, cur):
+    qs = urlencode({"from": d1, "to": d2, "period": period})
+    tabs = [("summary", "সারাংশ", "/admin/reports?" + qs)] + [(k, l, "/admin/reports/%s?%s" % (k, qs)) for k, l in REPORT_KINDS.items()]
+    return tabs + [("wallets", "মোট ওয়ালেট", "/admin/reports/wallets")], cur
+
+
+REPORT_HEAD = """<div class="row" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">{% for k,l,u in rtabs %}<a class="btn sm {{'' if k==cur else 's'}}" href="{{u}}">{{l}}</a>{% endfor %}
+<a class="btn sm s" href="/admin/reconcile">🧮 মিলানো</a></div>
+{% if rerr %}<div class="msg error">{{rerr}}</div>{% endif %}
+{% if filt %}<form method="get" class="card"><div class="row"><div><label>থেকে</label><input type="date" name="from" value="{{d1}}"></div><div><label>পর্যন্ত</label><input type="date" name="to" value="{{d2}}"></div></div>
+<label>ভাগ</label><select name="period"><option value="daily" {{'selected' if period=='daily'}}>দৈনিক</option><option value="monthly" {{'selected' if period=='monthly'}}>মাসিক</option></select>
+<p class="k">সময় বাংলাদেশ সময় (UTC+{{tz}}) অনুযায়ী।</p><button style="width:100%">দেখান</button></form>{% endif %}"""
+
+
+@app.route("/admin/reports")
+@staff_required("reports")
+def admin_reports():
+    d1, d2, u1, u2, e = report_range()
+    if e and _want_csv():
+        abort(400)  # never export a file for a filter the person did not actually ask for
+    period = "monthly" if request.args.get("period") == "monthly" else "daily"
+    rows, tot = summary_table(u1, u2, period)
+    if _want_csv():
+        hdr = ["period"] + [x for c, l in SUM_COLS for x in (c + "_count", c + "_amount")]
+        body = [[b] + [x for c, _l in SUM_COLS for x in (d[c][1], _m(d[c][0]))] for b, d in rows]
+        body.append(["TOTAL"] + [x for c, _l in SUM_COLS for x in (tot[c][1], _m(tot[c][0]))])
+        return csv_download("summary_%s_%s_%s.csv" % (d1, d2, period), hdr, body, "summary")
+    tabs, cur = _rtabs(d1, d2, period, "summary")
+    return page(REPORT_HEAD + """<div class="g2">{% for c,l in cols %}<div class="card"><div class="k">{{l}}</div><div class="v">৳ {{money(tot[c][0])}}</div><div class="k">{{tot[c][1]}}টি</div></div>{% endfor %}</div>
+<div class="card"><h3>{{'মাসিক' if period=='monthly' else 'দৈনিক'}} সারাংশ ({{d1}} → {{d2}})</h3>
+<div class="tw"><table><tr><th>{{'মাস' if period=='monthly' else 'তারিখ'}}</th>{% for c,l in cols %}<th>{{l}}</th>{% endfor %}</tr>
+{% for b,d in rows %}<tr><td>{{b}}</td>{% for c,l in cols %}<td>{{money(d[c][0])}} <span class="k">({{d[c][1]}})</span></td>{% endfor %}</tr>{% endfor %}
+{% if not rows %}<tr><td colspan="6" class="k">এই সময়ে কোনো লেনদেন নেই</td></tr>{% endif %}
+<tr><th>মোট</th>{% for c,l in cols %}<th>{{money(tot[c][0])}}</th>{% endfor %}</tr></table></div>
+<a class="btn sm s" href="?from={{d1}}&to={{d2}}&period={{period}}&fmt=csv">⬇ CSV</a></div>
+<p class="k">কমিশন (নিট) = কমিশন − কমিশন ফেরত। ক্লায়েন্ট পেমেন্ট উইথড্র হিসেবে গণ্য হয় না।</p>""",
+                active="/admin/reports", rtabs=tabs, cur=cur, rerr=e, filt=True, d1=d1, d2=d2, period=period, tz=("%g" % rtz()), rows=rows, tot=tot, cols=SUM_COLS)
+
+
+@app.route("/admin/reports/<kind>")
+@staff_required("reports")
+def admin_report_kind(kind):
+    if kind not in REPORT_KINDS:
+        abort(404)
+    d1, d2, u1, u2, e = report_range()
+    if e and _want_csv():
+        abort(400)  # never export a file for a filter the person did not actually ask for
+    period = "monthly" if request.args.get("period") == "monthly" else "daily"
+    rows = report_rows(kind, u1, u2)
+    if _want_csv():
+        if request.args.get("detail") == "1":
+            return csv_download("%s_detail_%s_%s.csv" % (kind, d1, d2),
+                                ["time_local", "member_id", "name", "type", "amount", "reference", "pool_funded", "note"],
+                                [[_loc(r["ts"]), r["member"], r["name"], r["what"], _m(r["amount"]), r["ref"], "yes" if r["funded"] else "no", r["note"]] for r in rows],
+                                "detail:" + kind)
+        return csv_download("%s_%s_%s_%s.csv" % (kind, period, d1, d2), ["period", "count", "amount"],
+                            [[b, n, _m(a)] for b, a, n in bucket_table(rows, period)] + [["TOTAL", len(rows), _m(sum(r["amount"] for r in rows))]], "bucket:" + kind)
+    buckets = bucket_table(rows, period)
+    total = _r2(sum(r["amount"] for r in rows))
+    pg = make_pg(len(rows), 30)
+    show = list(reversed(rows))[pg["off"]:pg["off"] + 30]
+    tabs, cur = _rtabs(d1, d2, period, kind)
+    return page(REPORT_HEAD + """<div class="card"><h3>{{title}} — {{'মাসিক' if period=='monthly' else 'দৈনিক'}}</h3><div class="v">৳ {{money(total)}} <span class="k">({{n}}টি)</span></div>
+<div class="tw"><table><tr><th>{{'মাস' if period=='monthly' else 'তারিখ'}}</th><th>সংখ্যা</th><th>৳</th></tr>
+{% for b,a,c in buckets %}<tr><td>{{b}}</td><td>{{c}}</td><td>{{money(a)}}</td></tr>{% endfor %}{% if not buckets %}<tr><td colspan="3" class="k">এই সময়ে কোনো লেনদেন নেই</td></tr>{% endif %}</table></div>
+<a class="btn sm s" href="?from={{d1}}&to={{d2}}&period={{period}}&fmt=csv">⬇ সারাংশ CSV</a> <a class="btn sm s" href="?from={{d1}}&to={{d2}}&fmt=csv&detail=1">⬇ বিস্তারিত CSV</a></div>
+<div class="card"><h3>লেনদেনের তালিকা (নতুন আগে)</h3><div class="tw"><table><tr><th>সময়</th><th>ইউজার</th><th>ধরন</th><th>৳</th><th>রেফারেন্স</th></tr>
+{% for r in show %}<tr><td>{{loc(r['ts'])}}</td><td>{% if r['uid'] %}<a href="/admin/reports/user/{{r['uid']}}?from={{d1}}&to={{d2}}">#{{r['member']}}</a>{% endif %}</td><td>{{r['what']}}{% if kind in ('commissions','referrals') %} <span class="k">{{'পুল' if r['funded'] else 'পুল-পূর্ব'}}</span>{% endif %}</td><td>{{money(r['amount'])}}</td><td class="k">{{r['ref']}}</td></tr>{% endfor %}</table></div></div>""" + PAGER,
+                active="/admin/reports", rtabs=tabs, cur=cur, rerr=e, filt=True, d1=d1, d2=d2, period=period, tz=("%g" % rtz()), title=REPORT_KINDS[kind], kind=kind,
+                total=total, n=len(rows), buckets=buckets, show=show, pg=pg, loc=_loc)
+
+
+@app.route("/admin/reports/user/<int:i>")
+@staff_required("reports")
+def admin_report_user(i):
+    x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (i,))
+    if not x:
+        abort(404)
+    d1, d2, u1, u2, e = report_range()
+    if e and _want_csv():
+        abort(400)  # never export a file for a filter the person did not actually ask for
+    opening = _r2(q1("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE user_id=? AND created<?", (i, u1))["s"])
+    led = qa("SELECT * FROM ledger WHERE user_id=? AND created>=? AND created<? ORDER BY created, id", (i, u1, u2))
+    run, lines, sums = opening, [], {}
+    for r in led:
+        run = _r2(run + float(r["amount"]))
+        lines.append((r, run))
+        sums[r["kind"]] = _r2(sums.get(r["kind"], 0) + float(r["amount"]))
+    net = _r2(sum(sums.values()))
+    if _want_csv():
+        return csv_download("user_%s_%s_%s.csv" % (x["member_id"], d1, d2), ["time_local", "type", "amount", "balance_after", "reference", "note", "by"],
+                            [[_loc(r["created"]), r["kind"], _m(r["amount"]), _m(b), "%s#%s" % (r["ref_type"] or "-", r["ref_id"] or "-"), r["note"] or "", r["actor"] or ""] for r, b in lines],
+                            "user#%d" % i)
+    pg = make_pg(len(lines), 40)
+    tabs, cur = _rtabs(d1, d2, "daily", "")
+    return page(REPORT_HEAD + """<div class="card"><h2>#{{x['member_id']}} {{x['name']}}</h2><p class="k">📱 {{x['phone']}} · বর্তমান ব্যালেন্স ৳{{money(x['balance'])}} · মোট কমিশন ৳{{money(x['commission'])}} · <a href="/admin/users/{{x['id']}}">প্রোফাইল</a></p></div>
+<div class="g2"><div class="card"><div class="k">শুরুর ব্যালেন্স</div><div class="v">৳ {{money(opening)}}</div></div><div class="card"><div class="k">নিট পরিবর্তন</div><div class="v">৳ {{money(net)}}</div></div>
+<div class="card"><div class="k">শেষ ব্যালেন্স</div><div class="v">৳ {{money(opening+net)}}</div></div></div>
+<div class="card"><h3>ধরন অনুযায়ী</h3>{% for k,v in sums.items() %}<div class="row" style="justify-content:space-between"><span>{{lk.get(k,k)}}</span><b>{{money(v)}}</b></div>{% endfor %}{% if not sums %}<div class="k">এই সময়ে কোনো এন্ট্রি নেই</div>{% endif %}</div>
+<div class="card"><h3>স্টেটমেন্ট</h3><div class="tw"><table><tr><th>সময়</th><th>ধরন</th><th>৳</th><th>ব্যালেন্স</th><th>কারণ/রেফারেন্স</th></tr>
+{% for r,b in lines %}<tr><td>{{loc(r['created'])}}</td><td>{{lk.get(r['kind'],r['kind'])}}</td><td>{{money(r['amount'])}}</td><td>{{money(b)}}</td><td class="k">{{r['note'] or ''}}</td></tr>{% endfor %}</table></div>
+<a class="btn sm s" href="?from={{d1}}&to={{d2}}&fmt=csv">⬇ CSV</a></div>""" + PAGER,
+                active="/admin/reports", rtabs=tabs, cur=cur, rerr=e, filt=True, d1=d1, d2=d2, period="daily", tz=("%g" % rtz()), x=x, opening=opening, net=net, sums=sums,
+                lines=lines[pg["off"]:pg["off"] + 40], pg=pg, loc=_loc, lk=LK_LABEL)
+
+
+@app.route("/admin/reports/wallets")
+@staff_required("reports")
+def admin_report_wallets():
+    one = lambda sql, a=(): q1(sql, a)["s"]
+    t = dict(users=one("SELECT COUNT(*) s FROM users WHERE is_admin=0"), funded=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND balance>0"),
+             wallet=_r2(one("SELECT COALESCE(SUM(balance),0) s FROM users WHERE is_admin=0")), comm=_r2(one("SELECT COALESCE(SUM(commission),0) s FROM users WHERE is_admin=0")),
+             held=_r2(one("SELECT COALESCE(SUM(amount),0) s FROM tx WHERE kind='withdraw' AND status IN ('pending','processing')")), pool=pool_balance(), res=pool_reserved())
+    q = request.args.get("q", "").strip()[:40]
+    w, a = ("", [])
+    if q:
+        w, a = " AND (member_id LIKE ? OR name LIKE ? OR phone LIKE ?)", ["%%%s%%" % q] * 3
+    if _want_csv():
+        rows = qa("SELECT member_id,name,phone,balance,commission,blocked FROM users WHERE is_admin=0" + w + " ORDER BY id", a)
+        return csv_download("wallets_%s.csv" % local_today(), ["member_id", "name", "phone", "balance", "commission_total", "blocked"],
+                            [[r["member_id"], r["name"], r["phone"], _m(r["balance"]), _m(r["commission"]), "yes" if r["blocked"] else "no"] for r in rows] +
+                            [["TOTAL", "", "", _m(t["wallet"]), _m(t["comm"]), ""]], "wallets")
+    pg = make_pg(q1("SELECT COUNT(*) n FROM users WHERE is_admin=0" + w, a)["n"], 25)
+    rows = qa("SELECT id,member_id,name,phone,balance,commission,blocked FROM users WHERE is_admin=0" + w + " ORDER BY balance DESC, id LIMIT ? OFFSET ?", a + [25, pg["off"]])
+    tabs, cur = _rtabs(local_today(), local_today(), "daily", "wallets")
+    return page(REPORT_HEAD + """<div class="g2"><div class="card"><div class="k">মোট ওয়ালেট ব্যালেন্স (ক্লায়েন্টদের কাছে আমাদের দায়)</div><div class="v">৳ {{money(t.wallet)}}</div><div class="k">{{t.users}} ইউজার · ব্যালেন্সসহ {{t.funded}}</div></div>
+<div class="card"><div class="k">মোট কমিশন (জমা)</div><div class="v">৳ {{money(t.comm)}}</div></div>
+<div class="card"><div class="k">উইথড্রের জন্য আটকে আছে</div><div class="v">৳ {{money(t.held)}}</div></div>
+<div class="card"><div class="k">কমিশন পুল</div><div class="v">৳ {{money(t.pool)}}</div><div class="k">প্রতিশ্রুত ৳{{money(t.res)}}</div></div></div>
+<form method="get" class="card"><input name="q" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি"><button style="width:100%">খুঁজুন</button></form>
+<div class="card"><div class="tw"><table><tr><th>ইউজার</th><th>ব্যালেন্স</th><th>কমিশন</th></tr>{% for r in rows %}<tr><td><a href="/admin/reports/user/{{r['id']}}">#{{r['member_id']}} {{r['name']}}</a>{% if r['blocked'] %} 🔒{% endif %}</td><td>{{money(r['balance'])}}</td><td>{{money(r['commission'])}}</td></tr>{% endfor %}</table></div>
+<a class="btn sm s" href="?q={{q}}&fmt=csv">⬇ CSV</a></div>""" + PAGER,
+                active="/admin/reports", rtabs=tabs, cur=cur, rerr=None, filt=False, tz=("%g" % rtz()), t=t, q=q, rows=rows, pg=pg)
+
+
+# ---- reconciliation: every figure re-derived from the immutable ledgers
+def recon_checks():
+    c = []  # (level, title, detail)   level: ok | warn | fail
+    add = lambda lv, t, d="": c.append((lv, t, d))
+    n_users = q1("SELECT COUNT(*) n FROM users")["n"]
+    bad = reconcile()
+    add("fail" if bad else "ok", "ওয়ালেট ব্যালেন্স = ব্যবহারকারীর লেজারের যোগফল", ("%d জনের গরমিল: %s" % (len(bad), ", ".join("#" + b["member_id"] for b in bad[:5]))) if bad else "%d জন ইউজার মিলেছে" % n_users)
+    neg = q1("SELECT COUNT(*) n FROM users WHERE balance<-0.004")["n"]
+    add("fail" if neg else "ok", "কোনো ওয়ালেট ঋণাত্মক নয়", "%d জন ঋণাত্মক" % neg if neg else "")
+    cb = qa("SELECT u.member_id FROM users u LEFT JOIN ledger l ON l.user_id=u.id AND l.kind IN ('commission','commission_reversal') "
+            "GROUP BY u.id, u.member_id, u.commission HAVING ABS(u.commission-COALESCE(SUM(l.amount),0))>0.005")
+    add("fail" if cb else "ok", "ইউজারের কমিশন-মোট = লেজারের কমিশন এন্ট্রি", ("গরমিল: " + ", ".join("#" + b["member_id"] for b in cb[:5])) if cb else "")
+    bal = pool_balance()
+    ls = _r2(q1("SELECT COALESCE(SUM(amount),0) s FROM pool_ledger")["s"])
+    add("fail" if (abs(bal - ls) > 0.005 or bal < 0) else "ok", "পুল ব্যালেন্স = পুল-লেজারের যোগফল (এবং ০-এর নিচে নয়)", "ব্যালেন্স ৳%s · লেজার ৳%s" % (money(bal), money(ls)))
+    f = q1("SELECT COALESCE(SUM(CASE WHEN kind='fund' THEN amount END),0) f, COALESCE(SUM(CASE WHEN kind='payout' THEN -amount END),0) p, "
+           "COALESCE(SUM(CASE WHEN kind='reversal' THEN amount END),0) r, COALESCE(SUM(CASE WHEN kind='withdraw' THEN -amount END),0) w FROM pool_ledger")
+    ident = _r2(f["f"] - f["p"] + f["r"] - f["w"])
+    add("fail" if abs(ident - bal) > 0.005 else "ok", "পুল সমীকরণ: যোগ − প্রদত্ত + ফেরত − তোলা = ব্যালেন্স",
+        "৳%s − ৳%s + ৳%s − ৳%s = ৳%s" % (money(f["f"]), money(f["p"]), money(f["r"]), money(f["w"]), money(ident)))
+    link = q1("SELECT COUNT(*) n FROM pool_ledger p LEFT JOIN ledger l ON l.idem=p.ledger_idem WHERE p.kind IN ('payout','reversal') AND (l.id IS NULL OR ABS(l.amount+p.amount)>0.005)")["n"]
+    add("fail" if link else "ok", "প্রতিটি পুল-প্রদান/ফেরত ঠিক একটি ইউজার-লেজার এন্ট্রির সঙ্গে মেলে", "%d টি মেলেনি" % link if link else "")
+    ps = q1("SELECT v FROM meta WHERE k='pool_since'")
+    since = ps["v"] if ps else now()
+    unb = q1("SELECT COUNT(*) n, COALESCE(SUM(l.amount),0) s FROM ledger l WHERE l.kind IN ('commission','referral_bonus') AND l.amount>0 AND l.created>=? "
+             "AND NOT EXISTS (SELECT 1 FROM pool_ledger p WHERE p.ledger_idem=l.idem)", (since,))
+    add("fail" if unb["n"] else "ok", "পুল চালুর পর কোনো কমিশন/রেফারেল বোনাস পুল ছাড়া দেওয়া হয়নি", "%d টি, ৳%s পুল-ছাড়া" % (unb["n"], money(unb["s"])) if unb["n"] else "সব পুল-ভিত্তিক")
+    co = _r2(q1("SELECT COALESCE(SUM(amount),0) s FROM company_ledger")["s"])
+    cp = _r2(q1("SELECT COALESCE(SUM(amount),0) s FROM requests WHERE flow='client_confirm' AND status='approved'")["s"])
+    add("fail" if abs(co - cp) > 0.005 else "ok", "কোম্পানি-লেজার = অনুমোদিত ক্লায়েন্ট-পেমেন্টের মূল টাকা", "৳%s / ৳%s" % (money(co), money(cp)))
+    res = pool_reserved()
+    add("warn" if res > bal + 0.005 else "ok", "প্রতিশ্রুত কমিশন পুলের মধ্যে আছে", "প্রতিশ্রুত ৳%s · পুল ৳%s" % (money(res), money(bal)))
+    att = q1("SELECT * FROM pool_attestations ORDER BY id DESC LIMIT 1")
+    if not att:
+        add("warn", "বাস্তব ফান্ড মিলানো", "এখনো কোনো রেকর্ড নেই — আলাদা অ্যাকাউন্টের আসল ব্যালেন্স রেকর্ড করুন (পুল পেজ)")
+    elif abs(float(att["difference"])) > 0.005:
+        add("fail", "বাস্তব ফান্ড মিলানো", "সর্বশেষ (%s): ঘোষিত ৳%s, লেজার ৳%s — পার্থক্য ৳%s" % (att["created"][:16], money(att["declared_balance"]), money(att["ledger_balance"]), money(att["difference"])))
+    else:
+        age = (datetime.utcnow() - datetime.strptime(att["created"][:19], "%Y-%m-%d %H:%M:%S")).days
+        stale = abs(float(att["ledger_balance"]) - bal) > 0.005 or age > 7
+        add("warn" if stale else "ok", "বাস্তব ফান্ড মিলানো", "সর্বশেষ %s — মিলেছে%s" % (att["created"][:16], " (পুল বদলেছে/৭ দিনের বেশি পুরনো — আবার মিলিয়ে নিন)" if stale else ""))
+    lg = q1("SELECT COUNT(*) n, COALESCE(SUM(l.amount),0) s FROM ledger l WHERE l.kind IN ('commission','referral_bonus') AND l.amount>0 AND l.created<? "
+            "AND NOT EXISTS (SELECT 1 FROM pool_ledger p WHERE p.ledger_idem=l.idem)", (since,))
+    add("warn" if lg["n"] else "ok", "পুল-পূর্ব (legacy) কমিশন/বোনাস", ("%d টি, মোট ৳%s — পুল চালুর আগে দেওয়া, পুল দ্বারা সমর্থিত নয় (ইতিহাস অপরিবর্তিত)" % (lg["n"], money(lg["s"]))) if lg["n"] else "নেই")
+    ad = q1("SELECT COALESCE(SUM(CASE WHEN amount>0 THEN amount END),0) p, COALESCE(SUM(CASE WHEN amount<0 THEN -amount END),0) m, COUNT(*) n FROM ledger WHERE kind='admin_adjust'")
+    add("ok", "ম্যানুয়াল ব্যালেন্স সমন্বয় (তথ্য)", "%d টি · যোগ ৳%s · বিয়োগ ৳%s (প্রতিটির রেফারেন্স সংরক্ষিত)" % (ad["n"], money(ad["p"]), money(ad["m"])))
+    return c
+
+
+def recon_overall(checks):
+    lv = [x[0] for x in checks]
+    return "fail" if "fail" in lv else ("warn" if "warn" in lv else "ok")
+
+
+@app.route("/admin/reconcile")
+@staff_required("reports")
+def admin_reconcile():
+    ch = recon_checks()
+    ov = recon_overall(ch)
+    return page("""<div class="msg {{'ok' if ov=='ok' else 'error'}}">{% if ov=='ok' %}✅ সব হিসাব মিলছে{% elif ov=='warn' %}⚠ হিসাব মিলছে, তবে কিছু বিষয় দেখা দরকার{% else %}❌ গরমিল পাওয়া গেছে — আর্থিক কাজ থামিয়ে অডিট করুন{% endif %}</div>
+<div class="card"><h3>মিলানো-ড্যাশবোর্ড</h3><p class="k">প্রতিটি সংখ্যা অপরিবর্তনীয় লেজার থেকে নতুন করে হিসাব করা হয়। এই পেজ শুধু দেখায়, কিছু বদলায় না।</p>
+{% for lv,t,d in ch %}<div class="card" style="margin:8px 0"><b>{{'✅' if lv=='ok' else ('⚠' if lv=='warn' else '❌')}} {{t}}</b>{% if d %}<div class="k">{{d}}</div>{% endif %}</div>{% endfor %}
+<p class="k">পরীক্ষার সময়: {{ts}} (UTC)</p>{% if can('pool_view') %}<a class="btn sm s" href="/admin/pool">কমিশন পুল</a>{% endif %} <a class="btn sm s" href="/admin/reports">রিপোর্ট</a></div>""",
+                active="/admin/reconcile", ch=ch, ov=ov, ts=now())
+
+
+# ---- referral network (who referred whom, dates, totals, reward history)
+@app.route("/admin/referrals/network")
+@staff_required("referrals")
+def admin_ref_network():
+    q = request.args.get("q", "").strip()[:40]
+    w, a = ("", [])
+    if q:
+        w, a = " WHERE (u.member_id LIKE ? OR u.name LIKE ? OR u.phone LIKE ?)", ["%%%s%%" % q] * 3
+    pg = make_pg(q1("SELECT COUNT(*) n FROM (SELECT u.id FROM users u JOIN referrals r ON r.referrer_id=u.id" + w + " GROUP BY u.id) t", a)["n"], 25)
+    rows = qa("SELECT u.id, u.member_id, u.name, u.phone, COUNT(r.id) total, COALESCE(SUM(CASE WHEN r.status='pending' THEN 1 ELSE 0 END),0) pend, "
+              "COALESCE(SUM(CASE WHEN r.status='approved' THEN 1 ELSE 0 END),0) appr, COALESCE(SUM(CASE WHEN r.status='rejected' THEN 1 ELSE 0 END),0) rej, "
+              "COALESCE(SUM(CASE WHEN r.status='approved' THEN r.amount END),0) paid FROM users u JOIN referrals r ON r.referrer_id=u.id" + w +
+              " GROUP BY u.id, u.member_id, u.name, u.phone ORDER BY total DESC, u.id LIMIT ? OFFSET ?", a + [25, pg["off"]])
+    t = q1("SELECT COUNT(*) n, COUNT(DISTINCT referrer_id) ref, COALESCE(SUM(CASE WHEN status='approved' THEN amount END),0) paid FROM referrals")
+    return page("""<div class="row" style="margin-bottom:10px"><a class="btn sm s" href="/admin/referrals">📋 তালিকা</a><a class="btn sm" href="/admin/referrals/network">🌐 নেটওয়ার্ক</a></div>
+<div class="g2"><div class="card"><div class="k">মোট রেফারেল</div><div class="v">{{t['n']}}</div></div><div class="card"><div class="k">রেফারার সংখ্যা</div><div class="v">{{t['ref']}}</div></div>
+<div class="card"><div class="k">মোট পরিশোধিত বোনাস (পুল থেকে)</div><div class="v">৳ {{money(t['paid'])}}</div></div></div>
+<form method="get" class="card"><input name="q" value="{{q}}" placeholder="রেফারারের নাম / ফোন / মেম্বার আইডি"><button style="width:100%">খুঁজুন</button></form>
+{% if not rows %}<div class="card empty">কোনো রেফারার নেই</div>{% endif %}
+{% for r in rows %}<div class="card"><a href="/admin/referrals/user/{{r['id']}}"><b>#{{r['member_id']}} {{r['name']}}</b></a> <span class="k">{{r['phone']}}</span>
+<div class="k">মোট {{r['total']}} · অনুমোদিত {{r['appr']}} · পেন্ডিং {{r['pend']}} · বাতিল {{r['rej']}} · বোনাস ৳{{money(r['paid'])}}</div></div>{% endfor %}""" + PAGER,
+                active="/admin/referrals", rows=rows, t=t, q=q, pg=pg)
+
+
+@app.route("/admin/referrals/user/<int:i>")
+@staff_required("referrals")
+def admin_ref_user(i):
+    x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (i,))
+    if not x:
+        abort(404)
+    by = q1("SELECT r.*, rf.member_id mid, rf.name nm FROM referrals r JOIN users rf ON rf.id=r.referrer_id WHERE r.referred_id=?", (i,))
+    kids = qa("SELECT r.*, y.member_id mid, y.name nm, y.phone ph, y.created joined FROM referrals r JOIN users y ON y.id=r.referred_id WHERE r.referrer_id=? ORDER BY r.id DESC", (i,))
+    paid = qa("SELECT l.*, EXISTS(SELECT 1 FROM pool_ledger p WHERE p.ledger_idem=l.idem) funded FROM ledger l WHERE l.user_id=? AND l.kind='referral_bonus' ORDER BY l.id DESC LIMIT 50", (i,))
+    st = {k: sum(1 for r in kids if r["status"] == k) for k in ("pending", "approved", "rejected")}
+    return page("""<div class="row" style="margin-bottom:10px"><a class="btn sm s" href="/admin/referrals">📋 তালিকা</a><a class="btn sm s" href="/admin/referrals/network">🌐 নেটওয়ার্ক</a></div>
+<div class="card"><h2>#{{x['member_id']}} {{x['name']}}</h2><p class="k">📱 {{x['phone']}} · কোড: {{x['referral_code']}} · <a href="/admin/users/{{x['id']}}">প্রোফাইল</a>{% if can('reports') %} · <a href="/admin/reports/user/{{x['id']}}">রিপোর্ট</a>{% endif %}</p>
+<div class="k">রেফার করেছেন: <b>{{kids|length}}</b> · অনুমোদিত {{st['approved']}} · পেন্ডিং {{st['pending']}} · বাতিল {{st['rejected']}}</div></div>
+<div class="card"><h3>কে একে রেফার করেছেন</h3>{% if by %}<a href="/admin/referrals/user/{{by['referrer_id']}}">#{{by['mid']}} {{by['nm']}}</a> <span class="k">· {{by['created'][:16]}} · {{by['status']}} · ৳{{money(by['amount'])}}</span>{% else %}<span class="k">কেউ নয় (সরাসরি যোগদান)</span>{% endif %}</div>
+<div class="card"><h3>যাদের রেফার করেছেন</h3>{% for r in kids %}<div class="row" style="justify-content:space-between;align-items:center"><span><a href="/admin/referrals/user/{{r['referred_id']}}">#{{r['mid']}} {{r['nm']}}</a> <span class="k">{{r['joined'][:10] if r['joined'] else ''}}</span></span><span class="k">{{r['status']}} · ৳{{money(r['amount'])}}{% if r['decided_at'] %} · {{r['decided_at'][:10]}}{% endif %}</span></div>{% endfor %}{% if not kids %}<div class="k">কাউকে রেফার করেননি</div>{% endif %}</div>
+<div class="card"><h3>রেফারেল বোনাসের ইতিহাস (ওয়ালেটে জমা)</h3>{% for l in paid %}<div class="row" style="justify-content:space-between"><span class="k">{{l['created'][:16]}} · {{l['note'] or ''}}</span><b>৳{{money(l['amount'])}} <span class="k">{{'পুল' if l['funded'] else 'পুল-পূর্ব'}}</span></b></div>{% endfor %}{% if not paid %}<div class="k">কোনো বোনাস পাননি</div>{% endif %}</div>""",
+                active="/admin/referrals", x=x, by=by, kids=kids, paid=paid, st=st)
+
+
 
 
 @app.route("/healthz")
