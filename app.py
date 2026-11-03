@@ -970,6 +970,14 @@ canvas{width:100%;height:170px}
 .hxr>span:first-child{color:var(--mut);flex-shrink:0;white-space:nowrap}
 .hxr>b{font-weight:600;text-align:right;min-width:0;overflow-wrap:anywhere}
 .hxr .neg{color:#dc2626}.hxr .pos{color:#16a34a}.hxr .na{color:var(--mut);font-weight:400}
+.hxc{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:box-shadow .28s ease,border-color .28s ease,transform .12s ease}
+.hxc:active{transform:scale(.994)}.hxc:focus-visible{outline:2px solid var(--b);outline-offset:2px}
+.hxr{transition:padding .28s ease,font-size .28s ease}
+.hxc.open{border-color:var(--b);box-shadow:0 6px 18px #0f172a24}.hxc.open>.hxr{padding:8px 0;font-size:14px}
+.hxc:not(.open)>.hxr:nth-child(8){border-bottom:0}
+.hxd{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .3s ease,opacity .3s ease}
+.hxd>div{overflow:hidden;min-height:0}.hxc.open .hxd{grid-template-rows:1fr;opacity:1}
+@media(prefers-reduced-motion:reduce){.hxc,.hxr,.hxd{transition:none}}
 .hxr .pill{padding:1px 9px;font-size:12px;font-weight:600;line-height:1.5;white-space:nowrap}
 .hxc .pill.pending,.hxc .pill.review,.hxc .pill.processing,.hxc .pill.submitted{background:#ffedd5;color:#c2410c}
 .hxc .pill.approved::before,.hxc .pill.approved::after{content:"✓";color:#16a34a;font-weight:800}
@@ -1632,11 +1640,16 @@ def history():
     # requests = order-based requests (order_id, pay_number, commission stored)
     txs = qa("SELECT * FROM tx WHERE user_id=?" + kw + " ORDER BY id DESC LIMIT 100", (u["id"],) + ka)
     reqs = qa("SELECT * FROM requests WHERE user_id=?" + kw + " ORDER BY id DESC LIMIT 100", (u["id"],) + ka)
-    rows = [(t["created"], t["kind"], None, t["method"], t["number"], t["amount"], t["status"], None) for t in txs] + \
-           [(r["created"], r["kind"], r["order_id"], r["method"], r["pay_number"], r["amount"], r["status"], r["commission"]) for r in reqs]
+    def _x(*pairs):  # extra details shown only when expanded; real stored values only
+        return [(k, str(v)[:16] if k in ("sub", "upd") else str(v)) for k, v in pairs if v not in (None, "")]
+    rows = [(t["created"], t["kind"], None, t["method"], t["number"], t["amount"], t["status"], None,
+             _x(("trx", t["trx"]), ("upd", t["updated"] if t["status"] != "pending" and t["updated"] != t["created"] else None))) for t in txs] + \
+           [(r["created"], r["kind"], r["order_id"], r["method"], r["pay_number"], r["amount"], r["status"], r["commission"],
+             _x(("trx", r["trx"]), ("sub", r["submitted_at"]), ("upd", r["decided_at"]),
+                ("why", r["reject_reason"] if r["status"] == "rejected" else None), ("ins", r["instructions"]))) for r in reqs]
     rows.sort(key=lambda x: str(x[0] or ""), reverse=True)
     items = []
-    for created, kind, order, method, number, amount, status, comm in rows[:100]:
+    for created, kind, order, method, number, amount, status, comm, extra in rows[:100]:
         amt = "৳ " + money(amount)
         tone = ""
         if kind == "withdraw" and status in ("pending", "submitted", "review", "processing", "approved"):
@@ -1650,16 +1663,16 @@ def history():
         items.append(dict(order=order or "", method=method or "", number=number or "", kind=REQ_KIND.get(kind, kind),
                           amt=amt, tone=tone, status=slabel,
                           cls="pending" if status in ("submitted", "review") else status,
-                          comm=("৳ " + money(comm)) if comm is not None else "", when=str(created or "")[:16]))
+                          comm=("৳ " + money(comm)) if comm is not None else "", when=str(created or "")[:16], extra=extra))
     led = qa("SELECT * FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT 100", (u["id"],))
     L = (dict(order="Order ID", method="Method", number="Number", kind="Type", amount="Amount", status="Status",
-              comm="Commission", when="Date & Time") if en else
+              comm="Commission", when="Date & Time", trx="TrxID", sub="Submitted", upd="Updated", why="Rejection reason", ins="Instructions") if en else
          dict(order="অর্ডার আইডি", method="মাধ্যম", number="নম্বর", kind="ধরন", amount="পরিমাণ", status="অবস্থা",
-              comm="কমিশন", when="তারিখ ও সময়"))
+              comm="কমিশন", when="তারিখ ও সময়", trx="ট্রানজেকশন আইডি", sub="জমার সময়", upd="আপডেট", why="রিজেক্টের কারণ", ins="নির্দেশনা"))
     tabs = [("all", "All" if en else "সব"), ("deposit", "Deposit" if en else "ডিপোজিট"), ("withdraw", "Withdraw" if en else "উইথড্র")]
     return page("""<div class="hxt">{% for k,lb in tabs %}<a class="{{'on' if f==k}}" href="/history{{'' if k=='all' else '?f='+k}}">{{lb}}</a>{% endfor %}</div>
 {% if not items %}<div class="card"><div class="empty">কোনো লেনদেন নেই</div></div>{% endif %}
-{% for it in items %}<div class="hxc">
+{% for it in items %}<div class="hxc" role="button" tabindex="0" aria-expanded="false">
 <div class="hxr"><span>{{L.order}}</span><b>{% if it.order %}{{it.order}}{% else %}<span class="na">—</span>{% endif %}</b></div>
 <div class="hxr"><span>{{L.method}}</span><b>{{it.method or '—'}}</b></div>
 <div class="hxr"><span>{{L.number}}</span><b>{{it.number or '—'}}</b></div>
@@ -1667,7 +1680,11 @@ def history():
 <div class="hxr"><span>{{L.amount}}</span><b class="{{it.tone}}">{{it.amt}}</b></div>
 <div class="hxr"><span>{{L.status}}</span><span class="pill {{it.cls}}">{{it.status}}</span></div>
 <div class="hxr"><span>{{L.comm}}</span><b>{% if it.comm %}{{it.comm}}{% else %}<span class="na">—</span>{% endif %}</b></div>
-<div class="hxr"><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div></div>{% endfor %}
+<div class="hxr"><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div>
+{% if it.extra %}<div class="hxd"><div>{% for k,v in it.extra %}<div class="hxr"><span>{{L[k]}}</span><b{% if k in ('why','ins') %} style="white-space:pre-line;font-weight:500"{% endif %}>{{v}}</b></div>{% endfor %}</div></div>{% endif %}</div>{% endfor %}
+<script>(function(){function t(c){c.classList.toggle('open');c.setAttribute('aria-expanded',c.classList.contains('open')?'true':'false')}
+document.addEventListener('click',function(e){var c=e.target.closest&&e.target.closest('.hxc');if(c)t(c)});
+document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&e.target.classList&&e.target.classList.contains('hxc')){e.preventDefault();t(e.target)}})})();</script>
 <div class="card"><h2>ওয়ালেট লেজার</h2><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>নোট</th><th>সময়</th></tr>
 {% for l in led %}<tr><td>{{l['kind']}}</td><td style="color:{{'#16a34a' if l['amount']>=0 else '#dc2626'}}">{{money(l['amount'])}}</td><td>{{l['note'] or ''}}</td><td>{{l['created'][:16]}}</td></tr>{% endfor %}</table></div></div>""",
                 active="/history", items=items, led=led, L=L, tabs=tabs, f=f)
