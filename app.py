@@ -50,6 +50,38 @@ def now():
     return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
 
+# Display-only Bangladesh time (UTC+6). The database keeps storing UTC (now()); nothing stored is ever rewritten.
+# Every timestamp that reaches a page is converted exactly once when the HTML is built (see page()).
+# Report pages already convert with _loc() and mark their output with ⁣ so they are skipped here (no double shift).
+BD_OFFSET = timedelta(hours=6)
+_MARK = "⁣"
+_TS_RE = re.compile(r"(?<![⁣\d])(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})( \(UTC\)| UTC\b)?")
+
+
+def _bd_sub(m):
+    try:
+        d = datetime.strptime("%s %s:%s" % (m.group(1), m.group(2), m.group(3)), "%Y-%m-%d %H:%M") + BD_OFFSET
+    except ValueError:
+        return m.group(0)
+    suf = m.group(4) or ""
+    if suf:
+        suf = " (BDT)" if "(" in suf else " BDT"
+    return d.strftime("%Y-%m-%d %H:%M") + suf
+
+
+def to_bdt(html):
+    return _TS_RE.sub(_bd_sub, html).replace(_MARK, "")
+
+
+@app.template_filter("bdd")
+def _bdd(ts):
+    """UTC timestamp string -> Bangladesh date (YYYY-MM-DD)."""
+    try:
+        return (datetime.strptime(str(ts)[:19], "%Y-%m-%d %H:%M:%S") + BD_OFFSET).strftime("%Y-%m-%d")
+    except ValueError:
+        return str(ts or "")[:10]
+
+
 # ---------------------------------------------------------------- database layer (SQLite default, PostgreSQL when DATABASE_URL is set)
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 PG = DATABASE_URL.startswith(("postgres://", "postgresql://"))
@@ -1094,6 +1126,7 @@ def page(tpl, active="", foot="", **ctx):
                                   fab=bool(u and not u["is_admin"] and active == "/"), lang=lang, nxt=request.path,
                                   fab_href=tgu or "/support", fab_tg=bool(tgu), fab_label=tg_label() if tgu else ("Support" if lang == "en" else "সাপোর্ট"),
                                   dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"))
+    html = to_bdt(html)
     return tr(html) if lang == "en" else html
 
 
@@ -1810,7 +1843,7 @@ def referral():
 <div class="card"><div class="k">মোট বোনাস আয়</div><div class="v">৳ {{money(st['earned'])}}</div></div></div>
 <div class="card"><h3>রেফারেল ইতিহাস</h3>{% if not rows %}<div class="empty">এখনো কেউ আপনার কোডে যোগ দেয়নি</div>{% else %}<div class="tw"><table>
 <tr><th>সদস্য</th><th>৳</th><th>অবস্থা</th><th>তারিখ</th></tr>{% for r in rows %}<tr><td>#{{r['x_mid']}} {{r['x_name']}}</td><td>{{money(r['amount'])}}</td>
-<td><span class="pill {{r['status']}}">{{ {'pending':'অপেক্ষমাণ','approved':'অনুমোদিত','rejected':'বাতিল'}[r['status']] }}</span></td><td>{{r['created'][:10]}}</td></tr>{% endfor %}</table></div>{% endif %}</div>""",
+<td><span class="pill {{r['status']}}">{{ {'pending':'অপেক্ষমাণ','approved':'অনুমোদিত','rejected':'বাতিল'}[r['status']] }}</span></td><td>{{r['created']|bdd}}</td></tr>{% endfor %}</table></div>{% endif %}</div>""",
                 active="/account", st=st, rows=rows, by=by, link=link, text=text, bonus=bonus)
 
 
@@ -2125,7 +2158,7 @@ def admin_users():
 <option value="new" {{'selected' if f=='new'}}>গত ৭ দিনের নতুন</option></select><button style="width:100%">খুঁজুন</button></form></div>
 {% if not rows %}<div class="card empty">কোনো ইউজার নেই</div>{% endif %}
 {% for x in rows %}<a href="/admin/users/{{x['id']}}"><div class="card"><b>{{pg.off+loop.index}}. #{{x['member_id']}} {{x['name']}}</b> {% if x['blocked'] %}<span class="pill rejected">blocked</span>{% endif %}
-<div class="k">{{x['phone']}} · ৳ {{money(x['balance'])}} · কমিশন ৳ {{money(x['commission'])}} · রেফার {{x['refn']}} · {{(x['created'] or '')[:10]}}</div></div></a>{% endfor %}"""
+<div class="k">{{x['phone']}} · ৳ {{money(x['balance'])}} · কমিশন ৳ {{money(x['commission'])}} · রেফার {{x['refn']}} · {{(x['created'] or '')|bdd}}</div></div></a>{% endfor %}"""
                 + PAGER, active="/admin/users", rows=rows, s=s, f=f, pg=pg)
 
 
@@ -2182,8 +2215,8 @@ def admin_user(i):
 <label>শিরোনাম (বাংলা)</label><input name="title_bn" required maxlength="80"><label>বার্তা (বাংলা)</label><textarea name="body_bn" required rows="3" maxlength="1000"></textarea>
 <label>Title (English, optional)</label><input name="title_en" maxlength="80"><label>Message (English, optional)</label><textarea name="body_en" rows="3" maxlength="1000"></textarea>
 <button style="width:100%">পাঠান</button></form></div>{% endif %}
-<div class="card"><h3>রেফারেল তথ্য {% if can('referrals') %}<a class="k" href="/admin/referrals/user/{{x['id']}}">বিস্তারিত →</a>{% endif %}</h3><p class="k">রেফার করেছেন: {{refs['n']}} (অনুমোদিত {{refs['a']}}){% if by %} · রেফারার: <a href="/admin/users/{{x['referred_by']}}">#{{by['member_id']}} {{by['name']}}</a> ({{(byrow['created'] or '')[:10]}}, {{byrow['status']}}){% else %} · কারও রেফারে আসেননি{% endif %}</p>
-{% if reffed %}<div class="tw"><table><tr><th>সদস্য</th><th>তারিখ</th><th>বোনাস</th><th>অবস্থা</th></tr>{% for r in reffed %}<tr><td><a href="/admin/users/{{r['referred_id']}}">#{{r['mid']}} {{r['nm']}}</a></td><td>{{r['created'][:10]}}</td><td>{{money(r['amount'])}}</td><td>{{r['status']}}</td></tr>{% endfor %}</table></div>{% endif %}</div>
+<div class="card"><h3>রেফারেল তথ্য {% if can('referrals') %}<a class="k" href="/admin/referrals/user/{{x['id']}}">বিস্তারিত →</a>{% endif %}</h3><p class="k">রেফার করেছেন: {{refs['n']}} (অনুমোদিত {{refs['a']}}){% if by %} · রেফারার: <a href="/admin/users/{{x['referred_by']}}">#{{by['member_id']}} {{by['name']}}</a> ({{(byrow['created'] or '')|bdd}}, {{byrow['status']}}){% else %} · কারও রেফারে আসেননি{% endif %}</p>
+{% if reffed %}<div class="tw"><table><tr><th>সদস্য</th><th>তারিখ</th><th>বোনাস</th><th>অবস্থা</th></tr>{% for r in reffed %}<tr><td><a href="/admin/users/{{r['referred_id']}}">#{{r['mid']}} {{r['nm']}}</a></td><td>{{r['created']|bdd}}</td><td>{{money(r['amount'])}}</td><td>{{r['status']}}</td></tr>{% endfor %}</table></div>{% endif %}</div>
 {% if comm %}<div class="card"><h3>কমিশন / বোনাস ইতিহাস</h3><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>নোট</th><th>সময়</th></tr>
 {% for l in comm %}<tr><td>{{l['kind']}}</td><td>{{money(l['amount'])}}</td><td>{{l['note'] or ''}}</td><td>{{l['created'][:16]}}</td></tr>{% endfor %}</table></div></div>{% endif %}
 {% if adjs %}<div class="card"><h3>ব্যালেন্স সমন্বয়ের ইতিহাস</h3><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>রেফারেন্স</th><th>কারণ</th><th>কে</th><th>সময়</th></tr>
@@ -4025,7 +4058,7 @@ def admin_report_kind(kind):
 <div class="card"><h3>লেনদেনের তালিকা (নতুন আগে)</h3><div class="tw"><table><tr><th>সময়</th><th>ইউজার</th><th>ধরন</th><th>৳</th><th>রেফারেন্স</th></tr>
 {% for r in show %}<tr><td>{{loc(r['ts'])}}</td><td>{% if r['uid'] %}<a href="/admin/reports/user/{{r['uid']}}?from={{d1}}&to={{d2}}">#{{r['member']}}</a>{% endif %}</td><td>{{r['what']}}{% if kind in ('commissions','referrals') %} <span class="k">{{'পুল' if r['funded'] else 'পুল-পূর্ব'}}</span>{% endif %}</td><td>{{money(r['amount'])}}</td><td class="k">{{r['ref']}}</td></tr>{% endfor %}</table></div></div>""" + PAGER,
                 active="/admin/reports", rtabs=tabs, cur=cur, rerr=e, filt=True, d1=d1, d2=d2, period=period, tz=("%g" % rtz()), title=REPORT_KINDS[kind], kind=kind,
-                total=total, n=len(rows), buckets=buckets, show=show, pg=pg, loc=_loc)
+                total=total, n=len(rows), buckets=buckets, show=show, pg=pg, loc=lambda t: _MARK + _loc(t))
 
 
 @app.route("/admin/reports/user/<int:i>")
@@ -4059,7 +4092,7 @@ def admin_report_user(i):
 {% for r,b in lines %}<tr><td>{{loc(r['created'])}}</td><td>{{lk.get(r['kind'],r['kind'])}}</td><td>{{money(r['amount'])}}</td><td>{{money(b)}}</td><td class="k">{{r['note'] or ''}}</td></tr>{% endfor %}</table></div>
 <a class="btn sm s" href="?from={{d1}}&to={{d2}}&fmt=csv">⬇ CSV</a></div>""" + PAGER,
                 active="/admin/reports", rtabs=tabs, cur=cur, rerr=e, filt=True, d1=d1, d2=d2, period="daily", tz=("%g" % rtz()), x=x, opening=opening, net=net, sums=sums,
-                lines=lines[pg["off"]:pg["off"] + 40], pg=pg, loc=_loc, lk=LK_LABEL)
+                lines=lines[pg["off"]:pg["off"] + 40], pg=pg, loc=lambda t: _MARK + _loc(t), lk=LK_LABEL)
 
 
 @app.route("/admin/reports/wallets")
@@ -4153,7 +4186,7 @@ def admin_reconcile():
     return page("""<div class="msg {{'ok' if ov=='ok' else 'error'}}">{% if ov=='ok' %}✅ সব হিসাব মিলছে{% elif ov=='warn' %}⚠ হিসাব মিলছে, তবে কিছু বিষয় দেখা দরকার{% else %}❌ গরমিল পাওয়া গেছে — আর্থিক কাজ থামিয়ে অডিট করুন{% endif %}</div>
 <div class="card"><h3>মিলানো-ড্যাশবোর্ড</h3><p class="k">প্রতিটি সংখ্যা অপরিবর্তনীয় লেজার থেকে নতুন করে হিসাব করা হয়। এই পেজ শুধু দেখায়, কিছু বদলায় না।</p>
 {% for lv,t,d in ch %}<div class="card" style="margin:8px 0"><b>{{'✅' if lv=='ok' else ('⚠' if lv=='warn' else '❌')}} {{t}}</b>{% if d %}<div class="k">{{d}}</div>{% endif %}</div>{% endfor %}
-<p class="k">পরীক্ষার সময়: {{ts}} (UTC)</p>{% if can('pool_view') %}<a class="btn sm s" href="/admin/pool">কমিশন পুল</a>{% endif %} <a class="btn sm s" href="/admin/reports">রিপোর্ট</a></div>""",
+<p class="k">পরীক্ষার সময়: {{ts[:16]}} (UTC)</p>{% if can('pool_view') %}<a class="btn sm s" href="/admin/pool">কমিশন পুল</a>{% endif %} <a class="btn sm s" href="/admin/reports">রিপোর্ট</a></div>""",
                 active="/admin/reconcile", ch=ch, ov=ov, ts=now())
 
 
@@ -4195,7 +4228,7 @@ def admin_ref_user(i):
 <div class="card"><h2>#{{x['member_id']}} {{x['name']}}</h2><p class="k">📱 {{x['phone']}} · কোড: {{x['referral_code']}} · <a href="/admin/users/{{x['id']}}">প্রোফাইল</a>{% if can('reports') %} · <a href="/admin/reports/user/{{x['id']}}">রিপোর্ট</a>{% endif %}</p>
 <div class="k">রেফার করেছেন: <b>{{kids|length}}</b> · অনুমোদিত {{st['approved']}} · পেন্ডিং {{st['pending']}} · বাতিল {{st['rejected']}}</div></div>
 <div class="card"><h3>কে একে রেফার করেছেন</h3>{% if by %}<a href="/admin/referrals/user/{{by['referrer_id']}}">#{{by['mid']}} {{by['nm']}}</a> <span class="k">· {{by['created'][:16]}} · {{by['status']}} · ৳{{money(by['amount'])}}</span>{% else %}<span class="k">কেউ নয় (সরাসরি যোগদান)</span>{% endif %}</div>
-<div class="card"><h3>যাদের রেফার করেছেন</h3>{% for r in kids %}<div class="row" style="justify-content:space-between;align-items:center"><span><a href="/admin/referrals/user/{{r['referred_id']}}">#{{r['mid']}} {{r['nm']}}</a> <span class="k">{{r['joined'][:10] if r['joined'] else ''}}</span></span><span class="k">{{r['status']}} · ৳{{money(r['amount'])}}{% if r['decided_at'] %} · {{r['decided_at'][:10]}}{% endif %}</span></div>{% endfor %}{% if not kids %}<div class="k">কাউকে রেফার করেননি</div>{% endif %}</div>
+<div class="card"><h3>যাদের রেফার করেছেন</h3>{% for r in kids %}<div class="row" style="justify-content:space-between;align-items:center"><span><a href="/admin/referrals/user/{{r['referred_id']}}">#{{r['mid']}} {{r['nm']}}</a> <span class="k">{{r['joined']|bdd if r['joined'] else ''}}</span></span><span class="k">{{r['status']}} · ৳{{money(r['amount'])}}{% if r['decided_at'] %} · {{r['decided_at']|bdd}}{% endif %}</span></div>{% endfor %}{% if not kids %}<div class="k">কাউকে রেফার করেননি</div>{% endif %}</div>
 <div class="card"><h3>রেফারেল বোনাসের ইতিহাস (ওয়ালেটে জমা)</h3>{% for l in paid %}<div class="row" style="justify-content:space-between"><span class="k">{{l['created'][:16]}} · {{l['note'] or ''}}</span><b>৳{{money(l['amount'])}} <span class="k">{{'পুল' if l['funded'] else 'পুল-পূর্ব'}}</span></b></div>{% endfor %}{% if not paid %}<div class="k">কোনো বোনাস পাননি</div>{% endif %}</div>""",
                 active="/admin/referrals", x=x, by=by, kids=kids, paid=paid, st=st)
 
