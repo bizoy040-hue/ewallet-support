@@ -2,11 +2,11 @@
 Env: SECRET_KEY, ADMIN_PHONE, ADMIN_PASSWORD, DATABASE_PATH, UPLOAD_DIR, BASE_URL (optional)
      DATABASE_URL (PostgreSQL), SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET (screenshot storage)
 """
-import os, re, sqlite3, secrets, hashlib, time, csv, io, tempfile, zipfile
+import os, re, sqlite3, secrets, hashlib, time, csv, io, tempfile, zipfile, threading, gzip
 from datetime import datetime, timedelta
 from functools import wraps, lru_cache
 from flask import (Flask, request, redirect, session, render_template_string, g, flash,
-                   abort, send_file, jsonify, after_this_request, send_from_directory)
+                   abort, send_file, jsonify, after_this_request, send_from_directory, Response)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -197,10 +197,7 @@ class PGConn:
         self.c.execute(sql)
 
     def close(self):
-        try:
-            self.c.close()
-        except Exception:
-            pass
+        _pg_release(self.c)
 
 
 def _pg_connect():
@@ -214,10 +211,51 @@ def _pg_connect():
     raise last
 
 
+_PGPOOL, _PGPOOL_LOCK, _PGPOOL_MAX = [], threading.Lock(), 6
+
+
+def _pg_acquire():
+    """Re-use an idle PostgreSQL connection (saves a TLS+auth handshake on every request). Falls back to a fresh connection."""
+    while True:
+        with _PGPOOL_LOCK:
+            item = _PGPOOL.pop() if _PGPOOL else None
+        if not item:
+            return _pg_connect()
+        c, t = item
+        try:
+            if c.closed or c.broken:
+                continue
+            if time.time() - t > 20:
+                c.execute("SELECT 1")  # idle for a while: make sure the server did not drop it
+            return c
+        except Exception:
+            try:
+                c.close()
+            except Exception:
+                pass
+
+
+def _pg_release(c):
+    try:
+        if c.closed or c.broken or c.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
+            c.close()  # never put a connection with an open/failed transaction back
+            return
+        with _PGPOOL_LOCK:
+            if len(_PGPOOL) < _PGPOOL_MAX:
+                _PGPOOL.append((c, time.time()))
+                return
+        c.close()
+    except Exception:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
 def db():
     if "db" not in g:
         if PG:
-            g.db = PGConn(_pg_connect())
+            g.db = PGConn(_pg_acquire())
         else:
             g.db = sqlite3.connect(DB, timeout=30, isolation_level=None)
             g.db.row_factory = sqlite3.Row
@@ -458,6 +496,13 @@ V5_INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_ledger_kind ON ledger(kind)",
     "CREATE INDEX IF NOT EXISTS ix_tx_created ON tx(created)",
     "CREATE INDEX IF NOT EXISTS ix_notif_user ON notifications(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_notif_user_read ON notifications(user_id,is_read)",
+    "CREATE INDEX IF NOT EXISTS ix_alert_created ON admin_alerts(created)",
+    "CREATE INDEX IF NOT EXISTS ix_login_user ON login_history(user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_login_phone ON login_history(phone,created)",
+    "CREATE INDEX IF NOT EXISTS ix_audit_actor ON audit(actor_id)",
+    "CREATE INDEX IF NOT EXISTS ix_req_user_status ON requests(user_id,status)",
+    "CREATE INDEX IF NOT EXISTS ix_tx_kind_status ON tx(kind,status)",
 ]
 V5_NEW_TABLES = [t[0] for t in V5_TABLES]
 ID_TABLES = ID_TABLES | frozenset(V5_NEW_TABLES)  # @@IDTABLES_FIX
@@ -770,9 +815,23 @@ def migrate():
     c.close()
 
 
+def _settings():
+    """All global settings (+ the signed-in user's own language key) in ONE query per request instead of one query per setting() call."""
+    st = getattr(g, "_st", None)
+    if st is None:
+        uid = session.get("uid")
+        rows = db().execute("SELECT k,v FROM settings WHERE substr(k,1,6)<>'ulang:' OR k=?", ("ulang:%s" % (uid or 0),)).fetchall()
+        st = g._st = {r["k"]: r["v"] for r in rows}
+    return st
+
+
 def setting(k, d=""):
-    r = q1("SELECT v FROM settings WHERE k=?", (k,))
-    return r["v"] if r else d
+    st = _settings()
+    if k in st:
+        return st[k]
+    if k.startswith("ulang:"):
+        return d
+    return d
 
 
 # ---------------------------------------------------------------- ledger
@@ -871,8 +930,18 @@ def _headers(r):
     r.headers["X-Frame-Options"] = "DENY"
     r.headers["Referrer-Policy"] = "same-origin"
     r.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
-    if "uid" in session:
+    if "uid" in session and not r.headers.get("Cache-Control"):
         r.headers["Cache-Control"] = "no-store"
+    try:  # gzip text responses (HTML ~3-5x smaller) when the proxy in front does not already do it
+        if (r.status_code == 200 and not r.direct_passthrough and "gzip" in request.headers.get("Accept-Encoding", "")
+                and not r.headers.get("Content-Encoding") and r.mimetype in ("text/html", "text/css", "application/javascript", "application/json")):
+            data = r.get_data()
+            if len(data) > 800:
+                r.set_data(gzip.compress(data, 5))
+                r.headers["Content-Encoding"] = "gzip"
+                r.headers.add("Vary", "Accept-Encoding")
+    except Exception:
+        pass
     return r
 
 
@@ -944,9 +1013,7 @@ def client_ip():
 @app.context_processor
 def _ctx():
     u = me()
-    unread = 0
-    if u:
-        unread = admin_unread(u) if u["is_admin"] else q1("SELECT COUNT(*) c FROM notifications WHERE is_read=0 AND user_id=?", (u["id"],))["c"]
+    unread = notif_badges().get("*", 0) if u else 0  # same single query that feeds the per-feature badges
     return dict(csrf_token=csrf(), u=u, site=(setting("site_name") or SITE)[:60], unread=unread, money=money, can=has_perm, nb=nb,
                 role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label)
 
@@ -1042,12 +1109,54 @@ details.set summary::-webkit-details-marker{display:none}details.set>form,detail
 .new{border-left:4px solid var(--g)}
 .hl{white-space:pre-line}
 img.shot{max-width:100%;border-radius:12px;margin:8px 0;border:1px solid var(--ln)}
+#ld{position:fixed;top:0;left:0;height:3px;width:0;opacity:0;background:linear-gradient(90deg,#1d4ed8,#16a34a);z-index:99;transition:width .35s ease,opacity .25s ease;pointer-events:none;border-radius:0 3px 3px 0;box-shadow:0 0 8px #1d4ed888}
+.sp{display:inline-block;width:14px;height:14px;border:2px solid #ffffff66;border-top-color:#fff;border-radius:50%;vertical-align:-2px;animation:spn .7s linear infinite}
+@keyframes spn{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.sp{animation-duration:1.6s}#ld{transition:none}}
+.mg{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px}
+.mt{border-radius:22px;padding:6px;gap:7px;font-size:12.5px}
+.mt i{width:48px;height:48px;font-size:26px;border-radius:16px}
+.mt .bd2{top:7px;right:7px}
+.cc-h{margin:2px 2px 4px;font-size:18px;font-weight:700}.cc-sub{margin:0 2px 12px;color:var(--mut);font-size:13px}
 """
 
 JS = """
+var _ldT=null;
+function ldShow(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.opacity='1';b.style.width='12%';
+ _ldT=setTimeout(function(){b.style.width='70%'},120);setTimeout(function(){if(b.style.opacity==='1')b.style.width='88%'},1500)}
+function ldHide(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.width='100%';setTimeout(function(){b.style.opacity='0';setTimeout(function(){b.style.width='0'},250)},180)}
 document.addEventListener('submit',function(e){var f=e.target,c=f.dataset.confirm;
  if(c&&!confirm(c)){e.preventDefault();return}
- setTimeout(function(){f.querySelectorAll('button').forEach(function(b){b.disabled=true;b.dataset.t=b.textContent;b.textContent='...'})},20);});
+ ldShow();
+ setTimeout(function(){f.querySelectorAll('button').forEach(function(b){b.style.minWidth=b.offsetWidth+'px';b.disabled=true;b.dataset.h=b.innerHTML;b.innerHTML='<span class="sp"></span>'})},20);});
+window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document.querySelectorAll('button[data-h]').forEach(function(b){b.disabled=false;b.innerHTML=b.dataset.h;b.removeAttribute('data-h')})}});
+(function(){var seq=0,SKIPS=['/static','/shot','/lang','/logout','/manifest.json','/service-worker.js','/assets','/healthz','/admin/backup'];
+ function skip(p){return SKIPS.some(function(x){return p===x||p.indexOf(x+'/')===0})}
+ function ok(a,e){if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return false;
+  if(a.target&&a.target!=='_self'||a.hasAttribute('download')||a.dataset.copy!==undefined||a.dataset.share!==undefined)return false;
+  var u;try{u=new URL(a.href,location.href)}catch(x){return false}
+  if(u.origin!==location.origin||skip(u.pathname))return false;
+  if(u.pathname===location.pathname&&u.search===location.search&&u.hash)return false;return u}
+ function swap(html,url,push){var d=new DOMParser().parseFromString(html,'text/html');if(!d.body||!d.querySelector('main'))return false;
+  document.title=d.title;document.documentElement.lang=d.documentElement.lang;
+  var nb=d.body;document.body.className=nb.className;
+  ['poll','snd'].forEach(function(k){if(nb.dataset[k]!==undefined)document.body.dataset[k]=nb.dataset[k];else delete document.body.dataset[k]});
+  var cur=document.body,keep=document.getElementById('ld');
+  ['.top','main','.nav','.fab'].forEach(function(sel){var o=cur.querySelector(sel),n=nb.querySelector(sel);
+   if(o&&n)o.replaceWith(document.importNode(n,true));else if(o&&!n)o.remove();else if(!o&&n){var m=cur.querySelector('main');if(sel==='.top')cur.insertBefore(document.importNode(n,true),cur.firstChild);else if(sel==='main'){}else m.after(document.importNode(n,true))}});
+  document.querySelectorAll('main script').forEach(function(o){var n=document.createElement('script');n.textContent=o.textContent;o.replaceWith(n)});
+  if(push)history.pushState({},'',url);window.scrollTo(0,0);paintToggles();
+  if(typeof pollNotif==='function')pollNotif();return true}
+ function go(url,push){var my=++seq;ldShow();
+  fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'}}).then(function(r){
+   var ct=r.headers.get('content-type')||'';
+   var rp=new URL(r.url).pathname;if(ct.indexOf('text/html')<0||(r.redirected&&(rp==='/login'||rp==='/signup'))){location.href=url;return null}
+   return r.text().then(function(t){return{t:t,u:r.url}})}).then(function(x){
+   if(!x||my!==seq)return;
+   if(!swap(x.t,x.u||url,push)){location.href=url;return}ldHide()}).catch(function(){location.href=url})}
+ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a)return;var u=ok(a,e);if(!u)return;
+  e.preventDefault();go(u.href,true)});
+ window.addEventListener('popstate',function(){go(location.href,false)})})();
 function copyText(t,btn){var done=function(){if(btn){var o=btn.dataset.o||btn.textContent;btn.dataset.o=o;btn.textContent='✅ কপি হয়েছে';setTimeout(function(){btn.textContent=o},1800)}};
  if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(done,function(){fb()})}else{fb()}
  function fb(){var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();
@@ -1094,16 +1203,19 @@ if(navigator.standalone===true){b.style.display='none';return}
 b.addEventListener('click',function(){if(dp){var p=dp;dp=null;p.prompt();return}
 alert(document.documentElement.lang==='en'?'To install: open the Chrome menu (\u22EE) and tap "Install app" or "Add to Home screen".':'ইনস্টল করতে: Chrome মেনু (\u22EE) খুলে "Install app" বা "Add to Home screen" চাপুন।')})});
 if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.serviceWorker.register('/service-worker.js',{scope:'/'}).catch(function(){})})})();</script>
-<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
-<style>{{css|safe}}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap"></noscript>
+<link rel="stylesheet" href="/assets/app.css?v={{av}}">
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
 <body{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
+<div id="ld"></div>
 <div class="top"><b>{{site}}</b><button type="button" id="pwa-install" class="pwa-dl" aria-label="Download App" title="Download App">📲</button><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
 {% if u and not u['is_admin'] %}<span><a class="bell" href="/notifications">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
 <main>{% for c,m in msgs %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
-{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active!='/admin'}}" href="/admin/menu">☰ মেনু <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a></div>{% endif %}
+{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active!='/admin'}}" href="/admin/menu">☰ কন্ট্রোল সেন্টার <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a></div>{% endif %}
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
@@ -1111,7 +1223,26 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <a class="{{'on' if active=='/requests'}}" href="/requests"><i>📨</i>অনুরোধ<span class="bd2" data-bd="/requests"{% if not nb('/requests') %} hidden{% endif %}>{{nb('/requests')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i>📊</i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
 <a class="{{'on' if active=='/account'}}" href="/account"><i>👤</i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
-<script>{{js|safe}}</script></body></html>"""
+<script src="/assets/app.js?v={{av}}"></script></body></html>"""
+
+ASSET_V = hashlib.sha1((CSS + JS).encode("utf-8")).hexdigest()[:10]
+
+
+def _asset(body, mime):
+    r = Response(body, mimetype=mime)
+    r.headers["Cache-Control"] = "public, max-age=31536000, immutable"  # URL carries a content hash (?v=), so a change busts the cache
+    return r
+
+
+@app.route("/assets/app.css")
+def asset_css():
+    return _asset(CSS, "text/css")
+
+
+@app.route("/assets/app.js")
+def asset_js():
+    return _asset(JS, "application/javascript")
+
 
 # (path, label, permission or None = any staff)
 ADMIN_TABS = [("/admin", "ড্যাশবোর্ড", None), ("/admin/alerts", "🔔 নোটিফিকেশন", None),
@@ -1125,15 +1256,24 @@ ADMIN_TABS = [("/admin", "ড্যাশবোর্ড", None), ("/admin/alert
               ("/admin/audit", "অডিট লগ", "audit"), ("/admin/profile", "প্রোফাইল", None)]
 
 
+@lru_cache(maxsize=512)
+def _tpl(src):
+    return app.jinja_env.from_string(src)  # compile each distinct template once per process (render_template_string recompiles on every request)
+
+
+def render_str(src, **ctx):
+    app.update_template_context(ctx)
+    return _tpl(src).render(ctx)
+
+
 def page(tpl, active="", foot="", **ctx):
     from flask import get_flashed_messages
-    body = render_template_string(tpl, **ctx)
+    body = render_str(tpl, **ctx)
     msgs = get_flashed_messages(with_categories=True)
     msgs = [(("error" if c == "error" else ""), m) for c, m in msgs]
     u = me()
-    tabs = [(p, t) for p, t, perm in ADMIN_TABS if u and u["is_admin"] and (perm is None or has_perm(perm, u))]
     lang, tgu = cur_lang(), tg_url_active()
-    html = render_template_string(BASE, body=body, css=CSS, js=JS, msgs=msgs, active=active, foot=foot, tabs=tabs,
+    html = render_str(BASE, body=body, av=ASSET_V, msgs=msgs, active=active, foot=foot,
                                   fab=bool(u and not u["is_admin"] and active == "/"), lang=lang, nxt=request.path,
                                   fab_href=tgu or "/support", fab_tg=bool(tgu), fab_label=tg_label() if tgu else ("Support" if lang == "en" else "সাপোর্ট"),
                                   dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"))
@@ -1275,8 +1415,7 @@ def cur_lang():
     lang = None
     u = me()
     if u:
-        r = q1("SELECT v FROM settings WHERE k=?", ("ulang:%d" % u["id"],))
-        lang = r["v"] if r else None
+        lang = setting("ulang:%d" % u["id"], None)
     if lang not in LANGS:
         lang = request.cookies.get("lang")
     if lang not in LANGS:
@@ -1736,7 +1875,7 @@ def history():
 <div class="hxr"><span><span class="gft">🎁</span>{{L.comm}}</span><b>{% if it.comm %}<span class="cmv">{{it.comm}}</span>{% else %}<span class="na">—</span>{% endif %}</b></div>
 <div class="hxr"><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div>
 {% if it.extra %}<div class="hxd"><div>{% for k,v in it.extra %}<div class="hxr"><span>{{L[k]}}</span><b{% if k in ('why','ins') %} style="white-space:pre-line;font-weight:500"{% endif %}>{{v}}</b></div>{% endfor %}</div></div>{% endif %}</div>{% endfor %}
-<script>(function(){function t(c){var o=!c.classList.contains('open');c.classList.toggle('open',o);c.setAttribute('aria-expanded',o?'true':'false');document.body.classList.toggle('hx1',o);if(o){window.scrollTo(0,0)}else{c.scrollIntoView({block:'center'})}}
+<script>(function(){if(window._hxInit)return;window._hxInit=1;function t(c){var o=!c.classList.contains('open');c.classList.toggle('open',o);c.setAttribute('aria-expanded',o?'true':'false');document.body.classList.toggle('hx1',o);if(o){window.scrollTo(0,0)}else{c.scrollIntoView({block:'center'})}}
 document.addEventListener('click',function(e){var c=e.target.closest&&e.target.closest('.hxc');if(c)t(c)});
 document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&e.target.classList&&e.target.classList.contains('hxc')){e.preventDefault();t(e.target)}})})();</script>
 <div class="card hxl"><h2>ওয়ালেট লেজার</h2><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>নোট</th><th>সময়</th></tr>
@@ -1791,17 +1930,25 @@ document.getElementById('sum').textContent='মোট ডিপোজিট ৳'
 
 
 def series(uid, days):
+    start = (datetime.utcnow() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    w, wa = (" AND user_id=?", (uid,)) if uid else ("", ())
+
+    def grp(table, col, cond):  # {YYYY-MM-DD (UTC): sum} in one grouped query
+        rows = qa("SELECT substr(%s,1,10) d, COALESCE(SUM(amount),0) s FROM %s WHERE %s%s AND substr(%s,1,10)>=? GROUP BY 1" % (col, table, cond, w, col),
+                  wa + (start,))
+        return {r["d"]: float(r["s"]) for r in rows}
+    dep_t = grp("tx", "updated", "kind='deposit' AND status='approved'")
+    dep_r = grp("requests", "decided_at", "kind='deposit' AND status='approved'")
+    wd_t = grp("tx", "updated", "kind='withdraw' AND status IN('approved','paid')")
+    wd_r = grp("requests", "decided_at", "kind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved'")
+    com_l = grp("ledger", "created", "kind IN('commission','referral_bonus')")
     labels, dep, wd, com = [], [], [], []
     for i in range(days - 1, -1, -1):
         d = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
         labels.append(d[5:])
-        f = lambda sql: round(q1(sql, (uid, d) if uid else (d,))["s"], 2)
-        w = "user_id=? AND " if uid else ""
-        dep.append(round(f("SELECT COALESCE(SUM(amount),0) s FROM tx WHERE %skind='deposit' AND status='approved' AND date(updated)=?" % w)
-                         + f("SELECT COALESCE(SUM(amount),0) s FROM requests WHERE %skind='deposit' AND status='approved' AND date(decided_at)=?" % w), 2))
-        wd.append(round(f("SELECT COALESCE(SUM(amount),0) s FROM tx WHERE %skind='withdraw' AND status IN('approved','paid') AND date(updated)=?" % w)
-                        + f("SELECT COALESCE(SUM(amount),0) s FROM requests WHERE %skind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved' AND date(decided_at)=?" % w), 2))
-        com.append(f("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE %skind IN('commission','referral_bonus') AND date(created)=?" % w))
+        dep.append(round(round(dep_t.get(d, 0), 2) + round(dep_r.get(d, 0), 2), 2))
+        wd.append(round(round(wd_t.get(d, 0), 2) + round(wd_r.get(d, 0), 2), 2))
+        com.append(round(com_l.get(d, 0), 2))
     return dict(labels=labels, deposit=dep, withdraw=wd, commission=com, t=[round(sum(x), 2) for x in (dep, wd, com)])
 
 
@@ -1987,6 +2134,20 @@ UNION ALL SELECT r.submitted_at, 'রিকোয়েস্ট জমা '||r.
 ORDER BY t DESC LIMIT 10"""
 
 
+INTEG_TPL = """<div class="card"><b>লেজার রিকনসিলিয়েশন:</b>
+{% if bad %}<span class="pill rejected">{{bad|length}}টি অমিল</span>{% for b in bad %}<div class="k">#{{b['member_id']}}: ব্যালেন্স {{b['balance']}} ≠ লেজার {{b['ledger_sum']}}</div>{% endfor %}
+{% else %}<span class="pill approved">সব মিলেছে ✅</span>{% endif %}</div>
+{% if rc %}<a class="card" href="/admin/reconcile" style="display:block"><b>🧮 পূর্ণ মিলানো (ওয়ালেট · পুল · কোম্পানি-লেজার):</b> <span class="pill {{'approved' if rc=='ok' else 'rejected'}}">{{'সব মিলেছে ✅' if rc=='ok' else ('দেখা দরকার ⚠' if rc=='warn' else 'গরমিল ❌')}}</span></a>{% endif %}"""
+
+
+@app.route("/admin/dash/integrity")
+@staff_required("dashboard_fin")
+def admin_dash_integrity():
+    """Heavy ledger reconciliation, computed after the dashboard is already on screen (same data and permissions as before)."""
+    rc = recon_overall(recon_checks()) if has_perm("reports") else None
+    return render_str(INTEG_TPL, bad=reconcile(), rc=rc)
+
+
 @app.route("/admin")
 @staff_required()
 def admin_home():
@@ -2017,10 +2178,7 @@ def admin_home():
             ref_pend_amt=one("SELECT COALESCE(SUM(amount),0) s FROM referrals WHERE status='pending'"),
             today_dep=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved' AND date(updated)=date('now'))"
                           "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved' AND date(decided_at)=date('now')) s"))
-        bad = reconcile()
-        s.update(pool=pool_balance(), pool_res=pool_reserved())
-        if has_perm("reports", u):
-            rc = recon_overall(recon_checks())
+        s.update(pool=pool_balance(), pool_res=pool_reserved())  # ledger reconciliation scans load separately (see /admin/dash/integrity)
     if has_perm("referrals", u):
         pend = qa(REF_SQL + " WHERE r.status='pending' ORDER BY r.id LIMIT 5")
     if has_perm("users_view", u):
@@ -2046,12 +2204,9 @@ def admin_home():
 {% if can('requests') %}<div class="card"><div class="k">পেন্ডিং রিকোয়েস্ট (ম্যানুয়াল)</div><div class="v">{{s.pend_req}}</div></div>{% endif %}</div>{% endif %}
 {% if acts %}<div class="card"><h3>সাম্প্রতিক ইউজার কার্যকলাপ</h3><div class="tw"><table>{% for a in acts %}<tr><td>{{(a['t'] or '')[:16]}}</td><td>{{a['d']}}</td></tr>{% endfor %}</table></div></div>{% endif %}
 {% if can('referrals') %}<h3>⏳ পেন্ডিং রেফারেল রিকোয়েস্ট</h3>""" + REF_LIST + """{% if rows %}<a class="btn s" style="width:100%;margin-bottom:14px" href="/admin/referrals">সব রেফারেল দেখুন</a>{% endif %}{% endif %}
-{% if fin %}<div class="card"><b>লেজার রিকনসিলিয়েশন:</b>
-{% if bad %}<span class="pill rejected">{{bad|length}}টি অমিল</span>{% for b in bad %}<div class="k">#{{b['member_id']}}: ব্যালেন্স {{b['balance']}} ≠ লেজার {{b['ledger_sum']}}</div>{% endfor %}
-{% else %}<span class="pill approved">সব মিলেছে ✅</span>{% endif %}</div>
-{% if rc %}<a class="card" href="/admin/reconcile" style="display:block"><b>🧮 পূর্ণ মিলানো (ওয়ালেট · পুল · কোম্পানি-লেজার):</b> <span class="pill {{'approved' if rc=='ok' else 'rejected'}}">{{'সব মিলেছে ✅' if rc=='ok' else ('দেখা দরকার ⚠' if rc=='warn' else 'গরমিল ❌')}}</span></a>{% endif %}
+{% if fin %}<div id="integ"><div class="card k">⏳ লেজার যাচাই হচ্ছে…</div></div>
 <div class="card"><h3>গত ১৪ দিন</h3><canvas id="ch"></canvas></div>
-<script>fetch('/insight/data?days=14').then(r=>r.json()).then(j=>bars('ch',j.labels,[j.deposit,j.withdraw,j.commission],['#3b82f6','#ef4444','#22c55e']))</script>{% endif %}""",
+<script>fetch('/admin/dash/integrity',{credentials:'same-origin'}).then(function(r){return r.ok?r.text():''}).then(function(h){var e=document.getElementById('integ');if(e&&h)e.innerHTML=h});fetch('/insight/data?days=14').then(r=>r.json()).then(j=>bars('ch',j.labels,[j.deposit,j.withdraw,j.commission],['#3b82f6','#ef4444','#22c55e']))</script>{% endif %}""",
                 active="/admin", s=s, bad=bad, rows=pend, fin=fin, acts=acts, rc=rc)
 
 
@@ -2070,7 +2225,8 @@ def _list_tx(kind, statuses, active, title):
     st = request.args.get("status", "open")
     where = "t.kind=? " + ("AND t.status IN (%s)" % ",".join("?" * len(statuses)) if st == "open" else "")
     args = [kind] + (list(statuses) if st == "open" else [])
-    rows = qa("SELECT t.*,u.name,u.phone,u.member_id FROM tx t JOIN users u ON u.id=t.user_id WHERE %s ORDER BY t.id DESC LIMIT 100" % where, args)
+    pg = make_pg(q1("SELECT COUNT(*) n FROM tx t WHERE %s" % where, args)["n"], 30)
+    rows = qa("SELECT t.*,u.name,u.phone,u.member_id FROM tx t JOIN users u ON u.id=t.user_id WHERE %s ORDER BY t.id DESC LIMIT ? OFFSET ?" % where, args + [30, pg["off"]])
     return page("""<h2>{{title}}</h2><div class="row" style="margin-bottom:10px"><a class="btn sm s" href="?status=open">খোলা</a><a class="btn sm s" href="?status=all">সব</a></div>
 {% if not rows %}<div class="card empty">কিছু নেই</div>{% endif %}
 {% for t in rows %}<div class="card"><b>৳ {{money(t['amount'])}}</b> · {{t['method']}} <span class="pill {{t['status']}}">{{t['status']}}</span>
@@ -2080,8 +2236,8 @@ def _list_tx(kind, statuses, active, title):
 {% if t['note'] %}<div class="k">নোট: {{t['note']}}</div>{% endif %}
 {% if t['status'] in statuses %}<form method="post" action="/admin/tx/{{t['id']}}" style="margin-top:8px" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><div class="row">
-{% for a,l,c in acts[t['kind']] %}{% if t['status'] in a %}<button name="act" value="{{l[0]}}" class="btn sm {{c}}">{{l[1]}}</button>{% endif %}{% endfor %}</div></form>{% endif %}</div>{% endfor %}""",
-                active=active, rows=rows, title=title, statuses=statuses, acts=ACTIONS)
+{% for a,l,c in acts[t['kind']] %}{% if t['status'] in a %}<button name="act" value="{{l[0]}}" class="btn sm {{c}}">{{l[1]}}</button>{% endif %}{% endfor %}</div></form>{% endif %}</div>{% endfor %}""" + PAGER,
+                active=active, rows=rows, title=title, statuses=statuses, acts=ACTIONS, pg=pg)
 
 
 @app.route("/admin/deposits")
@@ -3204,7 +3360,7 @@ def notif_badges():
     u, b = me(), {}
     if u and u["is_admin"]:
         f, pa = _alert_filter(u)
-        rows = qa("SELECT a.id, a.link FROM admin_alerts a WHERE %s AND a.created>=? AND NOT EXISTS("
+        rows = qa("SELECT a.link FROM admin_alerts a WHERE %s AND a.created>=? AND NOT EXISTS("
                   "SELECT 1 FROM admin_alert_reads r WHERE r.alert_id=a.id AND r.admin_id=?)" % f,
                   pa + [u["created"] or "", u["id"]])
         visible = {p for p, _, perm in ADMIN_TABS if perm is None or has_perm(perm, u)}
@@ -3215,7 +3371,7 @@ def notif_badges():
             b[k] = b.get(k, 0) + 1
         b["*"] = len(rows)
     elif u:
-        rows = qa("SELECT id, link, title FROM notifications WHERE is_read=0 AND user_id=?", (u["id"],))
+        rows = qa("SELECT link, title FROM notifications WHERE is_read=0 AND user_id=?", (u["id"],))
         for r in rows:
             k = _user_badge_key(r["link"], r["title"])
             b[k or "/account"] = b.get(k or "/account", 0) + 1
@@ -3230,28 +3386,36 @@ def nb(key):
     return notif_badges().get(key, 0)
 
 
+TILE_LABEL = {"/admin/alerts": "নোটিফিকেশন", "/admin/reports": "আর্থিক রিপোর্ট", "/admin/reconcile": "লেজার মিলানো",
+              "/admin/staff": "স্টাফ ম্যানেজমেন্ট", "/admin/users": "ইউজার", "/admin/commission": "কমিশন", "/admin/pool": "কমিশন পুল"}
+
+
 @app.route("/admin/menu")
 @staff_required()
 def admin_menu():
     u = me()
-    tiles = [(p, t.replace("🔔 ", ""), ADMIN_ICONS.get(p, "•")) for p, t, perm in ADMIN_TABS
-             if p != "/admin" and (perm is None or has_perm(perm, u))]
-    return page("""<div class="mg">{% for p,t,ic in tiles %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>
-<span class="bd2" data-bd="{{'*' if p=='/admin/alerts' else p}}"{% if not nb('*' if p=='/admin/alerts' else p) %} hidden{% endif %}>{{nb('*' if p=='/admin/alerts' else p)}}</span></a>{% endfor %}</div>""",
+    tiles = [(p, TILE_LABEL.get(p, t.replace("🔔 ", "")), ADMIN_ICONS.get(p, "•"), "*" if p == "/admin/alerts" else p) for p, t, perm in ADMIN_TABS
+             if p not in ("/admin", "/admin/profile") and (perm is None or has_perm(perm, u))]
+    if has_perm("settings", u):  # existing Settings > Security section (login lock, backups) gets its own tile
+        tiles.insert(len(tiles), ("/admin/settings?open=security", "নিরাপত্তা", "🔒", ""))
+    tiles.append(("/admin/profile", "প্রোফাইল", ADMIN_ICONS["/admin/profile"], ""))
+    return page("""<div class="cc-h">🎛 কন্ট্রোল সেন্টার</div><div class="cc-sub">যে ফিচারে নতুন নোটিফিকেশন আছে, তার বাটনে সংখ্যা দেখা যাবে।</div>
+<div class="mg">{% for p,t,ic,bk in tiles %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>{% if bk %}
+<span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div>""",
                 active="/admin/menu", tiles=tiles)
-
 
 
 @app.route("/api/notif")
 @login_required
 def api_notif():
     u = me()
+    bd = notif_badges()  # one query: total unread + per-feature counts (each notification counted once)
     if u["is_admin"]:
         f, pa = _alert_filter(u)
         latest = q1("SELECT COALESCE(MAX(a.id),0) m FROM admin_alerts a WHERE %s AND a.created>=?" % f, pa + [u["created"] or ""])["m"]
-        return jsonify(unread=admin_unread(u), latest=latest, badges=notif_badges())
-    r = q1("SELECT COUNT(CASE WHEN is_read=0 THEN 1 END) c, COALESCE(MAX(id),0) m FROM notifications WHERE user_id=?", (u["id"],))
-    return jsonify(unread=r["c"], latest=r["m"], badges=notif_badges())
+    else:
+        latest = q1("SELECT COALESCE(MAX(id),0) m FROM notifications WHERE user_id=?", (u["id"],))["m"]
+    return jsonify(unread=bd.get("*", 0), latest=latest, badges=bd)
 
 
 @app.route("/admin/alerts")
@@ -3401,8 +3565,9 @@ def admin_payment_numbers():
         where.append("p.method=?"); args.append(m)
     if t in ACCT_TYPES:
         where.append("p.account_type=?"); args.append(t)
+    pg = make_pg(q1("SELECT COUNT(*) n FROM payment_numbers p JOIN users u ON u.id=p.user_id WHERE %s" % " AND ".join(where), args)["n"], 30)
     rows = qa("SELECT p.*,u.name,u.phone,u.member_id FROM payment_numbers p JOIN users u ON u.id=p.user_id WHERE %s "
-              "ORDER BY p.updated DESC LIMIT 200" % " AND ".join(where), args)
+              "ORDER BY p.updated DESC LIMIT ? OFFSET ?" % " AND ".join(where), args + [30, pg["off"]])
     logs = qa("SELECT l.*,u.name,u.member_id FROM payment_number_log l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 20")
     return page("""<div class="card"><form><input name="q" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি / নম্বর">
 <select name="method"><option value="">সব মাধ্যম</option>{% for x in methods %}<option {{'selected' if x==m}}>{{x}}</option>{% endfor %}</select>
@@ -3412,10 +3577,10 @@ def admin_payment_numbers():
 {% for r in rows %}<div class="card"><div class="row" style="align-items:center"><b>{{r['method']}} · {{tl[r['account_type']]}}</b></div>
 <div style="font-size:18px;margin:4px 0">{{r['number']}}</div>
 <div class="k"><a href="/admin/users/{{r['user_id']}}">#{{r['member_id']}} {{r['name']}}</a> · {{r['phone']}}</div>
-<div class="k">জমা: {{r['created'][:16]}} · আপডেট: {{r['updated'][:16]}}</div></div>{% endfor %}
+<div class="k">জমা: {{r['created'][:16]}} · আপডেট: {{r['updated'][:16]}}</div></div>{% endfor %}""" + PAGER + """
 {% if logs %}<div class="card"><h3>সাম্প্রতিক পরিবর্তন</h3><div class="tw"><table>{% for l in logs %}<tr><td>{{(l['created'] or '')[:16]}}</td><td>#{{l['member_id']}} {{l['name']}}</td>
 <td>{{l['action']}}</td><td>{{l['method']}}/{{l['account_type']}}/{{l['number']}}{% if l['old'] %} ← {{l['old']}}{% endif %}</td></tr>{% endfor %}</table></div></div>{% endif %}""",
-                active="/admin/payment-numbers", rows=rows, logs=logs, q=q, m=m, t=t, tl=ACCT_LABEL, methods=METHODS, types=ACCT_TYPES)
+                active="/admin/payment-numbers", rows=rows, logs=logs, q=q, m=m, t=t, tl=ACCT_LABEL, methods=METHODS, types=ACCT_TYPES, pg=pg)
 
 
 # ---------------------------------------------------------------- Phase 2B: commission rates, Commission Pool, admin-initiated flows
@@ -3826,8 +3991,10 @@ def admin_requests():
         where.append("r.kind=?"); args.append(kd)
     if q:
         where.append("(r.order_id LIKE ? OR u.name LIKE ? OR u.phone LIKE ? OR u.member_id LIKE ? OR r.trx LIKE ?)"); args += [like] * 5
-    rows = qa("SELECT r.*,u.name,u.phone,u.member_id FROM requests r JOIN users u ON u.id=r.user_id%s ORDER BY r.id DESC LIMIT 100"
-              % ((" WHERE " + " AND ".join(where)) if where else ""), args)
+    wh = (" WHERE " + " AND ".join(where)) if where else ""
+    pg = make_pg(q1("SELECT COUNT(*) n FROM requests r JOIN users u ON u.id=r.user_id%s" % wh, args)["n"], 30)
+    rows = qa("SELECT r.*,u.name,u.phone,u.member_id FROM requests r JOIN users u ON u.id=r.user_id%s ORDER BY r.id DESC LIMIT ? OFFSET ?" % wh,
+              args + [30, pg["off"]])
     return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">রিকোয়েস্ট</h2><a class="btn sm g" href="/admin/requests/new" style="flex:0;white-space:nowrap">➕ নতুন</a></div>
 <form style="margin-top:10px"><input name="q" value="{{q}}" placeholder="Order ID / নাম / ফোন / আইডি / TrxID">
 <select name="status"><option value="open" {{'selected' if st=='open'}}>যাচাইয়ের অপেক্ষায় (জমা + যাচাইয়ে)</option><option value="all" {{'selected' if st=='all'}}>সব</option>
@@ -3838,8 +4005,8 @@ def admin_requests():
 {% for r in rows %}<a href="/admin/requests/{{r['id']}}"><div class="card"><div class="row" style="align-items:center"><b>{{rk(r)}} · ৳ {{money(r['amount'])}}</b>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="k">Order {{r['order_id']}} · {{r['method']}} · #{{r['member_id']}} {{r['name']}}</div>
-<div class="k">{{r['created'][:16]}}{% if r['trx'] %} · TrxID: {{r['trx']}}{% endif %}{% if r['screenshot'] %} · 🖼{% endif %}</div></div></a>{% endfor %}""",
-                active="/admin/requests", rows=rows, st=st, kd=kd, q=q, labels=REQ_LABEL, kinds=REQ_KIND)
+<div class="k">{{r['created'][:16]}}{% if r['trx'] %} · TrxID: {{r['trx']}}{% endif %}{% if r['screenshot'] %} · 🖼{% endif %}</div></div></a>{% endfor %}""" + PAGER,
+                active="/admin/requests", rows=rows, st=st, kd=kd, q=q, labels=REQ_LABEL, kinds=REQ_KIND, pg=pg)
 
 
 @app.route("/admin/requests/<int:i>")
@@ -3941,7 +4108,6 @@ def admin_request_act(i):
 
 # ================================================================ Phase 2C: referral network, financial reports + CSV, reconciliation
 # Read-only on money: nothing here creates or moves funds (referral rewards are paid by the pool engine above).
-from flask import Response
 
 LK_LABEL = {"deposit": "ডিপোজিট", "request_deposit": "অনুরোধ-ডিপোজিট", "withdraw_hold": "উইথড্র (হোল্ড)", "withdraw_release": "উইথড্র ফেরত",
             "request_withdraw": "অনুরোধ-উইথড্র", "request_payment": "ক্লায়েন্ট পেমেন্ট", "commission": "কমিশন", "commission_reversal": "কমিশন ফেরত",
