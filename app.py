@@ -961,6 +961,15 @@ canvas{width:100%;height:170px}
 :root[data-theme=dark]{--bg:#0b1220;--card:#111a2e;--tx:#e5eaf5;--mut:#94a3b8;--ln:#1f2b45}
 .dot[hidden]{display:none}
 .pill.submitted{background:#dbeafe;color:#1e3a8a}.pill.expired,.pill.cancelled{background:#e2e8f0;color:#475569}
+.hxt{display:flex;gap:6px;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:4px;margin-bottom:12px}
+.hxt a{flex:1;text-align:center;padding:9px 4px;border-radius:11px;font-weight:600;font-size:14px;color:var(--mut)}
+.hxt a.on{background:var(--b);color:#fff}
+.hxc{background:var(--card);border:1px solid var(--ln);border-radius:18px;padding:4px 16px;margin-bottom:12px;box-shadow:0 4px 14px #0f172a14}
+.hxr{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--ln);font-size:14px}
+.hxr:last-child{border-bottom:0}
+.hxr>span:first-child{color:var(--mut);flex-shrink:0}
+.hxr>b{font-weight:600;text-align:right;min-width:0;overflow-wrap:anywhere}
+.hxr .neg{color:#dc2626}.hxr .pos{color:#16a34a}.hxr .na{color:var(--mut);font-weight:400}
 .hero2{background:linear-gradient(125deg,#1e40af,#0f766e 60%,#16a34a);color:#fff;border-radius:22px;padding:20px;margin-bottom:14px;box-shadow:0 8px 22px #0f172a2e}
 .menu{padding:6px 8px}
 .li{display:flex;align-items:center;gap:14px;width:100%;padding:12px 8px;background:transparent;color:var(--tx);border:0;border-radius:0;font:inherit;text-align:left;cursor:pointer}
@@ -1610,14 +1619,54 @@ def withdraw():
 @customer_required
 def history():
     u = me()
-    txs = qa("SELECT * FROM tx WHERE user_id=? ORDER BY id DESC LIMIT 100", (u["id"],))
+    f = request.args.get("f", "all")
+    if f not in ("all", "deposit", "withdraw"):
+        f = "all"
+    en = cur_lang() == "en"
+    kw, ka = ("", ()) if f == "all" else (" AND kind=?", (f,))
+    # real data only: tx = user-submitted deposits/withdrawals (no order id / commission stored),
+    # requests = order-based requests (order_id, pay_number, commission stored)
+    txs = qa("SELECT * FROM tx WHERE user_id=?" + kw + " ORDER BY id DESC LIMIT 100", (u["id"],) + ka)
+    reqs = qa("SELECT * FROM requests WHERE user_id=?" + kw + " ORDER BY id DESC LIMIT 100", (u["id"],) + ka)
+    rows = [(t["created"], t["kind"], None, t["method"], t["number"], t["amount"], t["status"], None) for t in txs] + \
+           [(r["created"], r["kind"], r["order_id"], r["method"], r["pay_number"], r["amount"], r["status"], r["commission"]) for r in reqs]
+    rows.sort(key=lambda x: str(x[0] or ""), reverse=True)
+    items = []
+    for created, kind, order, method, number, amount, status, comm in rows[:100]:
+        amt = "৳ " + money(amount)
+        tone = ""
+        if kind == "withdraw" and status in ("pending", "submitted", "review", "processing", "approved"):
+            amt, tone = "\u2212" + amt, "neg"
+        elif kind == "deposit" and status == "approved":
+            amt, tone = "+" + amt, "pos"
+        if status == "processing":
+            slabel = "Processing" if en else "প্রসেসিং"
+        else:
+            slabel = REQ_LABEL.get(status, status)
+        items.append(dict(order=order or "", method=method or "", number=number or "", kind=REQ_KIND.get(kind, kind),
+                          amt=amt, tone=tone, status=slabel,
+                          cls="pending" if status in ("submitted", "review") else status,
+                          comm=("৳ " + money(comm)) if comm is not None else "", when=str(created or "")[:16]))
     led = qa("SELECT * FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT 100", (u["id"],))
-    return page("""<div class="card"><h2>রিকোয়েস্ট</h2>{% if not txs %}<div class="empty">কোনো লেনদেন নেই</div>{% else %}<div class="tw"><table>
-<tr><th>ধরন</th><th>মাধ্যম</th><th>৳</th><th>অবস্থা</th><th>সময়</th></tr>{% for t in txs %}<tr><td>{{t['kind']}}</td><td>{{t['method']}}</td>
-<td>{{money(t['amount'])}}</td><td><span class="pill {{t['status']}}">{{t['status']}}</span></td><td>{{(t['created'] or '')[:16]}}</td></tr>{% endfor %}</table></div>{% endif %}</div>
+    L = (dict(order="Order ID", method="Method", number="Number", kind="Type", amount="Amount", status="Status",
+              comm="Commission", when="Date & Time") if en else
+         dict(order="অর্ডার আইডি", method="মাধ্যম", number="নম্বর", kind="ধরন", amount="পরিমাণ", status="অবস্থা",
+              comm="কমিশন", when="তারিখ ও সময়"))
+    tabs = [("all", "All" if en else "সব"), ("deposit", "Deposit" if en else "ডিপোজিট"), ("withdraw", "Withdraw" if en else "উইথড্র")]
+    return page("""<div class="hxt">{% for k,lb in tabs %}<a class="{{'on' if f==k}}" href="/history{{'' if k=='all' else '?f='+k}}">{{lb}}</a>{% endfor %}</div>
+{% if not items %}<div class="card"><div class="empty">কোনো লেনদেন নেই</div></div>{% endif %}
+{% for it in items %}<div class="hxc">
+<div class="hxr"><span>{{L.order}}</span><b>{% if it.order %}{{it.order}}{% else %}<span class="na">—</span>{% endif %}</b></div>
+<div class="hxr"><span>{{L.method}}</span><b>{{it.method or '—'}}</b></div>
+<div class="hxr"><span>{{L.number}}</span><b>{{it.number or '—'}}</b></div>
+<div class="hxr"><span>{{L.kind}}</span><b>{{it.kind}}</b></div>
+<div class="hxr"><span>{{L.amount}}</span><b class="{{it.tone}}">{{it.amt}}</b></div>
+<div class="hxr"><span>{{L.status}}</span><span class="pill {{it.cls}}">{{it.status}}</span></div>
+<div class="hxr"><span>{{L.comm}}</span><b>{% if it.comm %}{{it.comm}}{% else %}<span class="na">—</span>{% endif %}</b></div>
+<div class="hxr"><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div></div>{% endfor %}
 <div class="card"><h2>ওয়ালেট লেজার</h2><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>নোট</th><th>সময়</th></tr>
 {% for l in led %}<tr><td>{{l['kind']}}</td><td style="color:{{'#16a34a' if l['amount']>=0 else '#dc2626'}}">{{money(l['amount'])}}</td><td>{{l['note'] or ''}}</td><td>{{l['created'][:16]}}</td></tr>{% endfor %}</table></div></div>""",
-                active="/history", txs=txs, led=led)
+                active="/history", items=items, led=led, L=L, tabs=tabs, f=f)
 
 
 @app.route("/shot/<name>")
