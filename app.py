@@ -977,6 +977,7 @@ canvas{width:100%;height:170px}
 .hxc:not(.open)>.hxr:nth-child(8){border-bottom:0}
 .hxd{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .3s ease,opacity .3s ease}
 .hxd>div{overflow:hidden;min-height:0}.hxc.open .hxd{grid-template-rows:1fr;opacity:1}
+body.hx1 .hxc:not(.open),body.hx1 .hxl{display:none}
 @media(prefers-reduced-motion:reduce){.hxc,.hxr,.hxd{transition:none}}
 .hxr .pill{padding:1px 9px;font-size:12px;font-weight:600;line-height:1.5;white-space:nowrap}
 .hxc .pill.pending,.hxc .pill.review,.hxc .pill.processing,.hxc .pill.submitted{background:#ffedd5;color:#c2410c}
@@ -1682,10 +1683,10 @@ def history():
 <div class="hxr"><span>{{L.comm}}</span><b>{% if it.comm %}{{it.comm}}{% else %}<span class="na">—</span>{% endif %}</b></div>
 <div class="hxr"><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div>
 {% if it.extra %}<div class="hxd"><div>{% for k,v in it.extra %}<div class="hxr"><span>{{L[k]}}</span><b{% if k in ('why','ins') %} style="white-space:pre-line;font-weight:500"{% endif %}>{{v}}</b></div>{% endfor %}</div></div>{% endif %}</div>{% endfor %}
-<script>(function(){function t(c){c.classList.toggle('open');c.setAttribute('aria-expanded',c.classList.contains('open')?'true':'false')}
+<script>(function(){function t(c){var o=!c.classList.contains('open');c.classList.toggle('open',o);c.setAttribute('aria-expanded',o?'true':'false');document.body.classList.toggle('hx1',o);if(o){window.scrollTo(0,0)}else{c.scrollIntoView({block:'center'})}}
 document.addEventListener('click',function(e){var c=e.target.closest&&e.target.closest('.hxc');if(c)t(c)});
 document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&e.target.classList&&e.target.classList.contains('hxc')){e.preventDefault();t(e.target)}})})();</script>
-<div class="card"><h2>ওয়ালেট লেজার</h2><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>নোট</th><th>সময়</th></tr>
+<div class="card hxl"><h2>ওয়ালেট লেজার</h2><div class="tw"><table><tr><th>ধরন</th><th>৳</th><th>নোট</th><th>সময়</th></tr>
 {% for l in led %}<tr><td>{{l['kind']}}</td><td style="color:{{'#16a34a' if l['amount']>=0 else '#dc2626'}}">{{money(l['amount'])}}</td><td>{{l['note'] or ''}}</td><td>{{l['created'][:16]}}</td></tr>{% endfor %}</table></div></div>""",
                 active="/history", items=items, led=led, L=L, tabs=tabs, f=f)
 
