@@ -970,6 +970,10 @@ canvas{width:100%;height:170px}
 .hxr>span:first-child{color:var(--mut);flex-shrink:0;white-space:nowrap}
 .hxr>b{font-weight:600;text-align:right;min-width:0;overflow-wrap:anywhere}
 .hxr .neg{color:#dc2626}.hxr .pos{color:#16a34a}.hxr .na{color:var(--mut);font-weight:400}
+.hxr .gft{font-size:14px;margin-right:5px}
+.hxr .cmv{display:inline-block;color:#166534;background:#dcfce7;border:1px solid #86efac;border-radius:99px;padding:1px 10px;font-weight:700}
+:root[data-theme=dark] .hxr .cmv{color:#86efac;background:#14532d55;border-color:#166534}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hxr .cmv{color:#86efac;background:#14532d55;border-color:#166534}}
 .hxc{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:box-shadow .28s ease,border-color .28s ease,transform .12s ease}
 .hxc:active{transform:scale(.994)}.hxc:focus-visible{outline:2px solid var(--b);outline-offset:2px}
 .hxr{transition:padding .28s ease,font-size .28s ease}
@@ -1680,7 +1684,7 @@ def history():
 <div class="hxr"><span>{{L.kind}}</span><b>{{it.kind}}</b></div>
 <div class="hxr"><span>{{L.amount}}</span><b class="{{it.tone}}">{{it.amt}}</b></div>
 <div class="hxr"><span>{{L.status}}</span><span class="pill {{it.cls}}">{{it.status}}</span></div>
-<div class="hxr"><span>{{L.comm}}</span><b>{% if it.comm %}{{it.comm}}{% else %}<span class="na">—</span>{% endif %}</b></div>
+<div class="hxr"><span><span class="gft">🎁</span>{{L.comm}}</span><b>{% if it.comm %}<span class="cmv">{{it.comm}}</span>{% else %}<span class="na">—</span>{% endif %}</b></div>
 <div class="hxr"><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div>
 {% if it.extra %}<div class="hxd"><div>{% for k,v in it.extra %}<div class="hxr"><span>{{L[k]}}</span><b{% if k in ('why','ins') %} style="white-space:pre-line;font-weight:500"{% endif %}>{{v}}</b></div>{% endfor %}</div></div>{% endif %}</div>{% endfor %}
 <script>(function(){function t(c){var o=!c.classList.contains('open');c.classList.toggle('open',o);c.setAttribute('aria-expanded',o?'true':'false');document.body.classList.toggle('hx1',o);if(o){window.scrollTo(0,0)}else{c.scrollIntoView({block:'center'})}}
