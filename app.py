@@ -1644,17 +1644,22 @@ def history():
     # real data only: tx = user-submitted deposits/withdrawals (no order id / commission stored),
     # requests = order-based requests (order_id, pay_number, commission stored)
     txs = qa("SELECT * FROM tx WHERE user_id=?" + kw + " ORDER BY id DESC LIMIT 100", (u["id"],) + ka)
-    reqs = qa("SELECT * FROM requests WHERE user_id=?" + kw + " ORDER BY id DESC LIMIT 100", (u["id"],) + ka)
+    rkw = {"all": "",
+           "deposit": " AND (flow='client_confirm' OR (COALESCE(flow,'')<>'admin_review' AND kind='deposit'))",
+           "withdraw": " AND (flow='admin_review' OR (COALESCE(flow,'')<>'client_confirm' AND kind='withdraw'))"}[f]
+    reqs = qa("SELECT * FROM requests WHERE user_id=?" + rkw + " ORDER BY id DESC LIMIT 100", (u["id"],))
+    def _dk(r):  # type shown to the client follows the request type the admin chose (flow), not the wallet-direction kind
+        return {"client_confirm": "deposit", "admin_review": "withdraw"}.get(r["flow"] or "", r["kind"])
     def _x(*pairs):  # extra details shown only when expanded; real stored values only
         return [(k, str(v)[:16] if k in ("sub", "upd") else str(v)) for k, v in pairs if v not in (None, "")]
     rows = [(t["created"], t["kind"], None, t["method"], t["number"], t["amount"], t["status"], None,
-             _x(("trx", t["trx"]), ("upd", t["updated"] if t["status"] != "pending" and t["updated"] != t["created"] else None))) for t in txs] + \
+             _x(("trx", t["trx"]), ("upd", t["updated"] if t["status"] != "pending" and t["updated"] != t["created"] else None)), t["kind"]) for t in txs] + \
            [(r["created"], r["kind"], r["order_id"], r["method"], r["pay_number"], r["amount"], r["status"], r["commission"],
              _x(("trx", r["trx"]), ("sub", r["submitted_at"]), ("upd", r["decided_at"]),
-                ("why", r["reject_reason"] if r["status"] == "rejected" else None), ("ins", r["instructions"]))) for r in reqs]
+                ("why", r["reject_reason"] if r["status"] == "rejected" else None), ("ins", r["instructions"])), _dk(r)) for r in reqs]
     rows.sort(key=lambda x: str(x[0] or ""), reverse=True)
     items = []
-    for created, kind, order, method, number, amount, status, comm, extra in rows[:100]:
+    for created, kind, order, method, number, amount, status, comm, extra, dkind in rows[:100]:
         amt = "৳ " + money(amount)
         tone = ""
         if kind == "withdraw" and status in ("pending", "submitted", "review", "processing", "approved"):
@@ -1665,7 +1670,7 @@ def history():
             slabel = "Processing" if en else "প্রসেসিং"
         else:
             slabel = REQ_LABEL.get(status, status)
-        items.append(dict(order=order or "", method=method or "", number=number or "", kind=REQ_KIND.get(kind, kind),
+        items.append(dict(order=order or "", method=method or "", number=number or "", kind=REQ_KIND.get(dkind, dkind),
                           amt=amt, tone=tone, status=slabel,
                           cls="pending" if status in ("submitted", "review") else status,
                           comm=("৳ " + money(comm)) if comm is not None else "", when=str(created or "")[:16], extra=extra))
