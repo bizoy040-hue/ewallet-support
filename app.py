@@ -947,7 +947,7 @@ def _ctx():
     unread = 0
     if u:
         unread = admin_unread(u) if u["is_admin"] else q1("SELECT COUNT(*) c FROM notifications WHERE is_read=0 AND user_id=?", (u["id"],))["c"]
-    return dict(csrf_token=csrf(), u=u, site=(setting("site_name") or SITE)[:60], unread=unread, money=money, can=has_perm,
+    return dict(csrf_token=csrf(), u=u, site=(setting("site_name") or SITE)[:60], unread=unread, money=money, can=has_perm, nb=nb,
                 role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label)
 
 
@@ -992,6 +992,16 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 6px;b
 canvas{width:100%;height:170px}
 :root[data-theme=dark]{--bg:#0b1220;--card:#111a2e;--tx:#e5eaf5;--mut:#94a3b8;--ln:#1f2b45}
 .dot[hidden]{display:none}
+[hidden]{display:none!important}
+.adm{display:flex;gap:8px;overflow:visible;white-space:normal}.adm a.t{display:inline-flex;align-items:center;gap:6px;margin:0 0 8px}
+.mg{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-bottom:14px}
+.mt{position:relative;aspect-ratio:1/1;background:var(--card);border:1px solid var(--ln);border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px;text-align:center;font-size:13px;font-weight:600;line-height:1.25;box-shadow:0 4px 14px #0f172a14;-webkit-tap-highlight-color:transparent;transition:transform .12s ease,box-shadow .2s ease}
+.mt:active{transform:scale(.95)}.mt:hover{box-shadow:0 6px 18px #0f172a24}
+.mt i{font-style:normal;font-size:28px;width:50px;height:50px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#dbeafe,#dcfce7)}
+.mt span.lb{display:block;overflow-wrap:anywhere}
+.bd2{background:#ef4444;color:#fff;border-radius:99px;font-size:11px;font-weight:700;min-width:20px;height:20px;line-height:20px;text-align:center;padding:0 6px;display:inline-block}
+.mt .bd2{position:absolute;top:8px;right:8px}
+.nav a{position:relative}.nav a .bd2{position:absolute;top:-4px;left:calc(50% + 6px);min-width:18px;height:18px;line-height:18px;font-size:10px;padding:0 5px}
 .pill.submitted{background:#dbeafe;color:#1e3a8a}.pill.expired,.pill.cancelled{background:#e2e8f0;color:#475569}
 .hxt{display:flex;gap:6px;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:4px;margin-bottom:12px}
 .hxt a{flex:1;text-align:center;padding:9px 4px;border-radius:11px;font-weight:600;font-size:14px;color:var(--mut)}
@@ -1066,6 +1076,7 @@ var _last=null;
 function pollNotif(){if(document.hidden)return;
  fetch('/api/notif',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
   if(!j)return;var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
+  if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}
   if(_last!==null&&j.latest>_last&&sndOn())beep();_last=j.latest}).catch(function(){})}
 paintToggles();
 if(document.body&&document.body.dataset.poll){pollNotif();setInterval(pollNotif,20000)}
@@ -1092,13 +1103,13 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
 <main>{% for c,m in msgs %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
-{% if u and u['is_admin'] %}<div class="adm">{% for p,t in tabs %}<a class="t {{'on' if p==active}}" href="{{p}}">{{t}}</a>{% endfor %}</div>{% endif %}
+{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active!='/admin'}}" href="/admin/menu">☰ মেনু <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a></div>{% endif %}
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
-<a class="{{'on' if active=='/'}}" href="/"><i>🏠</i>হোম</a><a class="{{'on' if active=='/history'}}" href="/history"><i>🧾</i>হিস্ট্রি</a>
-<a class="{{'on' if active=='/requests'}}" href="/requests"><i>📨</i>অনুরোধ</a><a class="{{'on' if active=='/insight'}}" href="/insight"><i>📊</i>ইনসাইট</a>
-<a class="{{'on' if active=='/account'}}" href="/account"><i>👤</i>অ্যাকাউন্ট</a></div>{% endif %}
+<a class="{{'on' if active=='/'}}" href="/"><i>🏠</i>হোম</a><a class="{{'on' if active=='/history'}}" href="/history"><i>🧾</i>হিস্ট্রি<span class="bd2" data-bd="/history"{% if not nb('/history') %} hidden{% endif %}>{{nb('/history')}}</span></a>
+<a class="{{'on' if active=='/requests'}}" href="/requests"><i>📨</i>অনুরোধ<span class="bd2" data-bd="/requests"{% if not nb('/requests') %} hidden{% endif %}>{{nb('/requests')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i>📊</i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
+<a class="{{'on' if active=='/account'}}" href="/account"><i>👤</i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
 <script>{{js|safe}}</script></body></html>"""
 
@@ -1888,14 +1899,14 @@ def account():
 <div class="card menu">
 <a class="li" href="/account/soon/kyc"><span class="ic">🪪</span><span class="lt">KYC যাচাই</span><span class="ch">›</span></a>
 <a class="li" href="/account/soon/vip"><span class="ic">👑</span><span class="lt">VIP লেভেল</span><span class="ch">›</span></a>
-<a class="li" href="/referral"><span class="ic">🎁</span><span class="lt">ইনভাইট ও আর্ন</span><span class="ch">›</span></a>
+<a class="li" href="/referral"><span class="ic">🎁</span><span class="lt">ইনভাইট ও আর্ন</span><span class="bd" data-bd="/referral"{% if not nb('/referral') %} hidden{% endif %}>{{nb('/referral')}}</span><span class="ch">›</span></a>
 <button type="button" class="li" onclick="toggleTheme()"><span class="ic">🌙</span><span class="lt">ডার্ক মোড</span><span class="k" id="thv"></span></button>
 <a class="li" href="/notifications"><span class="ic">🔔</span><span class="lt">নোটিফিকেশন</span>{% if unread %}<span class="bd">{{unread}}</span>{% endif %}<span class="ch">›</span></a>
 <button type="button" class="li" onclick="setSnd(!sndOn())"><span class="ic">🔊</span><span class="lt">নোটিফিকেশন সাউন্ড</span><span class="k" id="sndv"></span></button>
 <a class="li" href="/lang/{{'bn' if lang=='en' else 'en'}}?next=/account"><span class="ic">🌐</span><span class="lt">ভাষা</span><span class="k">{{'বাংলা (Bangla)' if lang=='en' else 'English'}}</span><span class="ch">›</span></a>
 <a class="li" href="/account/settings"><span class="ic">⚙️</span><span class="lt">সেটিংস</span><span class="ch">›</span></a>
-<a class="li" href="/payment-numbers"><span class="ic">💳</span><span class="lt">পেমেন্ট নম্বর ব্যবস্থাপনা</span><span class="ch">›</span></a>
-<a class="li" href="/support"><span class="ic">💬</span><span class="lt">সাপোর্ট</span><span class="ch">›</span></a>
+<a class="li" href="/payment-numbers"><span class="ic">💳</span><span class="lt">পেমেন্ট নম্বর ব্যবস্থাপনা</span><span class="bd" data-bd="/payment-numbers"{% if not nb('/payment-numbers') %} hidden{% endif %}>{{nb('/payment-numbers')}}</span><span class="ch">›</span></a>
+<a class="li" href="/support"><span class="ic">💬</span><span class="lt">সাপোর্ট</span><span class="bd" data-bd="/support"{% if not nb('/support') %} hidden{% endif %}>{{nb('/support')}}</span><span class="ch">›</span></a>
 <a class="li" href="/feedback"><span class="ic">📝</span><span class="lt">ফিডব্যাক</span><span class="ch">›</span></a>
 <a class="li" href="/about"><span class="ic">ℹ️</span><span class="lt">আমাদের সম্পর্কে</span><span class="ch">›</span></a>
 <form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="li out"><span class="ic">🚪</span><span class="lt">লগআউট</span></button></form>
@@ -3149,6 +3160,88 @@ def alert_admins(title, body="", link="", perm=None):
         pass
 
 
+# ---------------------------------------------------------------- per-feature unread badges + admin menu grid
+ADMIN_ICONS = {"/admin/alerts": "🔔", "/admin/requests": "📨", "/admin/deposits": "💰", "/admin/withdrawals": "🏧", "/admin/users": "👥",
+               "/admin/payment-numbers": "💳", "/admin/referrals": "🎁", "/admin/commission": "💸", "/admin/pool": "🏦",
+               "/admin/reports": "📊", "/admin/reconcile": "🧮", "/admin/staff": "🛡️", "/admin/tickets": "🎫", "/admin/notices": "📢",
+               "/admin/content": "📝", "/admin/settings": "⚙️", "/admin/audit": "📜", "/admin/profile": "👤"}
+# longest path first so "/admin/payment-numbers" etc. match before any shorter prefix
+_BADGE_PATHS = sorted((p for p, _, _ in ADMIN_TABS if p not in ("/admin", "/admin/alerts")), key=len, reverse=True)
+_USER_BADGE_PATHS = ("/requests", "/history", "/referral", "/support", "/payment-numbers", "/insight")
+
+
+def _admin_badge_key(link):
+    l = (link or "").split("?")[0].split("#")[0].rstrip("/")
+    for p in _BADGE_PATHS:
+        if l == p or l.startswith(p + "/"):
+            return p
+    return "/admin/alerts"
+
+
+def _user_badge_key(link, title):
+    l = (link or "").split("?")[0].rstrip("/")
+    for p in _USER_BADGE_PATHS:
+        if l == p or l.startswith(p + "/"):
+            return p
+    if l in ("/deposit", "/withdraw"):
+        return "/history"
+    t = title or ""
+    if "রেফারেল" in t:
+        return "/referral"
+    if "সাপোর্ট" in t:
+        return "/support"
+    if "অনুরোধ" in t:
+        return "/requests"
+    if "ডিপোজিট" in t or "উইথড্র" in t or "ব্যালেন্স" in t or "কমিশন" in t:
+        return "/history"
+    return ""
+
+
+def notif_badges():
+    """{feature path: unread count} for the signed-in user; '*' = total unread. Each unread notification is counted exactly once."""
+    if hasattr(g, "_nb"):
+        return g._nb
+    u, b = me(), {}
+    if u and u["is_admin"]:
+        f, pa = _alert_filter(u)
+        rows = qa("SELECT a.id, a.link FROM admin_alerts a WHERE %s AND a.created>=? AND NOT EXISTS("
+                  "SELECT 1 FROM admin_alert_reads r WHERE r.alert_id=a.id AND r.admin_id=?)" % f,
+                  pa + [u["created"] or "", u["id"]])
+        visible = {p for p, _, perm in ADMIN_TABS if perm is None or has_perm(perm, u)}
+        for r in rows:
+            k = _admin_badge_key(r["link"])
+            if k not in visible:
+                k = "/admin/alerts"
+            b[k] = b.get(k, 0) + 1
+        b["*"] = len(rows)
+    elif u:
+        rows = qa("SELECT id, link, title FROM notifications WHERE is_read=0 AND user_id=?", (u["id"],))
+        for r in rows:
+            k = _user_badge_key(r["link"], r["title"])
+            b[k or "/account"] = b.get(k or "/account", 0) + 1
+            if k in ("/referral", "/support", "/payment-numbers"):
+                b["/account"] = b.get("/account", 0) + 1
+        b["*"] = len(rows)
+    g._nb = b
+    return b
+
+
+def nb(key):
+    return notif_badges().get(key, 0)
+
+
+@app.route("/admin/menu")
+@staff_required()
+def admin_menu():
+    u = me()
+    tiles = [(p, t.replace("🔔 ", ""), ADMIN_ICONS.get(p, "•")) for p, t, perm in ADMIN_TABS
+             if p != "/admin" and (perm is None or has_perm(perm, u))]
+    return page("""<div class="mg">{% for p,t,ic in tiles %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>
+<span class="bd2" data-bd="{{'*' if p=='/admin/alerts' else p}}"{% if not nb('*' if p=='/admin/alerts' else p) %} hidden{% endif %}>{{nb('*' if p=='/admin/alerts' else p)}}</span></a>{% endfor %}</div>""",
+                active="/admin/menu", tiles=tiles)
+
+
+
 @app.route("/api/notif")
 @login_required
 def api_notif():
@@ -3156,9 +3249,9 @@ def api_notif():
     if u["is_admin"]:
         f, pa = _alert_filter(u)
         latest = q1("SELECT COALESCE(MAX(a.id),0) m FROM admin_alerts a WHERE %s AND a.created>=?" % f, pa + [u["created"] or ""])["m"]
-        return jsonify(unread=admin_unread(u), latest=latest)
+        return jsonify(unread=admin_unread(u), latest=latest, badges=notif_badges())
     r = q1("SELECT COUNT(CASE WHEN is_read=0 THEN 1 END) c, COALESCE(MAX(id),0) m FROM notifications WHERE user_id=?", (u["id"],))
-    return jsonify(unread=r["c"], latest=r["m"])
+    return jsonify(unread=r["c"], latest=r["m"], badges=notif_badges())
 
 
 @app.route("/admin/alerts")
