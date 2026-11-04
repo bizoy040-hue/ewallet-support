@@ -1210,6 +1210,15 @@ function autoRead(){var box=document.getElementById('nlist');if(!box)return;var 
  els.forEach(function(e){io.observe(e)})}
 paintToggles();
 if(document.body&&document.body.dataset.poll){pollNotif();setInterval(pollNotif,20000)}
+function pwTog(b){var w=b.closest('.au-f'),i=w&&w.querySelector('input');if(!i)return;var show=i.type==='password';
+ i.type=show?'text':'password';b.classList.toggle('on',show);b.setAttribute('aria-pressed',show?'true':'false')}
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-pwtoggle]');if(!b)return;e.preventDefault();pwTog(b)});
+document.addEventListener('keydown',function(e){var t=e.target;if((e.key==='Enter'||e.key===' ')&&t.matches&&t.matches('[data-pwtoggle]')){e.preventDefault();pwTog(t)}});
+document.addEventListener('input',function(e){var i=e.target;if(!i.matches||!i.matches('[data-pwmeter]'))return;
+ var w=i.closest('.au-fw'),m=w&&w.querySelector('.au-meter');if(!m)return;var v=i.value,n=0;
+ if(v.length>=6)n++;if(v.length>=9)n++;if(/[A-Za-z]/.test(v)&&/[0-9]/.test(v))n++;if(/[^A-Za-z0-9]/.test(v)||(/[a-z]/.test(v)&&/[A-Z]/.test(v)))n++;
+ if(v.length)n=Math.max(1,n);m.dataset.s=n;var t=m.querySelector('em'),en=document.documentElement.lang==='en';
+ if(t)t.textContent=n?(en?['','Weak','Fair','Good','Strong']:['','দুর্বল','মোটামুটি','ভালো','শক্তিশালী'])[n]:''});
 """
 
 BASE = """<!doctype html><html lang="{{lang}}"><head><meta charset="utf-8">
@@ -1229,7 +1238,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap"></noscript>
 <link rel="stylesheet" href="/assets/app.css?v={{av}}">
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
-<body{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
+<body{% if authpage %} class="auth"{% endif %}{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
 <div id="ld"></div>
 <div class="top"><b>{{site}}</b><button type="button" id="pwa-install" class="pwa-dl" aria-label="Download App" title="Download App">📲</button><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
 {% if u and not u['is_admin'] %}<span><a class="bell" href="/notifications">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
@@ -1245,6 +1254,102 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <a class="{{'on' if active=='/account'}}" href="/account"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="8" r="4"/><path class="d" d="M4.5 20.5a7.5 7.5 0 0 1 15 0z"/></svg></i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
 <script src="/assets/app.js?v={{av}}"></script></body></html>"""
+
+AUTH_CSS = """
+body.auth{background:#0e5aa7;padding-bottom:0;min-height:100vh;min-height:100dvh;overflow-x:hidden;color:var(--tx)}
+body.auth::before{content:"";position:fixed;inset:0;z-index:-2;background:
+ radial-gradient(90% 55% at 0% 0%,#3b82f6aa 0%,transparent 60%),radial-gradient(80% 50% at 100% 18%,#2dd4bfaa 0%,transparent 60%),
+ linear-gradient(165deg,#1e40af 0%,#0f766e 58%,#15803d 100%)}
+body.auth::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;
+ background-image:radial-gradient(#ffffff22 1.2px,transparent 1.3px);background-size:22px 22px;
+ -webkit-mask-image:linear-gradient(180deg,#000 0%,transparent 55%);mask-image:linear-gradient(180deg,#000 0%,transparent 55%)}
+body.auth #ld{z-index:50}
+body.auth .top{background:none;box-shadow:none;position:relative;max-width:440px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top,0px)) 18px 4px}
+body.auth .top>span{display:none}
+body.auth .top b{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;letter-spacing:.2px}
+body.auth .top b::before{content:"";flex:0 0 38px;height:38px;border-radius:12px;border:1px solid #ffffff44;
+ background:#ffffff26 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7.5A2.5 2.5 0 0 1 5.5 5H18a1 1 0 0 1 1 1v2'/%3E%3Cpath d='M3 7.5V17a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1v-3'/%3E%3Cpath d='M21 9.5h-5a2.5 2.5 0 0 0 0 5h5z'/%3E%3C/svg%3E") center/22px no-repeat;
+ box-shadow:0 6px 16px #0b1b4d40,inset 0 1px 0 #ffffff40;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+body.auth main{max-width:440px;margin:0 auto;padding:0 16px calc(28px + env(safe-area-inset-bottom,0px))}
+.au-hero{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#fff;padding:18px 4px 22px}
+.au-ht{flex:1;min-width:0}
+.au-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:5px 11px;border-radius:99px;background:#ffffff24;border:1px solid #ffffff3d;margin-bottom:10px}
+.au-badge svg{width:14px;height:14px}
+.au-hero h1{margin:0 0 4px;font-size:30px;line-height:1.2;font-weight:700;letter-spacing:.2px}
+.au-hero p{margin:0;font-size:14.5px;line-height:1.5;opacity:.92}
+.au-art{position:relative;flex:0 0 118px;height:92px}
+.au-art i{position:absolute;display:block;border-radius:15px}
+.au-art .a1{right:2px;top:4px;width:98px;height:62px;transform:rotate(9deg);background:linear-gradient(135deg,#ffffff40,#ffffff12);border:1px solid #ffffff40}
+.au-art .a2{left:4px;top:16px;width:104px;height:66px;transform:rotate(-8deg);background:linear-gradient(135deg,#ffffff,#d9f99d 140%);box-shadow:0 14px 28px #0b1b4d59;overflow:hidden}
+.au-art .a2::before{content:"";position:absolute;left:11px;top:12px;width:20px;height:15px;border-radius:5px;background:linear-gradient(135deg,#fbbf24,#f59e0b)}
+.au-art .a2::after{content:"";position:absolute;left:11px;right:30px;bottom:12px;height:6px;border-radius:4px;background:linear-gradient(90deg,#1d4ed8,#16a34a);opacity:.85}
+.au-card{background:var(--card);border-radius:28px;padding:20px 18px 22px;border:1px solid #ffffff66;
+ box-shadow:0 28px 60px -14px #0b1b4d77,0 6px 16px #0f172a1f;animation:auUp .55s cubic-bezier(.2,.8,.2,1) both}
+@keyframes auUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.au-seg{position:relative;display:grid;grid-template-columns:1fr 1fr;background:var(--bg);border:1px solid var(--ln);border-radius:17px;padding:5px;margin-bottom:20px}
+.au-seg a{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:12px 6px;border-radius:13px;font-weight:700;font-size:15px;color:var(--mut);transition:color .25s;-webkit-tap-highlight-color:transparent}
+.au-seg a svg{width:18px;height:18px;flex:none}
+.au-seg a.on{color:#fff}
+.au-ind{position:absolute;z-index:0;top:5px;bottom:5px;left:5px;width:calc(50% - 5px);border-radius:13px;background:linear-gradient(135deg,#1d4ed8,#0f9d58);box-shadow:0 8px 18px #1d4ed84d}
+.au-seg.in .au-ind{animation:indL .4s cubic-bezier(.2,.8,.2,1)}
+.au-seg.up .au-ind{transform:translateX(100%);animation:indR .4s cubic-bezier(.2,.8,.2,1)}
+@keyframes indL{from{transform:translateX(100%)}to{transform:none}}
+@keyframes indR{from{transform:none}to{transform:translateX(100%)}}
+.au-msg{display:flex;gap:9px;align-items:flex-start;padding:11px 13px;border-radius:14px;margin-bottom:16px;font-size:14px;line-height:1.5;word-break:break-word;background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+.au-msg svg{width:18px;height:18px;flex:none;margin-top:2px}
+.au-msg.error{background:#fee2e2;color:#991b1b;border-color:#fecaca;animation:auShake .4s}
+@keyframes auShake{20%,60%{transform:translateX(-5px)}40%,80%{transform:translateX(5px)}}
+.au-form label{display:block;font-size:13.5px;font-weight:600;color:var(--tx);margin:0 0 7px}
+.au-lr{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.au-lr a{font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:7px}
+:root[data-theme=dark] .au-lr a{color:#60a5fa}
+.au-fw{margin-bottom:16px}
+.au-f{position:relative}
+.au-f>svg.ic{position:absolute;left:15px;top:50%;width:20px;height:20px;margin-top:-10px;color:var(--mut);pointer-events:none;transition:color .2s}
+.au-f:focus-within>svg.ic{color:#1d4ed8}
+.au-f input{width:100%;height:54px;margin:0;padding:0 46px 0 46px;font-size:16px;border:1.5px solid var(--ln);border-radius:15px;background:var(--bg);color:var(--tx);outline:0;transition:border-color .2s,box-shadow .2s,background .2s}
+.au-f input::placeholder{color:#94a3b8;opacity:.9}
+.au-f input:focus{border-color:#2563eb;background:var(--card);box-shadow:0 0 0 4px #2563eb26}
+.au-f .eye{position:absolute;right:6px;top:50%;width:42px;height:42px;margin-top:-21px;display:flex;align-items:center;justify-content:center;border-radius:12px;color:var(--mut);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.au-f .eye svg{width:21px;height:21px}
+.au-f .eye .e2{display:none}.au-f .eye.on .e1{display:none}.au-f .eye.on .e2{display:block}
+.au-f .eye.on{color:#1d4ed8}
+.au-meter{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:9px;align-items:center}
+.au-meter b{height:4px;border-radius:4px;background:var(--ln);transition:background .25s}
+.au-meter em{grid-column:1/-1;font-style:normal;font-size:12px;font-weight:600;color:var(--mut);margin-top:2px}.au-meter em:empty{display:none}
+.au-meter[data-s="1"] b:nth-child(-n+1){background:#ef4444}
+.au-meter[data-s="2"] b:nth-child(-n+2){background:#f59e0b}
+.au-meter[data-s="3"] b:nth-child(-n+3){background:#22c55e}
+.au-meter[data-s="4"] b:nth-child(-n+4){background:#16a34a}
+.au-chip{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:13px;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;font-size:13px;font-weight:600;margin-bottom:16px}
+.au-chip svg{width:17px;height:17px;flex:none}
+:root[data-theme=dark] .au-chip{background:#052e22;border-color:#065f46;color:#6ee7b7}
+.au-card button.au-btn{width:100%;height:56px;margin-top:4px;border-radius:16px;font-size:17px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;justify-content:center;gap:9px;
+ background:linear-gradient(120deg,#1d4ed8 0%,#0d9488 60%,#16a34a 100%);box-shadow:0 12px 24px -6px #1d4ed87a,inset 0 1px 0 #ffffff40;-webkit-tap-highlight-color:transparent}
+.au-btn svg{width:20px;height:20px;transition:transform .2s}
+.au-btn:hover svg{transform:translateX(3px)}
+.au-btn:active{transform:scale(.985)}
+.au-alt{display:flex;align-items:center;gap:12px;margin:20px 0 14px;color:var(--mut);font-size:13px}
+.au-alt::before,.au-alt::after{content:"";flex:1;height:1px;background:var(--ln)}
+.au-card a.au-ghost{display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:15px;border:1.5px solid #2563eb55;color:#1d4ed8;font-weight:700;font-size:15.5px;background:#2563eb0d;transition:background .2s,transform .12s}
+.au-ghost:active{transform:scale(.985)}
+.au-ghost svg{width:19px;height:19px}
+:root[data-theme=dark] .au-card a.au-ghost{color:#93c5fd}
+.au-back{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:#1d4ed8;margin-bottom:14px}
+.au-back svg{width:18px;height:18px}
+:root[data-theme=dark] .au-back{color:#60a5fa}
+.au-steps{margin:0 0 18px;padding:0;list-style:none;counter-reset:s}
+.au-steps li{counter-increment:s;display:flex;gap:11px;align-items:flex-start;font-size:14px;line-height:1.55;color:var(--tx);padding:9px 0}
+.au-steps li::before{content:counter(s);flex:0 0 26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff;background:linear-gradient(135deg,#1d4ed8,#16a34a)}
+.au-steps a{color:#1d4ed8;font-weight:700}
+.au-trust{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0 12px}
+.au-trust div{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;font-size:11.5px;font-weight:600;line-height:1.3;color:#fff;padding:11px 6px;border-radius:16px;background:#ffffff1f;border:1px solid #ffffff33;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.au-trust svg{width:21px;height:21px}
+.au-disc{text-align:center;color:#ffffffb8;font-size:11.5px;line-height:1.55;padding:0 8px;margin:0}
+@media(max-width:360px){.au-hero h1{font-size:26px}.au-art{display:none}.au-card{padding:18px 14px 20px}}
+@media(prefers-reduced-motion:reduce){.au-card,.au-ind,.au-msg{animation:none!important}}
+"""
+CSS += AUTH_CSS
 
 ASSET_V = hashlib.sha1((CSS + JS).encode("utf-8")).hexdigest()[:10]
 
@@ -1287,14 +1392,16 @@ def render_str(src, **ctx):
     return _tpl(src).render(ctx)
 
 
-def page(tpl, active="", foot="", **ctx):
+def page(tpl, active="", foot="", authpage=False, **ctx):
     from flask import get_flashed_messages
-    body = render_str(tpl, **ctx)
     msgs = get_flashed_messages(with_categories=True)
     msgs = [(("error" if c == "error" else ""), m) for c, m in msgs]
+    if authpage:  # sign in / sign up / reset pages show their messages inside the card
+        ctx["amsgs"], msgs = msgs, []
+    body = render_str(tpl, **ctx)
     u = me()
     lang, tgu = cur_lang(), tg_url_active()
-    html = render_str(BASE, body=body, av=ASSET_V, msgs=msgs, active=active, foot=foot,
+    html = render_str(BASE, body=body, av=ASSET_V, msgs=msgs, active=active, foot=foot, authpage=authpage,
                                   fab=bool(u and not u["is_admin"] and active == "/"), lang=lang, nxt=request.path,
                                   fab_href=tgu or "/support", fab_tg=bool(tgu), fab_label=tg_label() if tgu else ("Support" if lang == "en" else "সাপোর্ট"),
                                   dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"))
@@ -1424,6 +1531,18 @@ EN_PHRASES = {
     "প্রথম ডিপোজিট বাকি": "Awaiting first deposit",
     "রিওয়ার্ড সেটিংস": "Reward settings", "রিওয়ার্ড ইতিহাস": "Reward history", "রিওয়ার্ড দিন": "Pay reward",
     "রিওয়ার্ডের পরিমাণ (৳)": "Reward amount (৳)", "রিওয়ার্ড সেভ করুন": "Save reward",
+    # authentication pages
+    "স্বাগতম": "Welcome", "নিরাপদ ডিজিটাল ওয়ালেট": "Secure digital wallet",
+    "আপনার ওয়ালেটে নিরাপদে সাইন ইন করুন": "Sign in to your wallet securely", "কয়েক সেকেন্ডেই অ্যাকাউন্ট খুলুন": "Create your account in seconds",
+    "সাপোর্টের সহায়তায় নিরাপদে পাসওয়ার্ড বদলান": "Change your password safely with support's help",
+    "পাসওয়ার্ড দেখান বা লুকান": "Show or hide password", "অ্যাকাউন্ট নেই?": "Don't have an account?",
+    "নতুন অ্যাকাউন্ট খুলুন": "Create a new account", "আগেই অ্যাকাউন্ট আছে?": "Already have an account?",
+    "আপনার পুরো নাম": "Your full name", "যেমন: AB12CD34": "e.g. AB12CD34", "রেফারেল কোড প্রয়োগ হয়েছে": "Referral code applied",
+    "সুরক্ষিত লগইন": "Secure login", "লেজার-ভিত্তিক হিসাব": "Ledger-based accounting", "যাচাইকৃত ডিপোজিট": "Verified deposits",
+    "আপনার নাম, মোবাইল নম্বর ও মেম্বার আইডি সাপোর্টকে জানান।": "Tell support your name, mobile number and member ID.",
+    "টেলিগ্রামে মেসেজ করুন": "Message us on Telegram",
+    "স্টাফ একটি ৩০ মিনিটের এককালীন কোড দেবেন।": "Staff will give you a one-time code valid for 30 minutes.",
+    "নিচে কোডটি দিয়ে নতুন পাসওয়ার্ড সেট করুন।": "Enter the code below and set a new password.",
 }
 _EN_RE = re.compile(r"(?<![\u0980-\u09FF])(" + "|".join(re.escape(k) for k in sorted(EN_PHRASES, key=len, reverse=True))
                     + r")(?![\u0980-\u09FF])")
@@ -1617,6 +1736,59 @@ def admin_content_telegram():
 
 
 
+# ---------------------------------------------------------------- authentication pages: shared premium layout (sign in / sign up / reset)
+AUTH_ICONS = {'phone': '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2.8" width="11" height="18.4" rx="2.6"/><path d="M10.5 18h3"/></svg>', 'lock': '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.6"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/><circle cx="12" cy="15.5" r="1.1" fill="currentColor"/></svg>', 'user': '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg>', 'gift': '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="8.5" width="17" height="4" rx="1.2"/><path d="M5 12.5V20h14v-7.5M12 8.5V20"/><path d="M12 8.5C10.5 8.5 8 8 8 6a2 2 0 0 1 4 0v2.5zm0 0c1.5 0 4-.5 4-2.5a2 2 0 0 0-4 0"/></svg>', 'key': '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2.5 2.5M13.5 9.5l2 2"/></svg>', 'eye': '<span class="eye" role="button" tabindex="0" data-pwtoggle aria-pressed="false" aria-label="পাসওয়ার্ড দেখান বা লুকান"><svg class="e1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="e2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 6.2A10 10 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5a17 17 0 0 1-3.2 3.9M6.5 7.6A16.6 16.6 0 0 0 2 12s3.6 6.5 10 6.5a9.7 9.7 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></span>', 'arrow': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>', 'back': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>', 'login': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l4-4-4-4M14 12H4"/></svg>', 'plus': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.6"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></svg>', 'shield': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.6-3.1 8.3-7.5 9.5-4.4-1.2-7.5-4.9-7.5-9.5V6z"/><path d="M8.8 12l2.4 2.4 4.2-4.6"/></svg>', 'ledger': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2.4"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></svg>', 'verified': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M8.2 12.2l2.6 2.6 5-5.4"/></svg>', 'alert': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.4v.1"/></svg>', 'ok': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16 9.5"/></svg>'}
+
+
+def _auth_tpl(t):
+    return re.sub(r"@@(\w+)@@", lambda m: AUTH_ICONS[m.group(1)], t)
+
+
+AUTH_TOP = _auth_tpl("""<section class="au-hero"><div class="au-ht"><span class="au-badge">@@shield@@নিরাপদ ডিজিটাল ওয়ালেট</span>
+{% if mode=='in' %}<h1>স্বাগতম</h1><p>আপনার ওয়ালেটে নিরাপদে সাইন ইন করুন</p>
+{% elif mode=='up' %}<h1>নতুন অ্যাকাউন্ট</h1><p>কয়েক সেকেন্ডেই অ্যাকাউন্ট খুলুন</p>
+{% else %}<h1>পাসওয়ার্ড রিসেট</h1><p>সাপোর্টের সহায়তায় নিরাপদে পাসওয়ার্ড বদলান</p>{% endif %}</div>
+<div class="au-art" aria-hidden="true"><i class="a1"></i><i class="a2"></i></div></section>
+<div class="au-card">
+{% if mode %}<div class="au-seg {{mode}}" role="tablist"><i class="au-ind"></i>
+<a href="/login" role="tab" class="{{'on' if mode=='in'}}" aria-selected="{{'true' if mode=='in' else 'false'}}">@@login@@সাইন ইন</a>
+<a href="/signup{% if ref %}?ref={{ref}}{% endif %}" role="tab" class="{{'on' if mode=='up'}}" aria-selected="{{'true' if mode=='up' else 'false'}}">@@plus@@নতুন অ্যাকাউন্ট</a></div>
+{% else %}<a class="au-back" href="/login">@@back@@সাইন ইন</a>{% endif %}
+{% for c,m in amsgs %}<div class="au-msg {{c}}" role="alert">{% if c=='error' %}@@alert@@{% else %}@@ok@@{% endif %}<span>{{m}}</span></div>{% endfor %}""")
+
+AUTH_BOTTOM = _auth_tpl("""</div>
+<div class="au-trust"><div>@@shield@@সুরক্ষিত লগইন</div><div>@@ledger@@লেজার-ভিত্তিক হিসাব</div><div>@@verified@@যাচাইকৃত ডিপোজিট</div></div>
+<p class="au-disc">{{disc}}</p>""")
+
+LOGIN_FORM = _auth_tpl("""<form method="post" class="au-form"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<div class="au-fw"><label for="au-ph">মোবাইল নম্বর</label><div class="au-f">@@phone@@<input id="au-ph" name="phone" required inputmode="numeric" autocomplete="username" placeholder="01XXXXXXXXX"></div></div>
+<div class="au-fw"><div class="au-lr"><label for="au-pw">পাসওয়ার্ড</label><a href="/forgot">পাসওয়ার্ড ভুলে গেছেন?</a></div>
+<div class="au-f">@@lock@@<input id="au-pw" name="pw" type="password" required autocomplete="current-password" placeholder="••••••••">@@eye@@</div></div>
+<button class="au-btn">সাইন ইন @@arrow@@</button></form>
+<div class="au-alt">অ্যাকাউন্ট নেই?</div>
+<a class="au-ghost" href="/signup">@@plus@@নতুন অ্যাকাউন্ট খুলুন</a>""")
+
+SIGNUP_FORM = _auth_tpl("""<form method="post" class="au-form"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+{% if ref %}<div class="au-chip">@@ok@@রেফারেল কোড প্রয়োগ হয়েছে</div>{% endif %}
+<div class="au-fw"><label for="au-nm">নাম</label><div class="au-f">@@user@@<input id="au-nm" name="name" required maxlength="60" autocomplete="name" placeholder="আপনার পুরো নাম"></div></div>
+<div class="au-fw"><label for="au-ph">মোবাইল নম্বর</label><div class="au-f">@@phone@@<input id="au-ph" name="phone" required inputmode="numeric" maxlength="11" autocomplete="tel" placeholder="01XXXXXXXXX"></div></div>
+<div class="au-fw"><label for="au-pw">পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)</label><div class="au-f">@@lock@@<input id="au-pw" name="pw" type="password" required minlength="6" autocomplete="new-password" placeholder="••••••••" data-pwmeter>@@eye@@</div>
+<div class="au-meter" data-s="0"><b></b><b></b><b></b><b></b><em></em></div></div>
+<div class="au-fw"><label for="au-rf">রেফারেল কোড (ঐচ্ছিক)</label><div class="au-f">@@gift@@<input id="au-rf" name="ref" value="{{ref}}" maxlength="12" autocapitalize="characters" autocomplete="off" placeholder="যেমন: AB12CD34"></div></div>
+<button class="au-btn">নতুন অ্যাকাউন্ট খুলুন @@arrow@@</button></form>
+<div class="au-alt">আগেই অ্যাকাউন্ট আছে?</div>
+<a class="au-ghost" href="/login">@@login@@সাইন ইন</a>""")
+
+FORGOT_FORM = _auth_tpl("""<ol class="au-steps"><li><span>আপনার নাম, মোবাইল নম্বর ও মেম্বার আইডি সাপোর্টকে জানান।{% if tg %} <a href="{{tg}}">টেলিগ্রামে মেসেজ করুন</a>{% endif %}</span></li>
+<li><span>স্টাফ একটি ৩০ মিনিটের এককালীন কোড দেবেন।</span></li><li><span>নিচে কোডটি দিয়ে নতুন পাসওয়ার্ড সেট করুন।</span></li></ol>
+<form method="post" action="/reset" class="au-form"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<div class="au-fw"><label for="au-ph">মোবাইল নম্বর</label><div class="au-f">@@phone@@<input id="au-ph" name="phone" required inputmode="numeric" autocomplete="username" placeholder="01XXXXXXXXX"></div></div>
+<div class="au-fw"><label for="au-cd">রিসেট কোড</label><div class="au-f">@@key@@<input id="au-cd" name="code" required autocomplete="one-time-code" autocapitalize="characters" placeholder="XXXXXXXX"></div></div>
+<div class="au-fw"><label for="au-pw">নতুন পাসওয়ার্ড</label><div class="au-f">@@lock@@<input id="au-pw" name="pw" type="password" minlength="6" required autocomplete="new-password" placeholder="••••••••" data-pwmeter>@@eye@@</div>
+<div class="au-meter" data-s="0"><b></b><b></b><b></b><b></b><em></em></div></div>
+<button class="au-btn">পাসওয়ার্ড বদলান @@arrow@@</button></form>""")
+
+
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if setting("signup_open", "1") == "0":
@@ -1657,11 +1829,7 @@ def signup():
             err("এই নম্বর দিয়ে আগেই অ্যাকাউন্ট আছে।"); return redirect(back)
         flash("অ্যাকাউন্ট তৈরি হয়েছে। সাইন ইন করুন।"); return redirect("/login")
     ref = re.sub(r"[^A-Z0-9]", "", request.args.get("ref", "").upper())[:12]
-    return page("""<div class="card"><h2>সাইন আপ</h2><form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<label>নাম</label><input name="name" required maxlength="60"><label>মোবাইল নম্বর</label><input name="phone" required inputmode="numeric" maxlength="11">
-<label>পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)</label><input name="pw" type="password" required minlength="6">
-<label>রেফারেল কোড (ঐচ্ছিক)</label><input name="ref" value="{{ref}}" maxlength="12" autocapitalize="characters" autocomplete="off">
-<button style="width:100%">সাইন আপ</button></form><p class="k">আগেই অ্যাকাউন্ট আছে? <a href="/login"><b>সাইন ইন</b></a></p></div>""", ref=ref)
+    return page(AUTH_TOP + SIGNUP_FORM + AUTH_BOTTOM, authpage=True, mode="up", ref=ref, disc=DISCLAIMER_EN if cur_lang() == "en" else DISCLAIMER)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1684,10 +1852,7 @@ def login():
                 audit("staff_login", "role=%s" % u["role"], actor=u)
             return redirect("/admin" if u["is_admin"] else "/")
         err("নম্বর/পাসওয়ার্ড ভুল অথবা অ্যাকাউন্ট ব্লকড/নিষ্ক্রিয়।"); return redirect("/login")
-    return page("""<div class="card"><h2>সাইন ইন</h2><form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<label>মোবাইল নম্বর</label><input name="phone" required inputmode="numeric"><label>পাসওয়ার্ড</label><input name="pw" type="password" required>
-<button style="width:100%">সাইন ইন</button></form>
-<p><a href="/forgot"><b>পাসওয়ার্ড ভুলে গেছেন?</b></a> · <a href="/signup">নতুন অ্যাকাউন্ট</a></p></div>""")
+    return page(AUTH_TOP + LOGIN_FORM + AUTH_BOTTOM, authpage=True, mode="in", ref="", disc=DISCLAIMER_EN if cur_lang() == "en" else DISCLAIMER)
 
 
 @app.route("/logout", methods=["POST"])
@@ -1697,13 +1862,7 @@ def logout():
 
 @app.route("/forgot")
 def forgot():
-    return page("""<div class="card"><h2>পাসওয়ার্ড রিসেট</h2>
-<p>ইমেইল সেটআপ নেই, তাই সাপোর্টের সহায়তায় রিসেট হয়:</p>
-<p>১. {% if tg %}<a href="{{tg}}"><b>টেলিগ্রামে</b></a>{% else %}সাপোর্টে{% endif %} আপনার নাম, মোবাইল নম্বর ও মেম্বার আইডি জানান।<br>
-২. স্টাফ একটি ৩০ মিনিটের এককালীন কোড দেবেন।<br>৩. নিচে কোডটি দিয়ে নতুন পাসওয়ার্ড সেট করুন।</p>
-<form method="post" action="/reset"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<label>মোবাইল নম্বর</label><input name="phone" required><label>রিসেট কোড</label><input name="code" required>
-<label>নতুন পাসওয়ার্ড</label><input name="pw" type="password" minlength="6" required><button style="width:100%">পাসওয়ার্ড বদলান</button></form></div>""")
+    return page(AUTH_TOP + FORGOT_FORM + AUTH_BOTTOM, authpage=True, mode=None, ref="", disc=DISCLAIMER_EN if cur_lang() == "en" else DISCLAIMER)
 
 
 @app.route("/reset", methods=["POST"])
