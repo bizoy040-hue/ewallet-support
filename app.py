@@ -13,7 +13,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")),
-                  MAX_CONTENT_LENGTH=3 * 1024 * 1024,
+                  MAX_CONTENT_LENGTH=6 * 1024 * 1024,
                   PERMANENT_SESSION_LIFETIME=timedelta(days=7))
 if os.environ.get("RENDER"):  # trust exactly one proxy hop (Render) for real client IP / https
     from werkzeug.middleware.proxy_fix import ProxyFix
@@ -33,7 +33,7 @@ PERM_LABELS = {
     "referrals": "রেফারেল অনুমোদন", "commissions": "কমিশন প্রদান", "tickets": "সাপোর্ট টিকিট",
     "notices": "নোটিশ প্রকাশ", "audit": "অডিট লগ দেখা"}
 PERM_LABELS.update({"requests": "ম্যানুয়াল রিকোয়েস্ট", "payment_numbers": "পেমেন্ট নম্বর দেখা", "pool_view": "কমিশন পুল দেখা",
-                    "reports": "আর্থিক রিপোর্ট দেখা", "rates": "ইউজার কমিশন রেট বদলানো"})
+                    "reports": "আর্থিক রিপোর্ট দেখা", "rates": "ইউজার কমিশন রেট বদলানো", "kyc": "KYC যাচাই"})
 ADMIN_ASSIGNABLE = tuple(PERM_LABELS)                       # what a Super Admin can grant to an "admin"
 ADMIN_DEFAULT = tuple(p for p in ADMIN_ASSIGNABLE if p != "adjust")
 ROLE_FIXED = {"finance": frozenset({"dashboard_fin", "deposits", "withdrawals", "users_view", "referrals", "commissions"}),
@@ -1015,7 +1015,7 @@ def _ctx():
     u = me()
     unread = notif_badges().get("*", 0) if u else 0  # same single query that feeds the per-feature badges
     return dict(csrf_token=csrf(), u=u, site=(setting("site_name") or SITE)[:60], unread=unread, money=money, can=has_perm, nb=nb,
-                role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label)
+                role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label, kycs=kyc_status, kycl=KYC_LABEL)
 
 
 CSS = """
@@ -1268,7 +1268,7 @@ def asset_js():
 # (path, label, permission or None = any staff)
 ADMIN_TABS = [("/admin", "ড্যাশবোর্ড", None), ("/admin/alerts", "🔔 নোটিফিকেশন", None),
               ("/admin/requests", "রিকোয়েস্ট", "requests"), ("/admin/deposits", "ডিপোজিট", "deposits"),
-              ("/admin/withdrawals", "উইথড্র", "withdrawals"), ("/admin/users", "ইউজার", "users_view"),
+              ("/admin/withdrawals", "উইথড্র", "withdrawals"), ("/admin/users", "ইউজার", "users_view"), ("/admin/kyc", "KYC", "kyc"),
               ("/admin/payment-numbers", "পেমেন্ট নম্বর", "payment_numbers"),
               ("/admin/referrals", "রেফারেল", "referrals"), ("/admin/commission", "কমিশন", "commissions"), ("/admin/pool", "কমিশন পুল", "pool_view"),
               ("/admin/reports", "রিপোর্ট", "reports"), ("/admin/reconcile", "মিলানো", "reports"),
@@ -2079,7 +2079,7 @@ def account():
 <div style="opacity:.92;margin-top:4px">📱 {{u['phone']}} &nbsp;·&nbsp; 🆔 #{{u['member_id']}}</div>
 <div style="opacity:.92;margin-top:8px">ব্যালেন্স: <b>৳ {{money(u['balance'])}}</b></div></div>
 <div class="card menu">
-<a class="li" href="/account/soon/kyc"><span class="ic">🪪</span><span class="lt">KYC যাচাই</span><span class="ch">›</span></a>
+<a class="li" href="/kyc"><span class="ic">🪪</span><span class="lt">KYC যাচাই</span><span class="ch">›</span></a>
 <a class="li" href="/account/soon/vip"><span class="ic">👑</span><span class="lt">VIP লেভেল</span><span class="ch">›</span></a>
 <a class="li" href="/referral"><span class="ic">🎁</span><span class="lt">ইনভাইট ও আর্ন</span><span class="bd" data-bd="/referral"{% if not nb('/referral') %} hidden{% endif %}>{{nb('/referral')}}</span><span class="ch">›</span></a>
 <button type="button" class="li" onclick="toggleTheme()"><span class="ic">🌙</span><span class="lt">ডার্ক মোড</span><span class="k" id="thv"></span></button>
@@ -2404,6 +2404,7 @@ def admin_user(i):
 <p>📱 {{x['phone']}} · ব্যালেন্স <b>৳ {{money(x['balance'])}}</b> · কমিশন ৳ {{money(x['commission'])}}<br>
 <span class="k">যোগদান: {{(x['created'] or '-')[:16]}} · সর্বশেষ লগইন: {{x['last_login'] or '-'}} · রেফারেল কোড: {{x['referral_code']}}</span></p>
 {% if x['blocked'] and x['blocked_reason'] %}<div class="msg error">ব্লকের কারণ: {{x['blocked_reason']}} ({{(x['blocked_at'] or '')[:16]}})</div>{% endif %}
+<div class="k" style="margin-bottom:8px">🪪 KYC: {% set ks=kycs(x['id']) %}<span class="pill {{ks if ks in ('pending','approved','rejected') else ''}}">{{kycl[ks]}}</span>{% if can('kyc') and ks!='none' %} <a href="/admin/kyc/{{x['id']}}"><b>দেখুন</b></a>{% endif %}</div>
 <div class="g2"><div class="card"><div class="k">মোট ডিপোজিট</div><div class="v">৳ {{money(sm.dep)}}</div></div><div class="card"><div class="k">মোট উইথড্র</div><div class="v">৳ {{money(sm.wd)}}</div></div>
 <div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">৳ {{money(sm.pending)}}</div></div><div class="card"><div class="k">কমিশন (লেজার)</div><div class="v">৳ {{money(sm.com)}}</div></div></div>
 {% if can('rates') %}<form method="post" action="/admin/commission/rate" data-confirm="কমিশন রেট বদলাবেন?" style="margin-bottom:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{ridem}}"><input type="hidden" name="scope" value="user"><input type="hidden" name="uid" value="{{x['id']}}">
@@ -3390,7 +3391,7 @@ def alert_admins(title, body="", link="", perm=None):
 
 
 # ---------------------------------------------------------------- per-feature unread badges + admin menu grid
-ADMIN_ICONS = {"/admin/alerts": "🔔", "/admin/requests": "📨", "/admin/deposits": "💰", "/admin/withdrawals": "🏧", "/admin/users": "👥",
+ADMIN_ICONS = {"/admin/alerts": "🔔", "/admin/requests": "📨", "/admin/deposits": "💰", "/admin/withdrawals": "🏧", "/admin/users": "👥", "/admin/kyc": "🪪",
                "/admin/payment-numbers": "💳", "/admin/referrals": "🎁", "/admin/commission": "💸", "/admin/pool": "🏦",
                "/admin/reports": "📊", "/admin/reconcile": "🧮", "/admin/staff": "🛡️", "/admin/tickets": "🎫", "/admin/notices": "📢",
                "/admin/content": "📝", "/admin/settings": "⚙️", "/admin/audit": "📜", "/admin/profile": "👤"}
@@ -3531,7 +3532,7 @@ def admin_menu():
         tiles["/admin/requests/new"] = ("/admin/requests/new", "রিকোয়েস্ট পাঠান", "➕", "")
     layout = [("", ["/admin/requests/new", "/admin/requests", "/admin/deposits", "/admin/withdrawals", "/admin/users", "/admin/alerts"]),
               ("💰 আর্থিক ও কমিশন", ["/admin/commission", "/admin/pool", "/admin/referrals", "/admin/reports", "/admin/reconcile"]),
-              ("🎫 সাপোর্ট ও কনটেন্ট", ["/admin/tickets", "/admin/notices", "/admin/content", "/admin/payment-numbers"]),
+              ("🎫 সাপোর্ট ও কনটেন্ট", ["/admin/tickets", "/admin/kyc", "/admin/notices", "/admin/content", "/admin/payment-numbers"]),
               ("⚙️ সিস্টেম ও নিরাপত্তা", ["/admin/staff", "/admin/settings", "/admin/settings?open=security", "/admin/audit", "/admin/profile"])]
     groups, used = [], set()
     for title, keys in layout:
@@ -4072,8 +4073,9 @@ def admin_request_new():
         purpose = request.form.get("purpose", "").strip()[:300]
         purpose_en = request.form.get("purpose_en", "").strip()[:300]
         hrs_raw = request.form.get("hours", "").strip() or "0"
-        if flow == "client_confirm":
-            method, num = "Wallet", "-"
+        if flow == "client_confirm":  # keep the real method (bKash/Nagad/Rocket) so History shows it; "Wallet" only as a fallback
+            method = method if method in METHODS else "Wallet"
+            num = num if PHONE_RE.fullmatch(num) else "-"
         bad = len(order) < 4 or amt <= 0 or amt > 100_000_000 or not re.fullmatch(r"\d{1,3}", hrs_raw) or int(hrs_raw) > 720
         if flow != "client_confirm" and (method not in METHODS or not PHONE_RE.fullmatch(num)):
             bad = True
@@ -4700,6 +4702,209 @@ def admin_ref_user(i):
                 active="/admin/referrals", x=x, by=by, kids=kids, paid=paid, st=st)
 
 
+
+
+# ---------------------------------------------------------------- KYC (NID front/back). Stored in the existing `meta` table (key kyc:<user id>, JSON) - no schema change.
+KYC_LABEL = {"none": "যাচাই করা হয়নি", "pending": "অপেক্ষমাণ", "approved": "অনুমোদিত", "rejected": "রিজেক্ট"}
+
+
+def kyc_get(uid):
+    r = q1("SELECT v FROM meta WHERE k=?", ("kyc:%d" % uid,))
+    if not r:
+        return None
+    try:
+        d = _json.loads(r["v"])
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def kyc_put(uid, d):
+    db().execute("INSERT OR REPLACE INTO meta VALUES(?,?)", ("kyc:%d" % uid, _json.dumps(d, ensure_ascii=False)))
+
+
+def kyc_status(uid):
+    d = kyc_get(uid)
+    return d["status"] if d and d.get("status") in KYC_LABEL else "none"
+
+
+def _kyc_all():
+    out = []
+    for r in qa("SELECT k,v FROM meta WHERE k LIKE ?", ("kyc:%",)):
+        try:
+            d, uid = _json.loads(r["v"]), int(r["k"].split(":", 1)[1])
+        except (ValueError, IndexError):
+            continue
+        if isinstance(d, dict):
+            d["uid"] = uid
+            out.append(d)
+    return out
+
+
+@app.route("/kyc", methods=["GET", "POST"])
+@customer_required
+def kyc_page():
+    u = me()
+    if request.method == "POST":
+        if (kyc_get(u["id"]) or {}).get("status") in ("pending", "approved"):
+            err("আপনার KYC এখন আর জমা দেওয়া যাবে না।"); return redirect("/kyc")
+        if rate_hit("kyc:%d" % u["id"], 6, 3600):
+            err("অনেক চেষ্টা হয়েছে, পরে আবার চেষ্টা করুন।"); return redirect("/kyc")
+        f_name, e1 = save_shot(request.files.get("front"))
+        if e1 or not f_name:
+            err(e1 or "NID-এর সামনের পাশের ছবি দিন।"); return redirect("/kyc")
+        b_name, e2 = save_shot(request.files.get("back"))
+        if e2 or not b_name:
+            store_delete(f_name)
+            err(e2 or "NID-এর পেছনের পাশের ছবি দিন।"); return redirect("/kyc")
+        old = []
+        try:
+            with atomic():
+                cur = kyc_get(u["id"]) or {}
+                if cur.get("status") in ("pending", "approved"):
+                    raise ReqError("আপনার KYC এখন আর জমা দেওয়া যাবে না।")
+                old = [cur.get("front"), cur.get("back")]
+                hist = list(cur.get("hist") or [])[-9:]
+                if cur.get("status") == "rejected":
+                    hist.append({"status": "rejected", "reason": cur.get("reason", ""), "at": cur.get("decided", "")})
+                kyc_put(u["id"], {"status": "pending", "front": f_name, "back": b_name, "submitted": now(), "hist": hist})
+                alert_admins("নতুন KYC আবেদন", "#%s %s" % (u["member_id"], u["name"]), "/admin/kyc/%d" % u["id"], "kyc")
+                audit("kyc_submit", "user#%d" % u["id"])
+        except ReqError as ex:
+            store_delete(f_name); store_delete(b_name)
+            err(str(ex)); return redirect("/kyc")
+        except Exception:
+            store_delete(f_name); store_delete(b_name)
+            raise
+        for n in old:
+            store_delete(n)  # replaced (rejected) documents are not kept
+        flash("KYC জমা হয়েছে। যাচাইয়ের পর জানানো হবে।"); return redirect("/kyc")
+    notif_read_link(u["id"], "/kyc")
+    d = kyc_get(u["id"]) or {}
+    st = d.get("status") if d.get("status") in KYC_LABEL else "none"
+    return page("""<div class="card"><h2>🪪 KYC যাচাই</h2>
+<div class="row" style="align-items:center"><span>বর্তমান অবস্থা</span><span class="pill {{st if st!='none' else ''}}" style="flex:0;white-space:nowrap">{{lab[st]}}</span></div>
+{% if st=='rejected' %}<div class="msg error" style="margin-top:10px">রিজেক্টের কারণ: {{d.get('reason') or '-'}}<br>নিচে সঠিক ছবি দিয়ে আবার জমা দিন।</div>{% endif %}
+{% if st=='pending' %}<p class="k">আপনার NID কার্ডের ছবি জমা হয়েছে। যাচাই শেষ হলে জানানো হবে।</p>{% endif %}
+{% if st=='approved' %}<p class="k">✅ আপনার KYC যাচাই সম্পন্ন হয়েছে।</p>{% endif %}</div>
+{% if st in ('none','rejected') %}<div class="card"><h3>NID কার্ডের ছবি জমা দিন</h3>
+<form method="post" enctype="multipart/form-data" id="kf" data-confirm="ছবি দুটি ঠিক আছে? জমা দেবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<label>NID — সামনের পাশ (Front)</label><input type="file" name="front" accept="image/*" required>
+<label>NID — পেছনের পাশ (Back)</label><input type="file" name="back" accept="image/*" required>
+<p class="k">JPG/PNG/WEBP, প্রতিটি ≤২MB। ছবি পরিষ্কার ও সম্পূর্ণ হতে হবে। শুধু অনুমোদিত অ্যাডমিন এটি দেখতে পারবেন।</p>
+<button style="width:100%">জমা দিন</button></form></div>
+<script>(function(){function shrink(inp){inp.addEventListener('change',function(){var f=inp.files&&inp.files[0];if(!f||f.size<1500000||f.type.indexOf('image/')!==0||!window.DataTransfer)return;
+ var img=new Image(),url=URL.createObjectURL(f);img.onload=function(){var s=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);
+ c.getContext('2d').drawImage(img,0,0,c.width,c.height);c.toBlob(function(b){URL.revokeObjectURL(url);if(!b)return;var dt=new DataTransfer();dt.items.add(new File([b],'nid.jpg',{type:'image/jpeg'}));inp.files=dt.files},'image/jpeg',.85)};img.src=url})}
+ document.querySelectorAll('#kf input[type=file]').forEach(shrink)})()</script>{% endif %}
+<a class="btn s" href="/account" style="width:100%">← অ্যাকাউন্টে ফিরুন</a>""", active="/account", st=st, d=d, lab=KYC_LABEL)
+
+
+@app.route("/kyc/img/<int:uid>/<side>")
+@login_required
+def kyc_img(uid, side):
+    """NID image: only the owner or staff holding the 'kyc' permission (never public)."""
+    u = me()
+    if side not in ("front", "back") or not (u["id"] == uid or has_perm("kyc", u)):
+        abort(404)
+    d = kyc_get(uid)
+    name = d.get(side) if d else None
+    if not name or not SHOT_RE.fullmatch(name):
+        abort(404)
+    try:
+        data = store_get(name)
+    except StorageError:
+        abort(503)
+    if data is None:
+        abort(404)
+    if u["id"] != uid:
+        audit("kyc_view", "user#%d %s" % (uid, side))
+    resp = send_file(io.BytesIO(data), mimetype=MIME[name.rsplit(".", 1)[1]])
+    resp.headers["Cache-Control"] = "private, no-store"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@app.route("/admin/kyc")
+@staff_required("kyc")
+def admin_kyc():
+    st = request.args.get("status", "pending")
+    if st not in ("pending", "approved", "rejected", "all"):
+        st = "pending"
+    items = _kyc_all()
+    cnt = {k: sum(1 for d in items if d.get("status") == k) for k in ("pending", "approved", "rejected")}
+    cnt["all"] = len(items)
+    if st != "all":
+        items = [d for d in items if d.get("status") == st]
+    items.sort(key=lambda d: str(d.get("submitted") or ""), reverse=True)
+    pg = make_pg(len(items), 20)
+    items = items[pg["off"]:pg["off"] + 20]
+    users = {}
+    if items:
+        for r in qa("SELECT id,name,phone,member_id FROM users WHERE id IN (%s)" % ",".join("?" * len(items)), [d["uid"] for d in items]):
+            users[r["id"]] = r
+    shown = {"/admin/kyc/%d" % d["uid"] for d in items}
+    alerts_seen(lambda link, ts: link in shown)
+    tabs = [("pending", "অপেক্ষমাণ"), ("approved", "অনুমোদিত"), ("rejected", "রিজেক্ট"), ("all", "সব")]
+    return page("""<div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:6px">{% for k,l in tabs %}<a class="btn sm {{'' if k==st else 's'}}" href="?status={{k}}">{{l}} ({{cnt[k]}})</a>{% endfor %}</div>
+{% if not items %}<div class="card empty">কোনো KYC আবেদন নেই</div>{% endif %}
+{% for d in items %}{% set x = users.get(d['uid']) %}<a href="/admin/kyc/{{d['uid']}}"><div class="card"><div class="row" style="align-items:center"><b>{% if x %}#{{x['member_id']}} {{x['name']}}{% else %}ইউজার #{{d['uid']}}{% endif %}</b>
+<span class="pill {{d['status']}}" style="flex:0;white-space:nowrap">{{kycl.get(d['status'], d['status'])}}</span></div>
+<div class="k">{% if x %}{{x['phone']}} · {% endif %}জমা: {{(d.get('submitted') or '')[:16]}}</div></div></a>{% endfor %}""" + PAGER,
+                active="/admin/kyc", tabs=tabs, st=st, cnt=cnt, items=items, users=users, pg=pg)
+
+
+@app.route("/admin/kyc/<int:uid>")
+@staff_required("kyc")
+def admin_kyc_view(uid):
+    x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (uid,))
+    d = kyc_get(uid)
+    if not x or not d:
+        abort(404)
+    alerts_seen(lambda link, ts: link == "/admin/kyc/%d" % uid)
+    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">🪪 KYC</h2>
+<span class="pill {{d.get('status')}}" style="flex:0;white-space:nowrap">{{kycl.get(d.get('status'), d.get('status'))}}</span></div>
+<div class="k" style="margin-top:8px"><a href="/admin/users/{{x['id']}}"><b>#{{x['member_id']}} {{x['name']}}</b></a> · {{x['phone']}}</div>
+<div class="k">জমা: {{(d.get('submitted') or '')[:16]}}{% if d.get('decided') %} · সিদ্ধান্ত: {{d.get('decided')[:16]}} ({{d.get('by')}}){% endif %}</div>
+{% if d.get('status')=='rejected' and d.get('reason') %}<div class="msg error" style="margin-top:8px">রিজেক্টের কারণ: {{d.get('reason')}}</div>{% endif %}
+<h3>NID — সামনের পাশ</h3><a href="/kyc/img/{{x['id']}}/front" target="_blank"><img class="shot" src="/kyc/img/{{x['id']}}/front" alt="NID front"></a>
+<h3>NID — পেছনের পাশ</h3><a href="/kyc/img/{{x['id']}}/back" target="_blank"><img class="shot" src="/kyc/img/{{x['id']}}/back" alt="NID back"></a></div>
+{% if d.get('status')=='pending' %}<div class="card"><h3>সিদ্ধান্ত</h3>
+<form method="post" action="/admin/kyc/{{x['id']}}/act" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<input name="reason" placeholder="রিজেক্টের কারণ (রিজেক্টে আবশ্যক)" maxlength="200"><div class="row"><button name="act" value="approve" class="btn sm g">✅ অনুমোদন</button><button name="act" value="reject" class="btn sm r">❌ রিজেক্ট</button></div></form></div>{% endif %}
+{% if d.get('hist') %}<div class="card"><h3>আগের রিজেক্ট</h3>{% for h in d.get('hist') %}<div class="k">{{(h.get('at') or '')[:16]}} · {{h.get('reason') or '-'}}</div>{% endfor %}</div>{% endif %}
+<a class="btn s" href="/admin/kyc" style="width:100%">← সব KYC</a>""", active="/admin/kyc", x=x, d=d)
+
+
+@app.route("/admin/kyc/<int:uid>/act", methods=["POST"])
+@staff_required("kyc")
+def admin_kyc_act(uid):
+    act = request.form.get("act", "")
+    reason = request.form.get("reason", "").strip()[:200]
+    back_to = "/admin/kyc/%d" % uid
+    if act not in ("approve", "reject"):
+        abort(400)
+    if act == "reject" and len(reason) < 3:
+        err("রিজেক্টের কারণ লিখুন (কমপক্ষে ৩ অক্ষর)।"); return redirect(back_to)
+    a = me()
+    with atomic():
+        d = kyc_get(uid)
+        if not q1("SELECT 1 FROM users WHERE id=? AND is_admin=0", (uid,)) or not d:
+            abort(404)
+        if d.get("status") != "pending":
+            err("এই আবেদনে এখন আর সিদ্ধান্ত নেওয়া যাবে না (হয়তো আগেই সম্পন্ন)।"); return redirect(back_to)
+        ok = act == "approve"
+        d.update(status="approved" if ok else "rejected", decided=now(), by=a["member_id"], reason="" if ok else reason)
+        kyc_put(uid, d)
+        if ok:
+            notify(uid, "KYC অনুমোদিত", "আপনার KYC যাচাই সম্পন্ন হয়েছে।", "/kyc", "KYC approved", "Your KYC verification is complete.")
+        else:
+            notify(uid, "KYC রিজেক্ট", "আপনার KYC গৃহীত হয়নি। কারণ: %s। সঠিক ছবি দিয়ে আবার জমা দিন।" % reason, "/kyc",
+                   "KYC rejected", "Your KYC was not accepted. Reason: %s. Please resubmit clear photos." % reason)
+        audit("kyc_" + act, "user#%d %s" % (uid, reason))
+        alerts_done("/admin/kyc/%d" % uid)
+    flash("KYC অনুমোদিত হয়েছে।" if ok else "KYC রিজেক্ট করা হয়েছে।")
+    return redirect(back_to)
 
 
 # ---------------------------------------------------------------- PWA (installable app; only a static shell is ever cached - no private/financial data)
