@@ -1047,7 +1047,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 6px;b
 .pill.pending,.pill.review,.pill.processing{background:#fef9c3;color:#854d0e}
 .msg{padding:11px 14px;border-radius:12px;margin-bottom:12px;background:#dbeafe;color:#1e3a8a;word-break:break-word}.msg.error{background:#fee2e2;color:#991b1b}
 .nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--ln);border-radius:22px 22px 0 0;box-shadow:0 -8px 24px #0f172a1f;display:flex;justify-content:space-around;padding:7px 6px calc(9px + env(safe-area-inset-bottom,0px));z-index:6}
-.nav a{text-align:center;font-size:11.5px;font-weight:600;color:var(--mut);flex:1;transition:color .2s ease}.nav a.on{color:var(--c2,var(--b));font-weight:800}.nav i{display:flex;align-items:center;justify-content:center;width:48px;height:30px;margin:0 auto 2px;border-radius:15px;font-style:normal;color:var(--c2,var(--mut));background:var(--t,transparent);transition:background .22s ease,box-shadow .22s ease,transform .22s ease,color .22s ease}.nav i svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:stroke-width .2s ease}.nav a.on i{color:#fff;background:linear-gradient(135deg,var(--c1,#1d4ed8),var(--c2,#16a34a));box-shadow:0 6px 14px var(--s,#1d4ed866),inset 0 1px 0 #ffffff59;transform:translateY(-3px)}.nav a.on::before{content:"";position:absolute;top:-7px;left:50%;width:24px;height:3px;margin-left:-12px;border-radius:0 0 4px 4px;background:linear-gradient(90deg,var(--c1),var(--c2))}.nav a:nth-child(1){--c1:#3b82f6;--c2:#1d4ed8;--t:#3b82f61f;--s:#1d4ed86b}.nav a:nth-child(2){--c1:#fbbf24;--c2:#d97706;--t:#f59e0b26;--s:#d9770666}.nav a:nth-child(3){--c1:#a78bfa;--c2:#7c3aed;--t:#8b5cf624;--s:#7c3aed66}.nav a:nth-child(4){--c1:#34d399;--c2:#059669;--t:#10b9811f;--s:#05966966}.nav a:nth-child(5){--c1:#f472b6;--c2:#db2777;--t:#ec489924;--s:#db277766}.nav a.on i svg{stroke-width:2.1}.nav a:active i{transform:scale(.92)}@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .nav a.on{color:var(--c1)}:root:not([data-theme=light]) .nav a:not(.on) i{color:var(--c1)}}:root[data-theme=dark] .nav a.on{color:var(--c1)}:root[data-theme=dark] .nav a:not(.on) i{color:var(--c1)}
+.nav a{text-align:center;font-size:11.5px;font-weight:600;color:var(--mut);flex:1;transition:color .2s ease}.nav a.on{color:var(--c2,var(--b));font-weight:800}.nav i{display:flex;align-items:center;justify-content:center;width:48px;height:30px;margin:0 auto 2px;border-radius:15px;font-style:normal;color:var(--c2,var(--mut));background:var(--t,transparent);transition:background .22s ease,box-shadow .22s ease,transform .22s ease,color .22s ease}.nav i svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:stroke-width .2s ease}.nav a.on i{color:#fff;background:linear-gradient(135deg,var(--c1,#1d4ed8),var(--c2,#16a34a));box-shadow:0 6px 14px var(--s,#1d4ed866),inset 0 1px 0 #ffffff59;transform:translateY(-3px)}.nav a.on::before{content:"";position:absolute;top:-7px;left:50%;width:24px;height:3px;margin-left:-12px;border-radius:0 0 4px 4px;background:linear-gradient(90deg,var(--c1),var(--c2))}.nav a:nth-child(1){--c1:#38bdf8;--c2:#2563eb;--t:#38bdf826;--s:#2563eb70}.nav a:nth-child(2){--c1:#fbbf24;--c2:#ea580c;--t:#fb923c26;--s:#ea580c6b}.nav a:nth-child(3){--c1:#c084fc;--c2:#7c3aed;--t:#a855f724;--s:#7c3aed6b}.nav a:nth-child(4){--c1:#34d399;--c2:#059669;--t:#10b98124;--s:#0596696b}.nav a:nth-child(5){--c1:#fb7185;--c2:#e11d48;--t:#f43f5e22;--s:#e11d486b}.nav i svg .d{fill:currentColor;fill-opacity:.2}.nav a.on i svg .d{fill-opacity:.34}.nav i svg{filter:drop-shadow(0 1px 1px #0f172a1f)}.nav a.on i svg{stroke-width:2.1}.nav a:active i{transform:scale(.92)}@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .nav a.on{color:var(--c1)}:root:not([data-theme=light]) .nav a:not(.on) i{color:var(--c1)}}:root[data-theme=dark] .nav a.on{color:var(--c1)}:root[data-theme=dark] .nav a:not(.on) i{color:var(--c1)}
 .welcome{white-space:pre-line;line-height:1.8;font-size:15px;border-left:4px solid var(--g)}
 .empty{text-align:center;color:var(--mut);padding:22px}
 .foot{color:var(--mut);font-size:12px;text-align:center;padding:10px}
@@ -1196,6 +1196,18 @@ function pollNotif(){if(document.hidden)return;
   if(!j)return;var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
   if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}
   if(_last!==null&&j.latest>_last&&sndOn())beep();_last=j.latest}).catch(function(){})}
+function applyBadges(j){var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
+ if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}}
+var _rq=Promise.resolve();
+function markRead(el){if(!el||el.dataset.rd==='1')return;el.dataset.rd='1';el.classList.remove('new');
+ var box=el.closest('[data-csrf]'),b=new URLSearchParams();b.set('id',el.dataset.nid);b.set('_csrf',box?box.dataset.csrf:'');
+ _rq=_rq.then(function(){return fetch('/api/notif/read',{method:'POST',body:b,credentials:'same-origin',keepalive:true}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j)applyBadges(j)}).catch(function(){})})}
+function autoRead(){var box=document.getElementById('nlist');if(!box)return;var els=box.querySelectorAll('[data-nid]');
+ if(!('IntersectionObserver' in window)){els.forEach(function(e){markRead(e)});return}
+ var t={},io=new IntersectionObserver(function(es){es.forEach(function(en){var id=en.target.dataset.nid;
+  if(en.isIntersecting){if(!t[id])t[id]=setTimeout(function(){markRead(en.target);io.unobserve(en.target)},700)}
+  else if(t[id]){clearTimeout(t[id]);delete t[id]}})},{threshold:[.5]});
+ els.forEach(function(e){io.observe(e)})}
 paintToggles();
 if(document.body&&document.body.dataset.poll){pollNotif();setInterval(pollNotif,20000)}
 """
@@ -1228,9 +1240,9 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
-<a class="{{'on' if active=='/'}}" href="/"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.6 12 3l9 7.6V20a1 1 0 0 1-1 1h-4.5v-6h-7v6H4a1 1 0 0 1-1-1z"/></svg></i>হোম</a><a class="{{'on' if active=='/history'}}" href="/history"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5"/><path d="M3.5 3.5v5h5M12 7.5V12l3 2"/></svg></i>হিস্ট্রি<span class="bd2" data-bd="/history"{% if not nb('/history') %} hidden{% endif %}>{{nb('/history')}}</span></a>
-<a class="{{'on' if active=='/requests'}}" href="/requests"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h5.2l1.3 2.5h5l1.3-2.5H21"/><path d="M5.6 5.6 3 13v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5l-2.6-7.4A2 2 0 0 0 16.5 4.3h-9a2 2 0 0 0-1.9 1.3z"/></svg></i>অনুরোধ<span class="bd2" data-bd="/requests"{% if not nb('/requests') %} hidden{% endif %}>{{nb('/requests')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5v17h17"/><path d="m7.5 15.5 3.6-3.8 3 2.7 5-6.2"/></svg></i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
-<a class="{{'on' if active=='/account'}}" href="/account"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg></i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
+<a class="{{'on' if active=='/'}}" href="/"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M4 10.6 12 4l8 6.6V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M9.5 20v-5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v5"/></svg></i>হোম</a><a class="{{'on' if active=='/history'}}" href="/history"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></i>হিস্ট্রি<span class="bd2" data-bd="/history"{% if not nb('/history') %} hidden{% endif %}>{{nb('/history')}}</span></a>
+<a class="{{'on' if active=='/requests'}}" href="/requests"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M5.6 5.6 3 13v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5l-2.6-7.4A2 2 0 0 0 16.5 4.3h-9a2 2 0 0 0-1.9 1.3z"/><path d="M3 13h5.2l1.3 2.5h5l1.3-2.5H21"/></svg></i>অনুরোধ<span class="bd2" data-bd="/requests"{% if not nb('/requests') %} hidden{% endif %}>{{nb('/requests')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="d" x="4" y="13" width="4" height="7" rx="1"/><rect class="d" x="10" y="9" width="4" height="11" rx="1"/><rect class="d" x="16" y="4" width="4" height="16" rx="1"/></svg></i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
+<a class="{{'on' if active=='/account'}}" href="/account"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="8" r="4"/><path class="d" d="M4.5 20.5a7.5 7.5 0 0 1 15 0z"/></svg></i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
 <script src="/assets/app.js?v={{av}}"></script></body></html>"""
 
@@ -1932,10 +1944,10 @@ def shot(name):
 def notifications():
     u = me()
     rows = qa("SELECT * FROM notifications WHERE user_id=? OR user_id IS NULL ORDER BY id DESC LIMIT 50", (u["id"],))
-    db().execute("UPDATE notifications SET is_read=1 WHERE user_id=?", (u["id"],))
     return page("""<h2>নোটিফিকেশন</h2>{% if not rows %}<div class="card empty">কোনো নোটিফিকেশন নেই</div>{% endif %}
-{% for n in rows %}<div class="card"><b>{{(n['title_en'] if lang=='en' and n['title_en'] else n['title'])}}</b><div>{{(n['body_en'] if lang=='en' and n['body_en'] else n['body'])}}</div><div class="k">{{n['created'][:16]}}</div>
-{% if n['link'] %}<a class="btn sm" href="{{n['link']}}" style="margin-top:8px">খুলুন</a>{% endif %}</div>{% endfor %}""", rows=rows)
+<div id="nlist" data-csrf="{{csrf_token}}">{% for n in rows %}<div class="card{{' new' if n['user_id'] and not n['is_read'] else ''}}"{% if n['user_id'] and not n['is_read'] %} data-nid="{{n['id']}}"{% endif %}><b>{{(n['title_en'] if lang=='en' and n['title_en'] else n['title'])}}</b><div>{{(n['body_en'] if lang=='en' and n['body_en'] else n['body'])}}</div><div class="k">{{n['created'][:16]}}</div>
+{% if n['link'] %}<a class="btn sm" href="{{n['link']}}" style="margin-top:8px">খুলুন</a>{% endif %}</div>{% endfor %}</div>
+<script>(function(){function go(){if(typeof autoRead==='function')autoRead();else setTimeout(go,50)}go()})()</script>""", rows=rows)
 
 
 @app.route("/insight")
@@ -3458,6 +3470,25 @@ def api_notif():
     return jsonify(unread=bd.get("*", 0), latest=latest, badges=bd)
 
 
+@app.route("/api/notif/read", methods=["POST"])
+@login_required
+def api_notif_read():
+    """Marks exactly ONE notification as read (own notification only) and returns fresh counts."""
+    u = me()
+    i = request.form.get("id", type=int)
+    if not i:
+        abort(400)
+    if u["is_admin"]:
+        f, pa = _alert_filter(u)  # only alerts this staff member is permitted to see
+        if q1("SELECT 1 FROM admin_alerts a WHERE a.id=? AND %s AND a.created>=?" % f, [i] + pa + [u["created"] or ""]):
+            db().execute("INSERT OR IGNORE INTO admin_alert_reads(alert_id,admin_id) VALUES(?,?)", (i, u["id"]))
+    else:
+        db().execute("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=? AND is_read=0", (i, u["id"]))
+    g.pop("_nb", None)
+    bd = notif_badges()
+    return jsonify(unread=bd.get("*", 0), badges=bd)
+
+
 @app.route("/admin/alerts")
 @staff_required()
 def admin_alerts():
@@ -3470,10 +3501,11 @@ def admin_alerts():
 <form method="post" action="/admin/alerts/readall"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm s" style="width:100%">✔ সব পঠিত করুন</button></form>
 <button type="button" class="btn sm s" onclick="setSnd(!sndOn())">🔊 সাউন্ড: <span id="sndv"></span></button></div></div>
 {% if not rows %}<div class="card empty">কোনো নোটিফিকেশন নেই</div>{% endif %}
-{% for a in rows %}<div class="card {{'' if a['rd'] else 'new'}}"><b>{{a['title']}}</b>{% if not a['rd'] %} <span class="pill pending">নতুন</span>{% endif %}
+<div id="nlist" data-csrf="{{csrf_token}}">{% for a in rows %}<div class="card {{'' if a['rd'] else 'new'}}"{% if not a['rd'] %} data-nid="{{a['id']}}"{% endif %}><b>{{a['title']}}</b>{% if not a['rd'] %} <span class="pill pending">নতুন</span>{% endif %}
 <div>{{a['body']}}</div><div class="k">{{a['created'][:16]}}</div>
 <form method="post" action="/admin/alerts/{{a['id']}}/open" style="margin-top:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<button class="btn sm">{{'খুলুন' if a['link'] else 'পঠিত করুন'}}</button></form></div>{% endfor %}""", active="/admin/alerts", rows=rows)
+<button class="btn sm">{{'খুলুন' if a['link'] else 'পঠিত করুন'}}</button></form></div>{% endfor %}</div>
+<script>(function(){function go(){if(typeof autoRead==='function')autoRead();else setTimeout(go,50)}go()})()</script>""", active="/admin/alerts", rows=rows)
 
 
 @app.route("/admin/alerts/readall", methods=["POST"])
