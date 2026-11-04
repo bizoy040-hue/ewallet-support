@@ -1889,6 +1889,8 @@ def history():
                           cls="pending" if status in ("submitted", "review") else status,
                           comm=("৳ " + money(comm)) if comm is not None else "", when=str(created or "")[:16], extra=extra))
     led = qa("SELECT * FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT 100", (u["id"],))
+    if f == "all":
+        user_seen(lambda link, title, ts: _user_badge_key(link, title) == "/history")
     L = (dict(order="Order ID", method="Method", number="Number", kind="Type", amount="Amount", status="Status",
               comm="Commission", when="Date & Time", trx="TrxID", sub="Submitted", upd="Updated", why="Rejection reason", ins="Instructions") if en else
          dict(order="অর্ডার আইডি", method="মাধ্যম", number="নম্বর", kind="ধরন", amount="পরিমাণ", status="অবস্থা",
@@ -2017,6 +2019,7 @@ def referral():
                  WHERE r.referrer_id=? ORDER BY r.id DESC LIMIT 100""", (u["id"],))
     by = q1("SELECT member_id,name FROM users WHERE id=?", (u["referred_by"],)) if u["referred_by"] else None
     link = ref_link(u["referral_code"])
+    user_seen(lambda lk, title, ts: _user_badge_key(lk, title) == "/referral")
     bonus = parse_amount(setting("referral_bonus", "50")) or 50.0
     text = "%s-এ যোগ দিন! আমার রেফারেল কোড: %s" % (SITE, u["referral_code"])
     return page("""<div class="card hero"><small>আপনার রেফারেল কোড</small><div class="code">{{u['referral_code']}}</div>
@@ -2048,6 +2051,7 @@ def support():
         alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], s), "/admin/tickets", "tickets")
         flash("টিকিট জমা হয়েছে।"); return redirect("/support")
     rows = qa("SELECT * FROM tickets WHERE user_id=? ORDER BY id DESC LIMIT 30", (u["id"],))
+    user_seen(lambda link, title, ts: _user_badge_key(link, title) == "/support")
     return page("""<div class="card"><h2>সাপোর্ট</h2>{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
 <form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>বিষয়</label><input name="subject" required maxlength="100">
 <label>বার্তা</label><textarea name="message" rows="3" required maxlength="1000"></textarea><button style="width:100%">টিকিট জমা দিন</button></form></div>
@@ -2313,6 +2317,9 @@ def admin_tx(i):
             notify(t["user_id"], "উইথড্র আপডেট", "আপনার ৳%s উইথড্র এখন: %s" % (money(t["amount"]), new))
         db().execute("UPDATE tx SET status=?, note=COALESCE(NULLIF(?,''),note), updated=? WHERE id=?", (new, note, now(), i))
         audit("tx_" + act, "tx#%d %s ৳%s" % (i, t["kind"], t["amount"]))
+        open_st = ("pending", "review") if dep else ("pending", "processing", "approved")
+        if not q1("SELECT 1 FROM tx WHERE kind=? AND status IN (%s)" % ",".join("?" * len(open_st)), (t["kind"],) + open_st):
+            alerts_done("/admin/deposits" if dep else "/admin/withdrawals")  # nothing left to handle in this queue
     flash("সম্পন্ন: %s" % new)
     return back()
 
@@ -2930,6 +2937,8 @@ def request_decide(i):
                                "WHERE id=? AND user_id=? AND status='pending'", (new, t, u["id"], u["member_id"], t, t, i, u["id"]))
             if cur.rowcount != 1:
                 raise ReqError("এই অনুরোধ আগেই প্রক্রিয়া হয়েছে।")
+            notif_read_link(u["id"], "/requests/%d" % i)
+            alerts_done("/admin/requests/%d" % i)
             if act == "approve":
                 principal, com = round(float(r["amount"]), 2), round(float(r["commission"] or 0), 2)
                 if not post(u["id"], "request_payment", -principal, "req:%d:principal" % i, "request", i, "Order %s payment" % r["order_id"], u["member_id"]):
@@ -3145,6 +3154,8 @@ def admin_tickets():
                 db().execute("UPDATE tickets SET reply=?, status='closed', replied_by=?, replied_at=? WHERE id=?",
                              (rep, "%s (%s)" % (a["name"], a["member_id"]), now(), tid))
                 notify(t["user_id"], "সাপোর্ট উত্তর", rep); audit("ticket_reply", "ticket#%s" % tid); flash("উত্তর পাঠানো হয়েছে।")
+                if not q1("SELECT 1 FROM tickets WHERE status='open'"):
+                    alerts_done("/admin/tickets")
         return redirect("/admin/tickets")
     t0 = now()
     rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
@@ -3446,6 +3457,33 @@ def notif_badges():
 
 def nb(key):
     return notif_badges().get(key, 0)
+
+
+def alerts_done(link):
+    """A request/queue was handled: its admin alerts are closed for every staff member (DB read-state, no duplicates)."""
+    db().execute("INSERT OR IGNORE INTO admin_alert_reads(alert_id,admin_id) SELECT a.id, u.id FROM admin_alerts a, users u "
+                 "WHERE a.link=? AND u.is_admin=1", (link,))
+    g.pop("_nb", None)
+
+
+def notif_read_link(uid, link):
+    """Marks this user's own unread notifications that point at `link` as read (database)."""
+    db().execute("UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0 AND link=?", (uid, link))
+    g.pop("_nb", None)
+
+
+def user_seen(match):
+    """Marks the signed-in customer's OWN unread notifications read when match(link, title, created) is true."""
+    u = me()
+    if not u or u["is_admin"]:
+        return 0
+    rows = qa("SELECT id,link,title,created FROM notifications WHERE user_id=? AND is_read=0", (u["id"],))
+    ids = [r["id"] for r in rows if match(r["link"] or "", r["title"] or "", str(r["created"] or ""))]
+    for i in ids:
+        db().execute("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=? AND is_read=0", (i, u["id"]))
+    if ids:
+        g.pop("_nb", None)
+    return len(ids)
 
 
 def alerts_seen(match):
@@ -3905,6 +3943,7 @@ def expire_requests():
             cur = db().execute("UPDATE requests SET status='expired', updated=? WHERE id=? AND status='pending'", (t, r["id"]))
             if cur.rowcount == 1:
                 req_log(r["id"], "expire", "pending", "expired", "system", None, "")
+                notif_read_link(r["user_id"], "/requests/%d" % r["id"])
                 notify(r["user_id"], "অনুরোধের মেয়াদ শেষ", "Order %s এর মেয়াদ শেষ হয়েছে।" % r["order_id"], "/requests/%d" % r["id"])
 
 
@@ -3920,6 +3959,8 @@ def requests_list():
     u = me()
     expire_requests()
     rows = qa("SELECT * FROM requests WHERE user_id=? ORDER BY (status='pending') DESC, id DESC LIMIT 100", (u["id"],))
+    shown = {"/requests/%d" % r["id"] for r in rows}
+    user_seen(lambda link, title, ts: link in shown)
     return page("""<div class="card"><h2>অনুরোধ</h2><p class="k">অ্যাডমিনের পাঠানো ডিপোজিট/উইথড্র অনুরোধ এখানে দেখা যায়।</p></div>
 {% if not rows %}<div class="card empty">কোনো অনুরোধ নেই</div>{% endif %}
 {% for r in rows %}<a href="/requests/{{r['id']}}"><div class="card {{'new' if r['status']=='pending' else ''}}">
@@ -3936,6 +3977,7 @@ def request_view(i):
     r = q1("SELECT * FROM requests WHERE id=? AND user_id=?", (i, u["id"]))
     if not r:
         abort(404)
+    notif_read_link(u["id"], "/requests/%d" % i)  # the customer opened this request
     if r["flow"] == "client_confirm":
         if request.method == "POST":
             abort(400)  # decisions go through /requests/<id>/decide only
@@ -4258,6 +4300,9 @@ def admin_request_act(i):
                     "cancel": ("অনুরোধ বাতিল", "Order %s বাতিল করা হয়েছে।%s" % (r["order_id"], (" কারণ: " + reason) if reason else ""))}
             if act == "approve" and r["flow"] == "admin_review" and float(r["commission"] or 0) > 0:
                 msgs["approve"] = ("অনুরোধ অনুমোদিত", "৳%s + কমিশন ৳%s আপনার ওয়ালেটে যুক্ত হয়েছে। Order %s" % (money(r["amount"]), money(r["commission"]), r["order_id"]))
+            notif_read_link(r["user_id"], "/requests/%d" % i)  # earlier notifications of this request are handled; the new status one stays unread
+            if act in ("approve", "reject", "cancel"):
+                alerts_done("/admin/requests/%d" % i)
             notify(r["user_id"], msgs[act][0], msgs[act][1], "/requests/%d" % i)
     except ReqError as ex:
         err(str(ex)); return redirect(back_to)
