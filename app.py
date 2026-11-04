@@ -1034,8 +1034,8 @@ main{max-width:620px;margin:0 auto;padding:14px}
 .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}.g2 .card{margin:0}
 .k{color:var(--mut);font-size:13px}.v{font-size:20px;font-weight:700}
-.btn,button{background:var(--b);color:#fff;border:0;border-radius:12px;padding:11px 16px;font:inherit;cursor:pointer;display:inline-block;text-align:center}
-.btn.g{background:var(--g)}.btn.r{background:var(--rd)}.btn.s{background:#475569}.btn.w{background:#ffffff26}.btn.sm{padding:6px 10px;font-size:13px}
+.btn,button{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;border:0;border-radius:13px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer;display:inline-block;text-align:center;box-shadow:0 4px 10px #1d4ed840;transition:transform .12s ease,box-shadow .12s ease,filter .12s ease}.btn:active,button:active{transform:scale(.97);filter:brightness(.95)}.top button,.hxc button{box-shadow:none}
+.btn.g{background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 4px 10px #16a34a40}.btn.r{background:linear-gradient(135deg,#dc2626,#b91c1c);box-shadow:0 4px 10px #dc262640}.btn.s{background:linear-gradient(135deg,#475569,#334155);box-shadow:0 4px 10px #47556940}.btn.w{background:#ffffff26}.btn.sm{padding:6px 10px;font-size:13px}
 button[disabled]{opacity:.6}
 input,select,textarea{width:100%;padding:12px;border:1px solid var(--ln);border-radius:12px;background:var(--card);color:var(--tx);font:inherit;margin:4px 0 12px}
 input[type=checkbox]{width:auto;margin:0 6px 0 0}
@@ -1046,8 +1046,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 6px;b
 .pill.approved,.pill.paid{background:#dcfce7;color:#166534}.pill.rejected{background:#fee2e2;color:#991b1b}
 .pill.pending,.pill.review,.pill.processing{background:#fef9c3;color:#854d0e}
 .msg{padding:11px 14px;border-radius:12px;margin-bottom:12px;background:#dbeafe;color:#1e3a8a;word-break:break-word}.msg.error{background:#fee2e2;color:#991b1b}
-.nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--ln);display:flex;justify-content:space-around;padding:8px 0 10px;z-index:6}
-.nav a{text-align:center;font-size:12px;color:var(--mut);flex:1}.nav a.on{color:var(--b);font-weight:700}.nav i{display:block;font-style:normal;font-size:20px}
+.nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--ln);border-radius:22px 22px 0 0;box-shadow:0 -8px 24px #0f172a1f;display:flex;justify-content:space-around;padding:7px 6px calc(9px + env(safe-area-inset-bottom,0px));z-index:6}
+.nav a{text-align:center;font-size:11.5px;font-weight:600;color:var(--mut);flex:1;transition:color .2s ease}.nav a.on{color:var(--b);font-weight:800}.nav i{display:block;width:46px;height:30px;line-height:30px;margin:0 auto 2px;border-radius:15px;font-style:normal;font-size:19px;opacity:.78;transition:background .2s ease,box-shadow .2s ease,transform .2s ease,opacity .2s ease}.nav a.on i{opacity:1;background:linear-gradient(135deg,#1d4ed8,#16a34a);box-shadow:0 4px 12px #1d4ed860;transform:translateY(-3px)}.nav a:active i{transform:scale(.92)}@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .nav a.on{color:#93c5fd}}:root[data-theme=dark] .nav a.on{color:#93c5fd}
 .welcome{white-space:pre-line;line-height:1.8;font-size:15px;border-left:4px solid var(--g)}
 .empty{text-align:center;color:var(--mut);padding:22px}
 .foot{color:var(--mut);font-size:12px;text-align:center;padding:10px}
@@ -1068,7 +1068,7 @@ canvas{width:100%;height:170px}
 .mt span.lb{display:block;overflow-wrap:anywhere}
 .bd2{background:#ef4444;color:#fff;border-radius:99px;font-size:11px;font-weight:700;min-width:20px;height:20px;line-height:20px;text-align:center;padding:0 6px;display:inline-block}
 .mt .bd2{position:absolute;top:8px;right:8px}
-.nav a{position:relative}.nav a .bd2{position:absolute;top:-4px;left:calc(50% + 6px);min-width:18px;height:18px;line-height:18px;font-size:10px;padding:0 5px}
+.nav a{position:relative}.nav a .bd2{position:absolute;top:-3px;left:calc(50% + 9px);min-width:18px;height:18px;line-height:18px;font-size:10px;padding:0 5px}
 .pill.submitted{background:#dbeafe;color:#1e3a8a}.pill.expired,.pill.cancelled{background:#e2e8f0;color:#475569}
 .hxt{display:flex;gap:6px;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:4px;margin-bottom:12px}
 .hxt a{flex:1;text-align:center;padding:9px 4px;border-radius:11px;font-weight:600;font-size:14px;color:var(--mut)}
@@ -1103,6 +1103,15 @@ body.hx1 .hxc:not(.open),body.hx1 .hxl{display:none}
 .li .ic{width:38px;height:38px;flex:0 0 38px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;background:linear-gradient(135deg,#dbeafe,#dcfce7)}
 .li .lt{flex:1}.li .ch{color:var(--mut);font-size:22px}.li .bd{background:#ef4444;color:#fff;border-radius:99px;font-size:11px;padding:1px 8px}
 .li.out{color:var(--rd)}
+.hero .btn.w{background:#fff;color:#1e3a8a;font-weight:700;font-size:14px;line-height:1.25;border-radius:14px;padding:12px 8px;box-shadow:0 6px 14px #0f172a40;display:flex;align-items:center;justify-content:center;gap:6px}
+.hero .btn.w:active{box-shadow:0 2px 6px #0f172a40}
+.tkr{display:flex;align-items:center;gap:10px;margin:0 0 12px;padding:7px 12px 7px 7px;border-radius:16px;background:var(--card);border:1px solid var(--ln);box-shadow:0 4px 14px #0f172a14;overflow:hidden}
+.tkr-b{flex:none;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;background:linear-gradient(135deg,#1d4ed8,#16a34a);box-shadow:0 3px 8px #1d4ed855}
+.tkr-w{flex:1;min-width:0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent)}
+.tkr-t{display:inline-block;white-space:nowrap;padding-left:100%;font-weight:600;font-size:14px;color:var(--tx);animation:tkr var(--d,16s) linear infinite;will-change:transform}
+.tkr:active .tkr-t{animation-play-state:paused}
+@keyframes tkr{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+@media(prefers-reduced-motion:reduce){.tkr-t{animation:none;padding-left:0;white-space:normal}}
 .fab{position:fixed;right:16px;bottom:88px;width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#1d4ed8,#16a34a);color:#fff;display:flex;align-items:center;justify-content:center;font-size:25px;box-shadow:0 6px 18px #0f172a55;z-index:7}
 details.set{padding:0}details.set summary{padding:14px 16px;font-weight:600;cursor:pointer;list-style:none}
 details.set summary::-webkit-details-marker{display:none}details.set>form,details.set>div{padding:0 16px 16px}
@@ -1709,6 +1718,16 @@ def stats(uid):
     return s
 
 
+def ticker_info():
+    """Active dashboard announcement (or None). Stored in settings: ticker_on / ticker_text_bn / ticker_text_en."""
+    if setting("ticker_on", "0") != "1":
+        return None
+    t = (setting("ticker_text_" + cur_lang(), "") or setting("ticker_text_bn", "") or setting("ticker_text_en", "")).strip()
+    if not t:
+        return None
+    return {"text": t, "dur": round(max(10.0, (len(t) * 8 + 360) / 55.0), 1)}  # ~55 px/second: comfortable reading speed
+
+
 @app.route("/")
 @login_required
 def home():
@@ -1717,7 +1736,7 @@ def home():
         return redirect("/admin")
     expire_requests()
     req_open = q1("SELECT COUNT(*) c FROM requests WHERE user_id=? AND status='pending'", (u["id"],))["c"]
-    return page("""<div class="card hero"><small>উপলব্ধ ব্যালেন্স</small><div class="bal">৳ {{money(u['balance'])}}</div>
+    return page("""{% if tk %}<div class="tkr" role="marquee"><span class="tkr-b">📢</span><div class="tkr-w"><div class="tkr-t" style="--d:{{tk.dur}}s">{{tk.text}}</div></div></div>{% endif %}<div class="card hero"><small>উপলব্ধ ব্যালেন্স</small><div class="bal">৳ {{money(u['balance'])}}</div>
 <div class="row"><a class="btn w" href="/deposit">➕ Add Money</a><a class="btn w" href="/withdraw">⬆ উইথড্র</a></div>
 <div class="row" style="margin-top:10px"><a class="btn w" href="/requests">📨 অনুরোধ{% if req_open %} <span style="background:#ef4444;border-radius:99px;font-size:12px;padding:1px 8px;margin-left:4px">{{req_open}}</span>{% endif %}</a><a class="btn w" href="/payment-numbers">💳 Payment Methods</a></div></div>
 <div class="g2"><div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">৳ {{money(s.pending)}}</div></div>
@@ -1729,7 +1748,7 @@ def home():
 {% if notices %}{% for n in notices %}<div class="card"><b>📢 {{n['title']}}</b><div class="k">{{n['body']}}</div></div>{% endfor %}{% endif %}
 <div class="card welcome">{{welcome}}</div>""", active="/", s=stats(u["id"]), req_open=req_open, rate=effective_rate(u),
                 notices=qa("SELECT * FROM notifications WHERE user_id IS NULL ORDER BY id DESC LIMIT 3"),
-                welcome=setting("welcome", WELCOME_DEFAULT))
+                welcome=setting("welcome", WELCOME_DEFAULT), tk=ticker_info())
 
 
 def save_shot(f):
@@ -3068,9 +3087,30 @@ def admin_notices():
             audit("announcement", t); flash("প্রকাশিত হয়েছে।")
         return redirect("/admin/notices")
     rows = qa("SELECT * FROM notifications WHERE user_id IS NULL ORDER BY id DESC LIMIT 20")
-    return page("""<div class="card"><h2>নোটিশ প্রকাশ</h2><form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>শিরোনাম</label><input name="title" required maxlength="100">
+    return page("""<div class="card"><h2>📣 স্ক্রলিং নোটিশ (ড্যাশবোর্ডের উপরে)</h2><p class="k">চালু থাকলে সব ক্লায়েন্টের ড্যাশবোর্ডে ডান থেকে বামে চলতে থাকবে। বন্ধ বা ফাঁকা হলে নিজে থেকে লুকিয়ে যাবে।</p>
+<form method="post" action="/admin/notices/ticker"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<label class="ck"><input type="checkbox" name="on" value="1" {{'checked' if tk_on}}> চালু রাখুন</label>
+<label>লেখা (বাংলা)</label><textarea name="bn" rows="2" maxlength="300">{{tk_bn}}</textarea>
+<label>Text (English)</label><textarea name="en" rows="2" maxlength="300">{{tk_en}}</textarea><button style="width:100%">সেভ করুন</button></form></div>
+<div class="card"><h2>নোটিশ প্রকাশ</h2><form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>শিরোনাম</label><input name="title" required maxlength="100">
 <label>বিস্তারিত</label><textarea name="body" rows="3" maxlength="500"></textarea><button style="width:100%">প্রকাশ করুন</button></form></div>
-{% for n in rows %}<div class="card"><b>{{(n['title_en'] if lang=='en' and n['title_en'] else n['title'])}}</b><div>{{(n['body_en'] if lang=='en' and n['body_en'] else n['body'])}}</div><div class="k">{{n['created'][:16]}}</div></div>{% endfor %}""", active="/admin/notices", rows=rows)
+{% for n in rows %}<div class="card"><b>{{(n['title_en'] if lang=='en' and n['title_en'] else n['title'])}}</b><div>{{(n['body_en'] if lang=='en' and n['body_en'] else n['body'])}}</div><div class="k">{{n['created'][:16]}}</div></div>{% endfor %}""", active="/admin/notices", rows=rows, tk_on=setting("ticker_on", "0") == "1", tk_bn=setting("ticker_text_bn"), tk_en=setting("ticker_text_en"))
+
+
+@app.route("/admin/notices/ticker", methods=["POST"])
+@staff_required("notices")
+def admin_ticker():
+    f = request.form
+    on = "1" if f.get("on") == "1" else "0"
+    bn, en = " ".join(f.get("bn", "").split())[:300], " ".join(f.get("en", "").split())[:300]
+    if on == "1" and not (bn or en):
+        err("চালু করতে অন্তত একটি লেখা দিন।"); return redirect("/admin/notices")
+    with atomic():
+        for k, v in (("ticker_on", on), ("ticker_text_bn", bn), ("ticker_text_en", en)):
+            db().execute("INSERT OR REPLACE INTO settings VALUES(?,?)", (k, v))
+        audit("ticker_update", "on=%s chars=%d/%d" % (on, len(bn), len(en)))
+    flash("সেভ হয়েছে।")
+    return redirect("/admin/notices")
 
 
 @app.route("/admin/tickets", methods=["GET", "POST"])
