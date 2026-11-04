@@ -1060,7 +1060,7 @@ canvas{width:100%;height:170px}
 :root[data-theme=dark]{--bg:#0b1220;--card:#111a2e;--tx:#e5eaf5;--mut:#94a3b8;--ln:#1f2b45}
 .dot[hidden]{display:none}
 [hidden]{display:none!important}
-.adm{display:flex;gap:8px;overflow:visible;white-space:normal}.adm a.t{display:inline-flex;align-items:center;gap:6px;margin:0 0 8px}
+.adm{display:flex;flex-wrap:wrap;gap:8px;overflow:visible;white-space:normal}.adm a.t{white-space:nowrap}.adm a.t{display:inline-flex;align-items:center;gap:6px;margin:0 0 8px}
 .mg{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-bottom:14px}
 .mt{position:relative;aspect-ratio:1/1;background:var(--card);border:1px solid var(--ln);border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px;text-align:center;font-size:13px;font-weight:600;line-height:1.25;box-shadow:0 4px 14px #0f172a14;-webkit-tap-highlight-color:transparent;transition:transform .12s ease,box-shadow .2s ease}
 .mt:active{transform:scale(.95)}.mt:hover{box-shadow:0 6px 18px #0f172a24}
@@ -1126,7 +1126,7 @@ img.shot{max-width:100%;border-radius:12px;margin:8px 0;border:1px solid var(--l
 .mt{border-radius:22px;padding:6px;gap:7px;font-size:12.5px}
 .mt i{width:48px;height:48px;font-size:26px;border-radius:16px}
 .mt .bd2{top:7px;right:7px}
-.cc-h{margin:2px 2px 4px;font-size:18px;font-weight:700}.cc-sub{margin:0 2px 12px;color:var(--mut);font-size:13px}
+.cc-h{margin:2px 2px 4px;font-size:18px;font-weight:700}.cc-sub{margin:0 2px 12px;color:var(--mut);font-size:13px}.li{min-height:62px;box-sizing:border-box}button.li{box-shadow:none;margin:0;font-weight:400;text-align:left;line-height:1.4;-webkit-appearance:none;appearance:none;transition:none}button.li:active{transform:none;filter:none}details.cg summary::after{content:"▾";float:right;color:var(--mut)}details.cg[open] summary::after{content:"▴"}.gdot{display:none;width:9px;height:9px;border-radius:50%;background:#ef4444;margin-left:8px;vertical-align:middle}details.cg:has(.bd2:not([hidden])) .gdot{display:inline-block}details.cg .mg{margin-bottom:0}
 """
 
 JS = """
@@ -1236,7 +1236,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
 <main>{% for c,m in msgs %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
-{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active!='/admin'}}" href="/admin/menu">☰ কন্ট্রোল সেন্টার <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a></div>{% endif %}
+{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active!='/admin'}}" href="/admin/menu">☰ কন্ট্রোল সেন্টার <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t" href="/admin/requests/new" style="background:#16a34a;border-color:#16a34a;color:#fff">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
@@ -2256,8 +2256,10 @@ def _list_tx(kind, statuses, active, title):
     st = request.args.get("status", "open")
     where = "t.kind=? " + ("AND t.status IN (%s)" % ",".join("?" * len(statuses)) if st == "open" else "")
     args = [kind] + (list(statuses) if st == "open" else [])
+    t0 = now()
     pg = make_pg(q1("SELECT COUNT(*) n FROM tx t WHERE %s" % where, args)["n"], 30)
     rows = qa("SELECT t.*,u.name,u.phone,u.member_id FROM tx t JOIN users u ON u.id=t.user_id WHERE %s ORDER BY t.id DESC LIMIT ? OFFSET ?" % where, args + [30, pg["off"]])
+    _seen_list(active, rows, 30, pg, t0)
     return page("""<h2>{{title}}</h2><div class="row" style="margin-bottom:10px"><a class="btn sm s" href="?status=open">খোলা</a><a class="btn sm s" href="?status=all">সব</a></div>
 {% if not rows %}<div class="card empty">কিছু নেই</div>{% endif %}
 {% for t in rows %}<div class="card"><b>৳ {{money(t['amount'])}}</b> · {{t['method']}} <span class="pill {{t['status']}}">{{t['status']}}</span>
@@ -2350,6 +2352,8 @@ def admin_users():
     pg = make_pg(total)
     rows = qa("SELECT u.*, (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id=u.id) refn FROM users u WHERE " + where +
               " ORDER BY u.id ASC LIMIT ? OFFSET ?", args + (pg["per"], pg["off"]))
+    shown = {"/admin/users/%d" % x["id"] for x in rows}
+    alerts_seen(lambda link, ts: link in shown)
     return page("""<div class="card"><form><input name="q" value="{{s}}" placeholder="নাম / ফোন / মেম্বার আইডি / রেফারেল কোড">
 <select name="f"><option value="all" {{'selected' if f=='all'}}>সব ইউজার</option><option value="active" {{'selected' if f=='active'}}>ব্লক নয়</option>
 <option value="blocked" {{'selected' if f=='blocked'}}>ব্লকড</option><option value="funded" {{'selected' if f=='funded'}}>ব্যালেন্স আছে</option>
@@ -2376,6 +2380,7 @@ def admin_user(i):
     x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (i,))
     if not x:
         abort(404)
+    alerts_seen(lambda link, ts: link == "/admin/users/%d" % i)
     full = has_perm("dashboard_fin") or has_perm("users_manage")
     pg = make_pg(q1("SELECT COUNT(*) n FROM ledger WHERE user_id=?", (i,))["n"], 30) if full else None
     led = qa("SELECT * FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT ? OFFSET ?", (i, 30, pg["off"])) if full else []
@@ -2763,6 +2768,7 @@ def admin_commission():
 @app.route("/admin/pool")
 @staff_required("pool_view")
 def admin_pool():
+    t0 = now()
     kd = request.args.get("kind", "")
     where, args = "1=1", []
     if kd in ("fund", "payout", "reversal", "withdraw"):
@@ -2772,6 +2778,8 @@ def admin_pool():
     t = q1("SELECT COALESCE(SUM(CASE WHEN kind='fund' THEN amount END),0) f, COALESCE(SUM(CASE WHEN kind='payout' THEN -amount END),0) p, "
            "COALESCE(SUM(CASE WHEN kind='reversal' THEN amount END),0) r, COALESCE(SUM(CASE WHEN kind='withdraw' THEN -amount END),0) w FROM pool_ledger")
     bal, res = pool_balance(), pool_reserved()
+    if pg["p"] == 1:
+        alerts_seen(lambda link, ts: _admin_badge_key(link) == "/admin/pool" and ts < t0)
     att = q1("SELECT * FROM pool_attestations ORDER BY id DESC LIMIT 1")
     atts = qa("SELECT * FROM pool_attestations ORDER BY id DESC LIMIT 5")
     ledger_sum = round(float(q1("SELECT COALESCE(SUM(amount),0) s FROM pool_ledger")["s"]), 2)
@@ -3138,7 +3146,9 @@ def admin_tickets():
                              (rep, "%s (%s)" % (a["name"], a["member_id"]), now(), tid))
                 notify(t["user_id"], "সাপোর্ট উত্তর", rep); audit("ticket_reply", "ticket#%s" % tid); flash("উত্তর পাঠানো হয়েছে।")
         return redirect("/admin/tickets")
+    t0 = now()
     rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
+    _seen_list("/admin/tickets", rows, 50, {"p": 1}, t0)
     return page("""{% if not rows %}<div class="card empty">কোনো টিকিট নেই</div>{% endif %}{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
 <div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{t['created'][:16]}}</div><div>{{t['message']}}</div>
 {% if t['reply'] %}<div class="k">↳ {{t['reply']}}{% if t['replied_by'] %} — {{t['replied_by']}}{% endif %}</div>{% else %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="id" value="{{t['id']}}">
@@ -3438,6 +3448,33 @@ def nb(key):
     return notif_badges().get(key, 0)
 
 
+def alerts_seen(match):
+    """Marks this staff member's OWN unread alerts as read (in the database) when match(link, created) is true.
+    Called only after the items an alert refers to have actually been loaded on the page."""
+    u = me()
+    if not u or not u["is_admin"]:
+        return 0
+    f, pa = _alert_filter(u)  # only alerts this staff member is allowed to see
+    rows = qa("SELECT a.id,a.link,a.created FROM admin_alerts a WHERE %s AND a.created>=? AND NOT EXISTS("
+              "SELECT 1 FROM admin_alert_reads r WHERE r.alert_id=a.id AND r.admin_id=?)" % f,
+              pa + [u["created"] or "", u["id"]])
+    ids = [r["id"] for r in rows if match(r["link"] or "", str(r["created"] or ""))]
+    for i in ids:
+        db().execute("INSERT OR IGNORE INTO admin_alert_reads(alert_id,admin_id) VALUES(?,?)", (i, u["id"]))
+    if ids:
+        g.pop("_nb", None)  # badge counts are recomputed from the database
+    return len(ids)
+
+
+def _seen_list(key, rows, per, pg, until):
+    """After a section's first list page was loaded: its alerts are read if the loaded rows cover them
+    (all of them when the list is not full, otherwise only those at/after the oldest loaded row)."""
+    if pg["p"] != 1:
+        return
+    cut = None if len(rows) < per else min(str(r["created"] or "") for r in rows)
+    alerts_seen(lambda link, ts: _admin_badge_key(link) == key and ts < until and (cut is None or ts >= cut))
+
+
 TILE_LABEL = {"/admin/alerts": "নোটিফিকেশন", "/admin/reports": "আর্থিক রিপোর্ট", "/admin/reconcile": "লেজার মিলানো",
               "/admin/staff": "স্টাফ ম্যানেজমেন্ট", "/admin/users": "ইউজার", "/admin/commission": "কমিশন", "/admin/pool": "কমিশন পুল"}
 
@@ -3446,15 +3483,31 @@ TILE_LABEL = {"/admin/alerts": "নোটিফিকেশন", "/admin/reports
 @staff_required()
 def admin_menu():
     u = me()
-    tiles = [(p, TILE_LABEL.get(p, t.replace("🔔 ", "")), ADMIN_ICONS.get(p, "•"), "*" if p == "/admin/alerts" else p) for p, t, perm in ADMIN_TABS
-             if p not in ("/admin", "/admin/profile") and (perm is None or has_perm(perm, u))]
-    if has_perm("settings", u):  # existing Settings > Security section (login lock, backups) gets its own tile
-        tiles.insert(len(tiles), ("/admin/settings?open=security", "নিরাপত্তা", "🔒", ""))
-    tiles.append(("/admin/profile", "প্রোফাইল", ADMIN_ICONS["/admin/profile"], ""))
+    tiles = {}
+    for p, t, perm in ADMIN_TABS:
+        if p != "/admin" and (perm is None or has_perm(perm, u)):
+            tiles[p] = (p, TILE_LABEL.get(p, t.replace("🔔 ", "")), ADMIN_ICONS.get(p, "•"), "*" if p == "/admin/alerts" else p)
+    if has_perm("settings", u):  # existing Settings > Security section (login lock, backups) keeps its own tile
+        tiles["/admin/settings?open=security"] = ("/admin/settings?open=security", "নিরাপত্তা", "🔒", "")
+    if has_perm("requests", u):
+        tiles["/admin/requests/new"] = ("/admin/requests/new", "রিকোয়েস্ট পাঠান", "➕", "")
+    layout = [("", ["/admin/requests/new", "/admin/requests", "/admin/deposits", "/admin/withdrawals", "/admin/users", "/admin/alerts"]),
+              ("💰 আর্থিক ও কমিশন", ["/admin/commission", "/admin/pool", "/admin/referrals", "/admin/reports", "/admin/reconcile"]),
+              ("🎫 সাপোর্ট ও কনটেন্ট", ["/admin/tickets", "/admin/notices", "/admin/content", "/admin/payment-numbers"]),
+              ("⚙️ সিস্টেম ও নিরাপত্তা", ["/admin/staff", "/admin/settings", "/admin/settings?open=security", "/admin/audit", "/admin/profile"])]
+    groups, used = [], set()
+    for title, keys in layout:
+        items = [tiles[k] for k in keys if k in tiles]
+        used.update(k for k in keys if k in tiles)
+        groups.append([title, items])
+    groups[-1][1].extend(v for k, v in tiles.items() if k not in used)  # safety net: no feature can ever go missing
     return page("""<div class="cc-h">🎛 কন্ট্রোল সেন্টার</div><div class="cc-sub">যে ফিচারে নতুন নোটিফিকেশন আছে, তার বাটনে সংখ্যা দেখা যাবে।</div>
-<div class="mg">{% for p,t,ic,bk in tiles %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>{% if bk %}
-<span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div>""",
-                active="/admin/menu", tiles=tiles)
+<div class="mg">{% for p,t,ic,bk in groups[0][1] %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>{% if bk %}
+<span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div>
+{% for g in groups[1:] if g[1] %}<details class="card set cg"><summary>{{g[0]}} <span class="k">({{g[1]|length}})</span><span class="gdot"></span></summary>
+<div><div class="mg">{% for p,t,ic,bk in g[1] %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>{% if bk %}
+<span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div></div></details>{% endfor %}""",
+                active="/admin/menu", groups=groups)
 
 
 @app.route("/api/notif")
@@ -3640,6 +3693,8 @@ def admin_payment_numbers():
     pg = make_pg(q1("SELECT COUNT(*) n FROM payment_numbers p JOIN users u ON u.id=p.user_id WHERE %s" % " AND ".join(where), args)["n"], 30)
     rows = qa("SELECT p.*,u.name,u.phone,u.member_id FROM payment_numbers p JOIN users u ON u.id=p.user_id WHERE %s "
               "ORDER BY p.updated DESC LIMIT ? OFFSET ?" % " AND ".join(where), args + [30, pg["off"]])
+    shown = {"/admin/payment-numbers?q=%s" % r["member_id"] for r in rows}
+    alerts_seen(lambda link, ts: link in shown)
     logs = qa("SELECT l.*,u.name,u.member_id FROM payment_number_log l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 20")
     return page("""<div class="card"><form><input name="q" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি / নম্বর">
 <select name="method"><option value="">সব মাধ্যম</option>{% for x in methods %}<option {{'selected' if x==m}}>{{x}}</option>{% endfor %}</select>
@@ -4023,16 +4078,19 @@ def admin_request_new():
         dh = int(setting("req_expiry_hours", "24") or 0)
     except ValueError:
         dh = 24
-    return page("""{% if not x %}<div class="card"><h2>নতুন অনুরোধ — ইউজার বাছাই</h2><form><input name="q" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি" autofocus>
-<button style="width:100%">খুঁজুন</button></form></div>
-{% if q and not found %}<div class="card empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}
-{% for f in found %}<a href="/admin/requests/new?uid={{f['id']}}"><div class="card"><b>#{{f['member_id']}} {{f['name']}}</b>{% if f['blocked'] %} <span class="pill rejected">blocked</span>{% endif %}
-<div class="k">{{f['phone']}} · ৳ {{money(f['balance'])}}</div></div></a>{% endfor %}
-{% else %}<div class="card"><h2>নতুন অনুরোধ</h2><div class="k">ইউজার: <b>#{{x['member_id']}} {{x['name']}}</b> · {{x['phone']}} · ব্যালেন্স ৳ {{money(x['balance'])}}</div>
-<a class="k" href="/admin/requests/new">← অন্য ইউজার বাছাই</a>
-<form method="post" data-confirm="অনুরোধটি ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" value="{{x['id']}}">
-<label>ধরন</label><select name="type"><option value="client_confirm">ডিপোজিট রিকোয়েস্ট — ক্লায়েন্ট নিজে কনফার্ম করবে (মূল টাকা ওয়ালেট থেকে কাটা + কমিশন পুল থেকে)</option><option value="admin_review">উইথড্র/পেমেন্ট রিকোয়েস্ট — ক্লায়েন্ট পেমেন্ট জমা দেবে, অ্যাডমিন যাচাই করবে (মূল টাকা + কমিশন ওয়ালেটে যোগ)</option><option value="deposit">সাধারণ ডিপোজিট (কমিশন ছাড়া)</option><option value="withdraw">সাধারণ উইথড্র (কমিশন ছাড়া)</option></select>
-<div class="k">এই ইউজারের কমিশন রেট: <b>{{rate|pct}}%</b> · পুলে উপলব্ধ ফান্ড: <b>৳{{money(avail)}}</b> (কমিশন শুধু পুল থেকে যায়)</div>
+    ptype = request.args.get("type", "client_confirm")
+    return page("""<div class="card"><h2>➕ নতুন রিকোয়েস্ট পাঠান</h2>
+<form method="post" id="rf" data-confirm="অনুরোধটি ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" id="uid" value="{{x['id'] if x else ''}}">
+<label>১. ইউজার বাছাই করুন</label>
+<div id="usel" class="copybox" style="user-select:auto"{% if not x %} hidden{% endif %}><b id="un">{% if x %}#{{x['member_id']}} {{x['name']}}{% endif %}</b>
+<div class="k" id="ui">{% if x %}{{x['phone']}} · ব্যালেন্স ৳ {{money(x['balance'])}} · কমিশন রেট {{rate|pct}}%{% endif %}</div>
+<button type="button" class="btn sm s" id="uchg" style="margin-top:6px">বদলান</button></div>
+<div id="upick"{% if x %} hidden{% endif %}><input id="uq" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি লিখুন" autocomplete="off"><div id="ures">
+{% for f in found %}<a class="btn sm s" style="display:block;text-align:left;margin-bottom:6px" href="/admin/requests/new?uid={{f['id']}}">#{{f['member_id']}} {{f['name']}} · {{f['phone']}}</a>{% endfor %}</div></div>
+<label>২. ধরন</label><select name="type">
+<optgroup label="ডিপোজিট"><option value="client_confirm" {{'selected' if ptype=='client_confirm'}}>ডিপোজিট রিকোয়েস্ট — ক্লায়েন্ট নিজে কনফার্ম করবে (মূল টাকা ওয়ালেট থেকে কাটা + কমিশন পুল থেকে)</option><option value="deposit" {{'selected' if ptype=='deposit'}}>সাধারণ ডিপোজিট (কমিশন ছাড়া)</option></optgroup>
+<optgroup label="উইথড্র"><option value="admin_review" {{'selected' if ptype=='admin_review'}}>উইথড্র/পেমেন্ট রিকোয়েস্ট — ক্লায়েন্ট পেমেন্ট জমা দেবে, অ্যাডমিন যাচাই করবে (মূল টাকা + কমিশন ওয়ালেটে যোগ)</option><option value="withdraw" {{'selected' if ptype=='withdraw'}}>সাধারণ উইথড্র (কমিশন ছাড়া)</option></optgroup></select>
+<div class="k">পুলে উপলব্ধ ফান্ড: <b>৳{{money(avail)}}</b> (কমিশন শুধু পুল থেকে যায়)</div>
 <label>উদ্দেশ্য — বাংলা (ক্লায়েন্ট-কনফার্মে আবশ্যক; ক্লায়েন্টকে অনুমোদনের আগে দেখানো হবে)</label><textarea name="purpose" rows="2" maxlength="300"></textarea>
 <label>Purpose — English (optional)</label><textarea name="purpose_en" rows="2" maxlength="300"></textarea>
 <label>Order ID</label><input name="order_id" required maxlength="32" value="{{oid}}" autocapitalize="characters">
@@ -4041,14 +4099,42 @@ def admin_request_new():
 <label>পেমেন্ট নম্বর (১১ ডিজিট; ক্লায়েন্ট-কনফার্মে লাগবে না)</label><input name="number" inputmode="numeric" maxlength="11">
 <label>নির্দেশনা (ঐচ্ছিক)</label><textarea name="instructions" rows="3" maxlength="500"></textarea>
 <label>মেয়াদ (ঘণ্টা, ঐচ্ছিক; ০ = মেয়াদ নেই)</label><input name="hours" type="number" min="0" max="720" value="{{dh}}">
-<button style="width:100%">📨 ইউজারকে পাঠান</button></form></div>{% endif %}""",
-                active="/admin/requests", x=x, q=q, found=found, methods=METHODS, dh=dh, oid="ORD" + secrets.token_hex(4).upper(), rate=effective_rate(x) if x else 0, avail=pool_available())
+<button style="width:100%">📨 ইউজারকে পাঠান</button></form></div>
+<script>(function(){var $=function(i){return document.getElementById(i)},uq=$('uq'),res=$('ures'),tm=null,seq=0;
+function pick(u){$('uid').value=u.id;$('un').textContent='#'+u.member_id+' '+u.name;
+ $('ui').textContent=u.phone+' · ব্যালেন্স ৳ '+u.balance+' · কমিশন রেট '+u.rate+'%';$('usel').hidden=false;$('upick').hidden=true;res.innerHTML=''}
+function render(list){res.innerHTML='';if(!list.length){var d=document.createElement('div');d.className='k';d.textContent='কোনো ইউজার পাওয়া যায়নি';res.appendChild(d);return}
+ list.forEach(function(u){var b=document.createElement('button');b.type='button';b.className='btn sm s';b.style.cssText='display:block;width:100%;text-align:left;margin-bottom:6px';
+  b.textContent='#'+u.member_id+' '+u.name+' · '+u.phone+' · ৳'+u.balance+(u.blocked?' · ব্লকড':'');if(u.blocked)b.disabled=true;
+  b.addEventListener('click',function(){pick(u)});res.appendChild(b)})}
+function find(){var q=uq.value.trim();if(!q){res.innerHTML='';return}var my=++seq;
+ fetch('/admin/requests/find?q='+encodeURIComponent(q),{credentials:'same-origin'}).then(function(r){return r.ok?r.json():[]}).then(function(l){if(my===seq)render(l)}).catch(function(){})}
+uq.addEventListener('input',function(){clearTimeout(tm);tm=setTimeout(find,250)});
+$('uchg').addEventListener('click',function(){$('uid').value='';$('usel').hidden=true;$('upick').hidden=false;uq.focus()});
+$('rf').addEventListener('submit',function(e){if(!$('uid').value){e.preventDefault();e.stopPropagation();alert('আগে ইউজার বাছাই করুন।');uq.focus()}},true)})()</script>""",
+                active="/admin/requests", x=x, q=q, found=found, methods=METHODS, dh=dh, oid="ORD" + secrets.token_hex(4).upper(),
+                rate=effective_rate(x) if x else 0, avail=pool_available(), ptype=ptype)
+
+
+@app.route("/admin/requests/find")
+@staff_required("requests")
+def admin_request_find():
+    """Live user search for the one-page 'send request' form (same permission as creating a request)."""
+    q = request.args.get("q", "").strip().lstrip("#")[:40]
+    if not q:
+        return jsonify([])
+    like = "%" + q + "%"
+    rows = qa("SELECT id,name,phone,member_id,balance,blocked,comm_rate FROM users WHERE is_admin=0 AND "
+              "(name LIKE ? OR phone LIKE ? OR member_id LIKE ?) ORDER BY id DESC LIMIT 12", (like, like, like))
+    return jsonify([dict(id=r["id"], name=r["name"], phone=r["phone"], member_id=r["member_id"], balance=money(r["balance"]),
+                         blocked=bool(r["blocked"]), rate=_pct(effective_rate(r))) for r in rows])
 
 
 @app.route("/admin/requests")
 @staff_required("requests")
 def admin_requests():
     expire_requests()
+    t0 = now()
     st, kd = request.args.get("status", "open"), request.args.get("kind", "")
     q = request.args.get("q", "").strip().lstrip("#")[:40]
     like = "%" + q + "%"
@@ -4067,6 +4153,10 @@ def admin_requests():
     pg = make_pg(q1("SELECT COUNT(*) n FROM requests r JOIN users u ON u.id=r.user_id%s" % wh, args)["n"], 30)
     rows = qa("SELECT r.*,u.name,u.phone,u.member_id FROM requests r JOIN users u ON u.id=r.user_id%s ORDER BY r.id DESC LIMIT ? OFFSET ?" % wh,
               args + [30, pg["off"]])
+    if not q and not kd and st in ("open", "all") and pg["p"] == 1:
+        shown = {"/admin/requests/%d" % r["id"] for r in rows}
+        every = len(rows) < 30
+        alerts_seen(lambda link, ts: _admin_badge_key(link) == "/admin/requests" and ((every and ts < t0) or link in shown))
     return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">রিকোয়েস্ট</h2><a class="btn sm g" href="/admin/requests/new" style="flex:0;white-space:nowrap">➕ নতুন</a></div>
 <form style="margin-top:10px"><input name="q" value="{{q}}" placeholder="Order ID / নাম / ফোন / আইডি / TrxID">
 <select name="status"><option value="open" {{'selected' if st=='open'}}>যাচাইয়ের অপেক্ষায় (জমা + যাচাইয়ে)</option><option value="all" {{'selected' if st=='all'}}>সব</option>
@@ -4089,6 +4179,7 @@ def admin_request_view(i):
     if not r:
         abort(404)
     log = qa("SELECT * FROM request_log WHERE request_id=? ORDER BY id", (i,))
+    alerts_seen(lambda link, ts: link == "/admin/requests/%d" % i)
     return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}} · ৳ {{money(r['amount'])}}</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="k" style="margin-top:8px">Order ID: <b>{{r['order_id']}}</b> · {{r['method']}} · {{r['pay_number']}}</div>
