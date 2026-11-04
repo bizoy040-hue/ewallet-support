@@ -1015,7 +1015,7 @@ def _ctx():
     u = me()
     unread = notif_badges().get("*", 0) if u else 0  # same single query that feeds the per-feature badges
     return dict(csrf_token=csrf(), u=u, site=(setting("site_name") or SITE)[:60], unread=unread, money=money, can=has_perm, nb=nb,
-                role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label, kycs=kyc_status, kycl=KYC_LABEL)
+                role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label, kycs=kyc_status, kycl=KYC_LABEL, ref_reward=referral_reward_amount)
 
 
 CSS = """
@@ -1418,6 +1418,12 @@ EN_PHRASES = {
     "অনুরোধটির মেয়াদ শেষ হয়েছে।": "This request has expired.",
     "আপনার ব্যালেন্স অপর্যাপ্ত — কিছুই কাটা হয়নি।": "Your balance is insufficient; nothing was deducted.",
     "অনুরোধ বাতিল করা হয়েছে।": "Request rejected.",
+    # referral rewards (first approved Add Money)
+    "রেফারেল রিওয়ার্ড": "Referral reward", "বর্তমান রিওয়ার্ড": "Current reward", "ডিপোজিটের অপেক্ষায়": "Awaiting first deposit",
+    "পেইড": "Paid", "মোট রেফার": "Total referrals", "রিওয়ার্ড পেইড": "Rewards paid", "মোট রেফারেল আয়": "Total referral earnings",
+    "প্রথম ডিপোজিট বাকি": "Awaiting first deposit",
+    "রিওয়ার্ড সেটিংস": "Reward settings", "রিওয়ার্ড ইতিহাস": "Reward history", "রিওয়ার্ড দিন": "Pay reward",
+    "রিওয়ার্ডের পরিমাণ (৳)": "Reward amount (৳)", "রিওয়ার্ড সেভ করুন": "Save reward",
 }
 _EN_RE = re.compile(r"(?<![\u0980-\u09FF])(" + "|".join(re.escape(k) for k in sorted(EN_PHRASES, key=len, reverse=True))
                     + r")(?![\u0980-\u09FF])")
@@ -1492,8 +1498,8 @@ TERMS_DEFAULT = {
         {"bn": "উইথড্র রিকোয়েস্ট অনুমোদনের পর পরিশোধ হয়।", "en": "A withdrawal is paid after the request is approved."},
         {"bn": "কমিশন ম্যানুয়ালি কারণসহ প্রদান করা হয় এবং লেজারে সংরক্ষিত থাকে।",
          "en": "Commission is given with a stated reason and is recorded in the ledger."},
-        {"bn": "রেফারেল বোনাস অনুমোদনের পরই ওয়ালেটে যুক্ত হয়; ভুয়া/স্ব-রেফারেল বাতিল হবে।",
-         "en": "A referral bonus is added only after approval; fake or self-referrals are cancelled."},
+        {"bn": "রেফার করা ব্যক্তির প্রথম অনুমোদিত ডিপোজিটের পরই রেফারেল বোনাস ওয়ালেটে যুক্ত হয়; ভুয়া/স্ব-রেফারেল বাতিল হবে।",
+         "en": "A referral bonus is added only after the referred person's first approved deposit; fake or self-referrals are cancelled."},
         {"bn": "প্রতিটি লেনদেন অডিটযোগ্য লেজারে রেকর্ড হয়।", "en": "Every transaction is recorded in an auditable ledger."},
     ],
     "instructions": {"bn": "", "en": ""},
@@ -1640,10 +1646,11 @@ def signup():
                 uid = cur.lastrowid
                 alert_admins("নতুন ইউজার", "#%d %s (%s)" % (last + 1, n, p), "/admin/users/%d" % uid, "users_view")
                 if referrer:
-                    bonus = parse_amount(setting("referral_bonus", "50")) or 50.0
+                    bonus = referral_reward_amount()
                     db().execute("INSERT INTO referrals(referrer_id,referred_id,code,amount,status,created) VALUES(?,?,?,?,?,?)",
                                  (referrer["id"], uid, code, bonus, "pending", now()))
-                    notify(referrer["id"], "নতুন রেফারেল", "আপনার কোডে #%d সাইন আপ করেছেন। ৳%s বোনাস অনুমোদনের অপেক্ষায়।" % (last + 1, money(bonus)))
+                    notify(referrer["id"], "নতুন রেফারেল", "আপনার কোডে #%d সাইন আপ করেছেন। তার প্রথম ডিপোজিট অনুমোদিত হলে ৳%s বোনাস পাবেন।" % (last + 1, money(bonus)),
+                           "/referral", "New referral", "User #%d signed up with your code. You will receive ৳%s after their first approved deposit." % (last + 1, money(bonus)))
                     db().execute("INSERT INTO audit(actor,action,detail,created,actor_id,ip) VALUES(?,?,?,?,?,?)",
                                  ("system", "referral_request", "referral for user#%d by user#%d" % (uid, referrer["id"]), now(), None, ip))
         except INTEGRITY:
@@ -2012,30 +2019,31 @@ def referral():
             db().execute("UPDATE users SET referral_code=? WHERE id=? AND referral_code IS NULL", (gen_code(db()), u["id"]))
         g.pop("_me", None)
         u = me()
-    st = q1("""SELECT COUNT(*) total, COALESCE(SUM(status='pending'),0) pend, COALESCE(SUM(status='approved'),0) appr,
-               COALESCE(SUM(status='rejected'),0) rej, COALESCE(SUM(CASE WHEN status='approved' THEN amount END),0) earned,
-               COALESCE(SUM(CASE WHEN status='pending' THEN amount END),0) pend_amt FROM referrals WHERE referrer_id=?""", (u["id"],))
+    st = q1("""SELECT COUNT(*) total, COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) pend,
+               COALESCE(SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END),0) appr,
+               COALESCE(SUM(CASE WHEN status='rejected' THEN 1 ELSE 0 END),0) rej,
+               COALESCE(SUM(CASE WHEN status='approved' THEN amount END),0) earned FROM referrals WHERE referrer_id=?""", (u["id"],))
     rows = qa("""SELECT r.*, x.name x_name, x.member_id x_mid FROM referrals r JOIN users x ON x.id=r.referred_id
                  WHERE r.referrer_id=? ORDER BY r.id DESC LIMIT 100""", (u["id"],))
     by = q1("SELECT member_id,name FROM users WHERE id=?", (u["referred_by"],)) if u["referred_by"] else None
     link = ref_link(u["referral_code"])
     user_seen(lambda lk, title, ts: _user_badge_key(lk, title) == "/referral")
-    bonus = parse_amount(setting("referral_bonus", "50")) or 50.0
+    bonus = referral_reward_amount()
     text = "%s-এ যোগ দিন! আমার রেফারেল কোড: %s" % (SITE, u["referral_code"])
     return page("""<div class="card hero"><small>আপনার রেফারেল কোড</small><div class="code">{{u['referral_code']}}</div>
 <div class="copybox" style="color:var(--tx)">{{link}}</div>
 <div class="row"><button class="btn w" data-copy="{{link}}">📋 লিংক কপি</button><button class="btn w" data-share="{{link}}" data-text="{{text}}">📤 শেয়ার</button></div>
 <div class="row" style="margin-top:10px"><button class="btn w" data-copy="{{u['referral_code']}}">কোড কপি</button>
 <a class="btn w" target="_blank" rel="noopener" href="https://wa.me/?text={{(text+' '+link)|urlencode}}">WhatsApp</a></div></div>
-<div class="card"><b>🎁 প্রতি সফল রেফারে ৳{{money(bonus)}}</b><div class="k">বন্ধু আপনার কোডে সাইন আপ করলে বোনাস রিকোয়েস্ট তৈরি হয়। অনুমোদনের পর টাকা ওয়ালেটে যুক্ত হয়। ডিপোজিট লাগে না।</div>
+<div class="card"><b>🎁 বর্তমান রিওয়ার্ড: প্রতি সফল রেফারে ৳{{money(bonus)}}</b><div class="k">যত খুশি মানুষকে রেফার করতে পারেন। শুধু সাইন আপ করলে বোনাস হয় না — আপনার রেফার করা প্রত্যেক ব্যক্তির প্রথম ডিপোজিট অনুমোদিত হলে, সেই ব্যক্তির জন্য একবার ৳{{money(bonus)}} আপনার ওয়ালেটে যুক্ত হয়।</div>
 {% if by %}<div class="k" style="margin-top:6px">আপনাকে রেফার করেছেন: #{{by['member_id']}} {{by['name']}}</div>{% endif %}</div>
 <div class="g2"><div class="card"><div class="k">মোট রেফার</div><div class="v">{{st['total']}}</div></div>
-<div class="card"><div class="k">অনুমোদিত</div><div class="v">{{st['appr']}}</div></div>
-<div class="card"><div class="k">অপেক্ষমাণ</div><div class="v">{{st['pend']}} <span class="k">(৳{{money(st['pend_amt'])}})</span></div></div>
-<div class="card"><div class="k">মোট বোনাস আয়</div><div class="v">৳ {{money(st['earned'])}}</div></div></div>
+<div class="card"><div class="k">প্রথম ডিপোজিট বাকি</div><div class="v">{{st['pend']}}</div></div>
+<div class="card"><div class="k">রিওয়ার্ড পেইড</div><div class="v">{{st['appr']}}</div></div>
+<div class="card"><div class="k">মোট রেফারেল আয়</div><div class="v">৳ {{money(st['earned'])}}</div></div></div>
 <div class="card"><h3>রেফারেল ইতিহাস</h3>{% if not rows %}<div class="empty">এখনো কেউ আপনার কোডে যোগ দেয়নি</div>{% else %}<div class="tw"><table>
-<tr><th>সদস্য</th><th>৳</th><th>অবস্থা</th><th>তারিখ</th></tr>{% for r in rows %}<tr><td>#{{r['x_mid']}} {{r['x_name']}}</td><td>{{money(r['amount'])}}</td>
-<td><span class="pill {{r['status']}}">{{ {'pending':'অপেক্ষমাণ','approved':'অনুমোদিত','rejected':'বাতিল'}[r['status']] }}</span></td><td>{{r['created']|bdd}}</td></tr>{% endfor %}</table></div>{% endif %}</div>""",
+<tr><th>সদস্য</th><th>৳</th><th>অবস্থা</th><th>তারিখ</th></tr>{% for r in rows %}<tr><td>#{{r['x_mid']}} {{r['x_name']}}</td><td>{{money(r['amount'] if r['status']=='approved' else bonus) if r['status']!='rejected' else '-'}}</td>
+<td><span class="pill {{r['status']}}">{{ {'pending':'ডিপোজিটের অপেক্ষায়','approved':'পেইড','rejected':'বাতিল'}[r['status']] }}</span></td><td>{{r['created']|bdd}}</td></tr>{% endfor %}</table></div>{% endif %}</div>""",
                 active="/account", st=st, rows=rows, by=by, link=link, text=text, bonus=bonus)
 
 
@@ -2140,17 +2148,19 @@ def feedback():
 
 # ---------------------------------------------------------------- admin: shared pieces
 REF_SQL = """SELECT r.*, rf.member_id rf_mid, rf.name rf_name, rf.phone rf_phone, x.member_id x_mid, x.name x_name, x.phone x_phone,
- (COALESCE(x.signup_ip,'')<>'' AND (x.signup_ip=rf.signup_ip OR EXISTS(SELECT 1 FROM login_history h WHERE h.user_id=rf.id AND h.ip=x.signup_ip))) same_ip
+ (COALESCE(x.signup_ip,'')<>'' AND (x.signup_ip=rf.signup_ip OR EXISTS(SELECT 1 FROM login_history h WHERE h.user_id=rf.id AND h.ip=x.signup_ip))) same_ip,
+ ((SELECT COUNT(*) FROM tx d WHERE d.user_id=r.referred_id AND d.kind='deposit' AND d.status='approved')
+  +(SELECT COUNT(*) FROM requests q WHERE q.user_id=r.referred_id AND q.kind='deposit' AND COALESCE(q.flow,'')='' AND q.status='approved')) dep_n
  FROM referrals r JOIN users rf ON rf.id=r.referrer_id JOIN users x ON x.id=r.referred_id"""
 
 REF_LIST = """{% if not rows %}<div class="card empty">কোনো রেফারেল রিকোয়েস্ট নেই</div>{% endif %}
-{% for r in rows %}<div class="card"><div class="row" style="align-items:center"><b>৳ {{money(r['amount'])}}</b><span class="pill {{r['status']}}" style="flex:0">{{r['status']}}</span></div>
+{% for r in rows %}<div class="card"><div class="row" style="align-items:center"><b>৳ {{money(r['amount'] if r['status']=='approved' else ref_reward())}}</b><span class="pill {{r['status']}}" style="flex:0">{{r['status']}}</span></div>
 <div class="k">রেফারার: <a href="/admin/referrals/user/{{r['referrer_id']}}"><b>#{{r['rf_mid']}} {{r['rf_name']}}</b></a> · {{r['rf_phone']}}</div>
 <div class="k">নতুন ইউজার: <a href="/admin/referrals/user/{{r['referred_id']}}"><b>#{{r['x_mid']}} {{r['x_name']}}</b></a> · {{r['x_phone']}} · {{r['created'][:16]}}</div>
 {% if r['same_ip'] and r['status']=='pending' %}<div class="msg error" style="margin:6px 0">⚠ একই আইপি থেকে সাইন আপ/লগইন — যাচাই করুন</div>{% endif %}
 {% if r['status']!='pending' %}<div class="k">সিদ্ধান্ত: {{r['decided_by']}} · {{(r['decided_at'] or '')[:16]}}{% if r['note'] %} · {{r['note']}}{% endif %}</div>
-{% elif can('referrals') %}<form method="post" action="/admin/referrals/{{r['id']}}" style="margin-top:8px" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><div class="row"><button name="act" value="approve" class="btn sm g">✅ অনুমোদন</button><button name="act" value="reject" class="btn sm r">❌ বাতিল</button></div></form>{% endif %}</div>{% endfor %}"""
+{% elif can('referrals') %}{% if not r['dep_n'] %}<div class="k">⏳ রেফার করা ইউজারের প্রথম অনুমোদিত ডিপোজিটের অপেক্ষায় — ডিপোজিট অনুমোদিত হলে রিওয়ার্ড স্বয়ংক্রিয়ভাবে যুক্ত হবে।</div>{% endif %}<form method="post" action="/admin/referrals/{{r['id']}}" style="margin-top:8px" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><div class="row">{% if r['dep_n'] %}<button name="act" value="approve" class="btn sm g">✅ রিওয়ার্ড দিন</button>{% endif %}<button name="act" value="reject" class="btn sm r">❌ বাতিল</button></div></form>{% endif %}</div>{% endfor %}"""
 
 
 def back(default="/admin"):
@@ -2317,6 +2327,8 @@ def admin_tx(i):
             notify(t["user_id"], "উইথড্র আপডেট", "আপনার ৳%s উইথড্র এখন: %s" % (money(t["amount"]), new))
         db().execute("UPDATE tx SET status=?, note=COALESCE(NULLIF(?,''),note), updated=? WHERE id=?", (new, note, now(), i))
         audit("tx_" + act, "tx#%d %s ৳%s" % (i, t["kind"], t["amount"]))
+        if dep and act == "approve":  # same transaction: first approved Add Money -> one referral reward (never blocks the deposit itself)
+            referral_reward_on_deposit(t["user_id"], a, "tx#%d" % i, tx_id=i)
         open_st = ("pending", "review") if dep else ("pending", "processing", "approved")
         if not q1("SELECT 1 FROM tx WHERE kind=? AND status IN (%s)" % ",".join("?" * len(open_st)), (t["kind"],) + open_st):
             alerts_done("/admin/deposits" if dep else "/admin/withdrawals")  # nothing left to handle in this queue
@@ -2569,7 +2581,7 @@ def admin_referrals():
     rows = qa(REF_SQL + (" WHERE r.status=?" if st != "all" else " WHERE ?='all'") + " ORDER BY r.id DESC LIMIT 100", (st,))
     sm = q1("""SELECT COALESCE(SUM(status='pending'),0) p, COALESCE(SUM(status='approved'),0) a, COALESCE(SUM(status='rejected'),0) r,
                COALESCE(SUM(CASE WHEN status='pending' THEN amount END),0) pa, COALESCE(SUM(CASE WHEN status='approved' THEN amount END),0) aa FROM referrals""")
-    return page("""<div class="row" style="margin-bottom:10px;align-items:center"><a class="btn sm" href="/admin/referrals">📋 তালিকা</a><a class="btn sm s" href="/admin/referrals/network">🌐 নেটওয়ার্ক</a>{% if can('pool_view') %}<span class="k">পুলে উপলব্ধ: ৳{{money(pool_av)}}</span>{% endif %}</div>
+    return page("""<div class="row" style="margin-bottom:10px;align-items:center"><a class="btn sm" href="/admin/referrals">📋 তালিকা</a><a class="btn sm s" href="/admin/referrals/network">🌐 নেটওয়ার্ক</a><a class="btn sm s" href="/admin/referral-rewards">⚙️ রিওয়ার্ড সেটিংস</a>{% if can('pool_view') %}<span class="k">পুলে উপলব্ধ: ৳{{money(pool_av)}}</span>{% endif %}</div>
 <div class="g2"><div class="card"><div class="k">পেন্ডিং</div><div class="v">{{sm['p']}} <span class="k">(৳{{money(sm['pa'])}})</span></div></div>
 <div class="card"><div class="k">অনুমোদিত (প্রদত্ত)</div><div class="v">{{sm['a']}} <span class="k">(৳{{money(sm['aa'])}})</span></div></div>
 <div class="card"><div class="k">বাতিল</div><div class="v">{{sm['r']}}</div></div></div>
@@ -2596,24 +2608,24 @@ def admin_ref_act(i):
             x = q1("SELECT * FROM users WHERE id=?", (r["referred_id"],))
             if not rf or not x or r["referrer_id"] == r["referred_id"] or x["referred_by"] != r["referrer_id"]:
                 err("অবৈধ রেফারেল সম্পর্ক — অনুমোদন সম্ভব নয়।"); return back("/admin/referrals")
-            if act == "approve" and rf["blocked"]:
-                err("রেফারার ব্লকড। আনব্লক করুন অথবা বাতিল করুন।"); return back("/admin/referrals")
-            new = "approved" if act == "approve" else "rejected"
-            cur = db().execute("UPDATE referrals SET status=?, decided_by=?, decided_by_id=?, decided_at=?, note=? WHERE id=? AND status='pending'",
-                               (new, who, a["id"], now(), note, i))
-            if cur.rowcount != 1:
-                raise LedgerError("duplicate decision")
             if act == "approve":
-                if float(r["amount"]) > 0 and not pool_pay(rf["id"], "referral_bonus", r["amount"], "ref:%d:bonus" % i, "referral", i,
-                                                            "Referral bonus for #%s" % x["member_id"], a["member_id"]):
-                    raise LedgerError("duplicate credit")  # referral rewards are paid ONLY from the funded Commission Pool
-                notify(rf["id"], "রেফারেল বোনাস অনুমোদিত", "#%s-এর রেফারেলের জন্য ৳%s আপনার ওয়ালেটে যুক্ত হয়েছে।" % (x["member_id"], money(r["amount"])))
+                # Registration alone never pays: the referred user must already have an approved Add Money transaction.
+                res = referral_reward_pay(r, rf, x, a, "manual by %s" % a["member_id"], need_deposit=True, admin_note=note)
+                if res != "paid":
+                    err({"no_deposit": "রেফার করা ইউজারের এখনো কোনো অনুমোদিত ডিপোজিট নেই — রিওয়ার্ড দেওয়া যাবে না।",
+                         "no_funds": "কমিশন পুলে পর্যাপ্ত ফান্ড নেই — আগে পুলে ফান্ড যোগ করুন।",
+                         "blocked": "রেফারার ব্লকড। আনব্লক করুন অথবা বাতিল করুন।"}.get(res, "এই রেফারেল আগেই প্রক্রিয়া করা হয়েছে।"))
+                    return back("/admin/referrals")
             else:
+                cur = db().execute("UPDATE referrals SET status='rejected', decided_by=?, decided_by_id=?, decided_at=?, note=? WHERE id=? AND status='pending'",
+                                   (who, a["id"], now(), note, i))
+                if cur.rowcount != 1:
+                    raise LedgerError("duplicate decision")
                 notify(rf["id"], "রেফারেল বাতিল", "#%s-এর রেফারেল বোনাস অনুমোদিত হয়নি।%s" % (x["member_id"], (" কারণ: " + note) if note else ""))
-            audit("referral_" + act, "ref#%d referrer#%s referred#%s ৳%s" % (i, rf["member_id"], x["member_id"], r["amount"]))
+                audit("referral_reject", "ref#%d referrer#%s referred#%s" % (i, rf["member_id"], x["member_id"]))
     except (LedgerError, PoolError) as e:
         err("ব্যর্থ (কিছুই পরিবর্তন হয়নি): " + str(e)); return back("/admin/referrals")
-    flash("রেফারেল %s।" % ("অনুমোদিত হয়েছে" if act == "approve" else "বাতিল হয়েছে"))
+    flash("রেফারেল %s।" % ("রিওয়ার্ড দেওয়া হয়েছে" if act == "approve" else "বাতিল হয়েছে"))
     return back("/admin/referrals")
 
 
@@ -3180,7 +3192,8 @@ SET_SECTIONS = [
     ("withdraw", "⬆ উইথড্র সেটিংস", [("min_withdraw", "money", "ন্যূনতম উইথড্র (৳)")], ""),
     ("commission", "💰 কমিশন সেটিংস", [],
      "এই সিস্টেমে কমিশন স্বয়ংক্রিয় নয়। অ্যাডমিন কাজের কারণসহ ম্যানুয়ালি কমিশন দেন (কমিশন ট্যাব)। তাই এখানে কোনো হার সেট করার নেই।"),
-    ("referral", "🎁 রেফারেল সেটিংস", [("referral_bonus", "money", "রেফারেল বোনাস (৳, প্রতি সফল রেফার)")], ""),
+    ("referral", "🎁 রেফারেল সেটিংস", [],
+     "রেফারেল রিওয়ার্ডের পরিমাণ এখন আলাদা পেজ থেকে নিয়ন্ত্রণ করা হয় (নিচের বাটন)। রিওয়ার্ড শুধু রেফার করা ব্যক্তির প্রথম অনুমোদিত ডিপোজিটের পর, প্রতি ব্যক্তির জন্য একবার দেওয়া হয়।"),
     ("user", "👤 ইউজার সেটিংস", [("signup_open", "sel", "নতুন সাইন আপ", ONOFF)], ""),
     ("notification", "🔔 নোটিফিকেশন সেটিংস",
      [("notif_sound", "sel", "নোটিফিকেশন সাউন্ড (ডিফল্ট; প্রতিটি ডিভাইসে ব্যবহারকারী নিজে বদলাতে পারেন)", ONOFF)], ""),
@@ -3199,7 +3212,7 @@ SET_KEYS = [f[0] for sec in SET_SECTIONS for f in sec[2]]
 def _validate_section(v):
     if "telegram_url" in v and v["telegram_url"] and not v["telegram_url"].startswith("https://"):
         return "টেলিগ্রাম লিংক https:// দিয়ে শুরু হতে হবে।"
-    for k in ("min_deposit", "min_withdraw", "referral_bonus"):
+    for k in ("min_deposit", "min_withdraw"):
         if k in v and parse_amount(v[k]) <= 0:
             return "পরিমাণ সঠিক দিন।"
     if "req_expiry_hours" in v:
@@ -3231,7 +3244,7 @@ def admin_settings():
             for k, val in v.items():
                 db().execute("INSERT OR REPLACE INTO settings VALUES(?,?)", (k, val[:2000]))
             audit("settings", "updated: " + sec)
-        flash("সেভ হয়েছে।" + (" (রেফারেল বোনাসের নতুন পরিমাণ শুধু নতুন রিকোয়েস্টে প্রযোজ্য।)" if sec == "referral" else ""))
+        flash("সেভ হয়েছে।")
         return redirect("/admin/settings?open=" + sec)
     st = {k: setting(k) for k in SET_KEYS}
     st.setdefault("default_theme", "auto")
@@ -3239,7 +3252,7 @@ def admin_settings():
         st[k] = st[k] or d
     op = request.args.get("open", "general")
     return page("""{% for sec in secs %}<details class="card set" {{'open' if op==sec[0]}} id="{{sec[0]}}"><summary>{{sec[1]}}</summary>
-{% if sec[3] %}<div class="k">{{sec[3]}}</div>{% endif %}
+{% if sec[3] %}<div class="k">{{sec[3]}}</div>{% endif %}{% if sec[0]=='referral' %}<a class="btn sm" style="margin-top:8px" href="/admin/referral-rewards">🎁 রেফারেল রিওয়ার্ড সেটিংস খুলুন</a>{% endif %}
 {% if sec[2] %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="section" value="{{sec[0]}}">
 {% for f in sec[2] %}<label>{{f[2]}}</label>
 {% if f[1]=='textarea' %}<textarea name="{{f[0]}}" rows="6">{{st[f[0]]}}</textarea>
@@ -3528,10 +3541,12 @@ def admin_menu():
             tiles[p] = (p, TILE_LABEL.get(p, t.replace("🔔 ", "")), ADMIN_ICONS.get(p, "•"), "*" if p == "/admin/alerts" else p)
     if has_perm("settings", u):  # existing Settings > Security section (login lock, backups) keeps its own tile
         tiles["/admin/settings?open=security"] = ("/admin/settings?open=security", "নিরাপত্তা", "🔒", "")
+    if has_perm("referrals", u):
+        tiles["/admin/referral-rewards"] = ("/admin/referral-rewards", "রিওয়ার্ড সেটিংস", "🎁", "")
     if has_perm("requests", u):
         tiles["/admin/requests/new"] = ("/admin/requests/new", "রিকোয়েস্ট পাঠান", "➕", "")
     layout = [("", ["/admin/requests/new", "/admin/requests", "/admin/deposits", "/admin/withdrawals", "/admin/users", "/admin/alerts"]),
-              ("💰 আর্থিক ও কমিশন", ["/admin/commission", "/admin/pool", "/admin/referrals", "/admin/reports", "/admin/reconcile"]),
+              ("💰 আর্থিক ও কমিশন", ["/admin/commission", "/admin/pool", "/admin/referrals", "/admin/referral-rewards", "/admin/reports", "/admin/reconcile"]),
               ("🎫 সাপোর্ট ও কনটেন্ট", ["/admin/tickets", "/admin/kyc", "/admin/notices", "/admin/content", "/admin/payment-numbers"]),
               ("⚙️ সিস্টেম ও নিরাপত্তা", ["/admin/staff", "/admin/settings", "/admin/settings?open=security", "/admin/audit", "/admin/profile"])]
     groups, used = [], set()
@@ -4292,6 +4307,8 @@ def admin_request_act(i):
                 if r["flow"] == "admin_review" and float(r["commission"] or 0) > 0:  # same transaction: principal + commission, or nothing
                     pool_pay(r["user_id"], "commission", r["commission"], "req:%d:commission" % i, "request", i,
                              "Order %s commission" % r["order_id"], a["member_id"], own_req=i)
+                if dep and not r["flow"]:  # plain Add Money request: first approved deposit -> one referral reward
+                    referral_reward_on_deposit(r["user_id"], a, "req#%d" % i, req_id=i)
             req_log(i, act, r["status"], new, a["member_id"], a["id"], reason)
             audit("req_" + act, "req#%d order=%s %s ৳%s user#%d trx=%s admin_id=%d at=%s" %
                   (i, r["order_id"], r["kind"], r["amount"], r["user_id"], r["norm_trx"] or "-", a["id"], t))
@@ -4314,6 +4331,124 @@ def admin_request_act(i):
         err("লেজার ত্রুটি, কিছুই পরিবর্তন হয়নি: %s" % ex); return redirect(back_to)
     flash("সম্পন্ন: %s" % REQ_LABEL[new])
     return redirect(back_to)
+
+
+# ================================================================ Referral rewards: paid once per referred user, on their FIRST approved Add Money
+# Reward money is ALWAYS taken from the funded Commission Pool (pool_pay) - never created from nothing. Registration alone never pays.
+REWARD_RE = re.compile(r"\d{1,8}(\.\d{1,2})?")
+
+
+def parse_reward(v):
+    """Any positive amount with up to 2 decimals (no preset list, no cap other than the 8-digit column size). Returns float or None."""
+    v = (v or "").replace(",", "").strip()
+    if not REWARD_RE.fullmatch(v):
+        return None
+    d = Decimal(v).quantize(Decimal("0.01"))
+    return float(d) if d > 0 else None
+
+
+def referral_reward_amount():
+    """The currently active reward (settings.referral_bonus; default 50 BDT)."""
+    r = q1("SELECT v FROM settings WHERE k='referral_bonus'")
+    return parse_reward(r["v"] if r else "50") or 50.0
+
+
+def _add_money_count(uid, tx_id=0, req_id=0):
+    """Approved Add Money transactions of a user, excluding the given tx / request (the one being approved right now)."""
+    a = q1("SELECT COUNT(*) c FROM tx WHERE user_id=? AND kind='deposit' AND status='approved' AND id<>?", (uid, tx_id))["c"]
+    b = q1("SELECT COUNT(*) c FROM requests WHERE user_id=? AND kind='deposit' AND COALESCE(flow,'')='' AND status='approved' AND id<>?", (uid, req_id))["c"]
+    return int(a) + int(b)
+
+
+def referral_reward_pay(r, rf, x, actor, ref, need_deposit=False, admin_note=""):
+    """Pay one pending referral row exactly once. Caller holds atomic(). Returns 'paid' | 'no_deposit' | 'no_funds' | 'blocked' | 'done'.
+    Writes (all in the caller's transaction): pool payout + wallet ledger credit ('referral_bonus') + referrals row -> approved with the paid amount."""
+    if r["status"] != "pending":
+        return "done"
+    if rf["blocked"] or r["referrer_id"] == r["referred_id"] or x["referred_by"] != r["referrer_id"]:
+        return "blocked"
+    if need_deposit and _add_money_count(x["id"]) < 1:
+        return "no_deposit"
+    amt = referral_reward_amount()
+    idem = "ref:%d:bonus" % r["id"]
+    if q1("SELECT 1 FROM ledger WHERE idem=?", (idem,)):  # already credited earlier: never pay twice, just close the row
+        db().execute("UPDATE referrals SET status='approved' WHERE id=? AND status='pending'", (r["id"],))
+        return "done"
+    note = "Referral reward for #%s (%s)" % (x["member_id"], ref)
+    try:  # PoolError is raised BEFORE anything is written, so a short pool leaves the caller's transaction untouched
+        pool_pay(rf["id"], "referral_bonus", amt, idem, "referral", r["id"], note, actor["member_id"])
+    except PoolError:
+        return "no_funds"
+    cur = db().execute("UPDATE referrals SET status='approved', amount=?, decided_by=?, decided_by_id=?, decided_at=?, note=? WHERE id=? AND status='pending'",
+                       (amt, "%s (%s)" % (actor["name"], actor["member_id"]), actor["id"], now(),
+                        (ref + (" · " + admin_note if admin_note else ""))[:200], r["id"]))
+    if cur.rowcount != 1:
+        raise LedgerError("duplicate referral reward")  # rolls the whole transaction back
+    notify(rf["id"], "রেফারেল রিওয়ার্ড পেয়েছেন", "#%s-এর প্রথম ডিপোজিটের জন্য ৳%s আপনার ওয়ালেটে যুক্ত হয়েছে।" % (x["member_id"], money(amt)), "/referral",
+           "Referral reward received", "৳%s was added to your wallet for #%s's first deposit." % (money(amt), x["member_id"]))
+    audit("referral_reward", "ref#%d referrer#%s referred#%s ৳%s %s" % (r["id"], rf["member_id"], x["member_id"], money(amt), ref), actor=actor)
+    return "paid"
+
+
+def referral_reward_on_deposit(uid, actor, ref, tx_id=0, req_id=0):
+    """Called inside the deposit-approval transaction, AFTER the deposit row is approved and credited.
+    Pays the referrer only if this is the referred user's first approved Add Money. Never raises for business reasons,
+    so it can never block or undo the deposit approval itself."""
+    r = q1("SELECT * FROM referrals WHERE referred_id=? AND status='pending'", (uid,))
+    if not r or _add_money_count(uid, tx_id, req_id) > 0:
+        return "skip"
+    rf, x = q1("SELECT * FROM users WHERE id=?", (r["referrer_id"],)), q1("SELECT * FROM users WHERE id=?", (uid,))
+    if not rf or not x:
+        return "skip"
+    res = referral_reward_pay(r, rf, x, actor, "first deposit " + ref)
+    if res == "no_funds":  # deposit still succeeds; the reward stays pending and can be paid from /admin/referrals once the pool is funded
+        alert_admins("রেফারেল রিওয়ার্ড আটকে আছে", "কমিশন পুলে ফান্ড কম — ref#%d (#%s) রিওয়ার্ড বাকি" % (r["id"], x["member_id"]), "/admin/referrals", "referrals")
+    return res
+
+
+@app.route("/admin/referral-rewards", methods=["GET", "POST"])
+@staff_required("referrals", "settings")
+def admin_referral_rewards():
+    a = me()
+    if request.method == "POST":
+        if not has_perm("settings", a):  # only the Super Admin may change the reward
+            abort(403)
+        new = parse_reward(request.form.get("amount"))
+        if new is None:
+            err("সঠিক পরিমাণ দিন (০-এর বেশি, সর্বোচ্চ ২ দশমিক ঘর)।"); return redirect("/admin/referral-rewards")
+        with atomic():
+            old = referral_reward_amount()
+            db().execute("INSERT OR REPLACE INTO settings VALUES(?,?)", ("referral_bonus", "%.2f" % new))
+            audit("referral_reward_set", "৳%s -> ৳%s" % (money(old), money(new)))
+        flash("রিওয়ার্ড সেভ হয়েছে: এখন থেকে ৳%s।" % money(new)); return redirect("/admin/referral-rewards")
+    cur = referral_reward_amount()
+    sm = q1("""SELECT COUNT(*) total, COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) pend,
+               COALESCE(SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END),0) paid,
+               COALESCE(SUM(CASE WHEN status='approved' THEN amount END),0) paid_amt FROM referrals""")
+    pg = make_pg(q1("SELECT COUNT(*) n FROM referrals WHERE status='approved'")["n"], 30)
+    rows = qa("""SELECT r.*, rf.member_id rf_mid, rf.name rf_name, x.member_id x_mid, x.name x_name,
+                 EXISTS(SELECT 1 FROM pool_ledger p WHERE p.ledger_idem='ref:'||r.id||':bonus') funded
+                 FROM referrals r JOIN users rf ON rf.id=r.referrer_id JOIN users x ON x.id=r.referred_id
+                 WHERE r.status='approved' ORDER BY r.decided_at DESC, r.id DESC LIMIT ? OFFSET ?""", (30, pg["off"]))
+    chg = qa("SELECT actor,detail,created FROM audit WHERE action='referral_reward_set' ORDER BY id DESC LIMIT 15")
+    return page("""<div class="row" style="margin-bottom:10px;align-items:center"><a class="btn sm s" href="/admin/referrals">📋 তালিকা</a><a class="btn sm s" href="/admin/referrals/network">🌐 নেটওয়ার্ক</a><a class="btn sm" href="/admin/referral-rewards">⚙️ রিওয়ার্ড সেটিংস</a></div>
+<div class="card hero"><small>বর্তমান রিওয়ার্ড (প্রতি রেফার করা ব্যক্তির প্রথম অনুমোদিত ডিপোজিটে, একবার)</small><div class="code">৳ {{money(cur)}}</div>
+{% if can('pool_view') %}<div class="k" style="color:inherit">পুলে উপলব্ধ: ৳{{money(pool_av)}}</div>{% endif %}</div>
+{% if can('settings') %}<div class="card"><h3>রিওয়ার্ড সেটিংস</h3><form method="post" data-confirm="নতুন রিওয়ার্ড সেভ করবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<label>রিওয়ার্ডের পরিমাণ (৳)</label><input name="amount" inputmode="decimal" value="{{'%.2f'|format(cur)}}" required autocomplete="off">
+<div class="k">যেকোনো পরিমাণ দিতে পারেন এবং যখন খুশি বদলাতে পারেন। নতুন পরিমাণ শুধু এরপরের রিওয়ার্ডে প্রযোজ্য; আগে দেওয়া রিওয়ার্ড বদলায় না। রিওয়ার্ড কমিশন পুল থেকে যায়, তাই পুলে ফান্ড থাকতে হবে।</div>
+<button style="width:100%">রিওয়ার্ড সেভ করুন</button></form></div>{% else %}<div class="card"><div class="k">শুধু সুপার অ্যাডমিন রিওয়ার্ডের পরিমাণ বদলাতে পারেন।</div></div>{% endif %}
+<div class="g2"><div class="card"><div class="k">মোট রেফারেল</div><div class="v">{{sm['total']}}</div></div>
+<div class="card"><div class="k">প্রথম ডিপোজিট বাকি</div><div class="v">{{sm['pend']}}</div></div>
+<div class="card"><div class="k">রিওয়ার্ড পেইড</div><div class="v">{{sm['paid']}}</div></div>
+<div class="card"><div class="k">মোট পেইড</div><div class="v">৳ {{money(sm['paid_amt'])}}</div></div></div>
+<div class="card"><h3>রিওয়ার্ড ইতিহাস</h3>{% if not rows %}<div class="empty">এখনো কোনো রিওয়ার্ড দেওয়া হয়নি</div>{% else %}<div class="tw"><table>
+<tr><th>তারিখ</th><th>রেফারার</th><th>রেফার করা</th><th>৳</th><th>রেফারেন্স</th></tr>
+{% for r in rows %}<tr><td>{{(r['decided_at'] or r['created'])|bdd}}</td><td><a href="/admin/referrals/user/{{r['referrer_id']}}">#{{r['rf_mid']}} {{r['rf_name']}}</a></td>
+<td><a href="/admin/referrals/user/{{r['referred_id']}}">#{{r['x_mid']}} {{r['x_name']}}</a></td><td>{{money(r['amount'])}}</td>
+<td class="k">ref#{{r['id']}} · {{r['note'] or '-'}} · {{'পুল' if r['funded'] else 'পুল-পূর্ব'}}</td></tr>{% endfor %}</table></div>{% endif %}</div>""" + PAGER + """
+{% if chg %}<div class="card"><h3>পরিমাণ বদলের ইতিহাস</h3><div class="tw"><table>{% for c in chg %}<tr><td>{{c['created'][:16]}}</td><td>{{c['actor']}}</td><td>{{c['detail']}}</td></tr>{% endfor %}</table></div></div>{% endif %}""",
+                active="/admin/referrals", cur=cur, sm=sm, rows=rows, pg=pg, chg=chg, pool_av=pool_available())
 
 
 # ================================================================ Phase 2C: referral network, financial reports + CSV, reconciliation
