@@ -2096,9 +2096,9 @@ def history():
     def _x(*pairs):  # extra details shown only when expanded; real stored values only
         return [(k, str(v)[:16] if k in ("sub", "upd") else str(v)) for k, v in pairs if v not in (None, "")]
     rows = [(t["created"], t["kind"], None, t["method"], t["number"], t["amount"], t["status"], None,
-             _x(("trx", t["trx"]), ("upd", t["updated"] if t["status"] != "pending" and t["updated"] != t["created"] else None)), t["kind"]) for t in txs] + \
+             _x(("trx", t["trx"])), t["kind"]) for t in txs] + \
            [(r["created"], r["kind"], r["order_id"], r["method"], r["pay_number"], r["amount"], r["status"], r["commission"],
-             _x(("trx", r["trx"]), ("sub", r["submitted_at"]), ("upd", r["decided_at"]),
+             _x(("trx", r["trx"]),
                 ("why", r["reject_reason"] if r["status"] == "rejected" else None), ("ins", r["instructions"])), _dk(r)) for r in reqs]
     rows.sort(key=lambda x: str(x[0] or ""), reverse=True)
     items = []
@@ -2129,55 +2129,53 @@ def history():
 .hxt{gap:8px;background:none;border:0;padding:0;margin-bottom:12px}
 .hxt a{border:1.5px solid var(--ln);background:var(--card);border-radius:12px;padding:10px 4px;font-weight:700;font-size:14px;color:var(--mut);text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .hxt a.on{background:#2563eb;border-color:#2563eb;color:#fff}
-.hxc.hy{padding:14px 15px;margin-bottom:12px;border-radius:18px;box-shadow:0 2px 10px #0f172a14;position:relative;overflow:hidden}
-.hxc.hy::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,#1d4ed8,#0f766e);opacity:.9}
-.hxc.hy.open{border-color:#2563eb;box-shadow:0 6px 18px #0f172a1f}
-.hy-top{display:flex;align-items:center;gap:12px}
-.hy-ic{flex:none;width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;line-height:1;background:linear-gradient(135deg,#dbeafe,#e0f2fe);color:#1d4ed8}
-.hy-ic.deposit{background:linear-gradient(135deg,#dcfce7,#ccfbf1);color:#0f766e}
-.hy-tt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.hy-tt b{font-size:17px;font-weight:800;line-height:1.25}
-.hy-tt span{font-size:13.5px;color:var(--mut);line-height:1.3}
-.hy-r{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-.hy-am{font-size:19px;font-weight:800;line-height:1.15;white-space:nowrap;letter-spacing:-.2px}
+.hxc.hy{padding:11px 13px;margin-bottom:9px;border-radius:16px;box-shadow:0 1px 4px #0f172a0f;position:relative;overflow:hidden}
+.hxc.hy.hy-pending::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:2px;border-radius:2px;background:#f59e0b;opacity:.55}
+.hxc.hy.open{border-color:#2563eb;box-shadow:0 3px 12px #0f172a18}
+.hy-top{display:flex;align-items:center;gap:10px}
+.hy-ic{flex:none;width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;line-height:1;background:#1d4ed814;color:#1d4ed8}
+.hy-ic.deposit{background:#0f766e17;color:#0f766e}
+.hy-tt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.hy-tt b{font-size:15.5px;font-weight:800;line-height:1.25}
+.hxc.hy .hy-tt .pill{padding:1px 9px;font-size:12px;font-weight:700;line-height:1.5;border-radius:99px;background:#f1f5f9;color:#475569;white-space:nowrap}
+.hxc.hy .hy-tt .pill::before{content:"";display:inline-block;width:6px;height:6px;margin:0 5px 1px 0;border-radius:50%;background:currentColor}
+.hxc.hy .hy-tt .pill::after{content:none}
+.hxc.hy .hy-tt .pill.pending,.hxc.hy .hy-tt .pill.review,.hxc.hy .hy-tt .pill.processing,.hxc.hy .hy-tt .pill.submitted{background:#fef3c7;color:#b45309}
+.hxc.hy .hy-tt .pill.approved,.hxc.hy .hy-tt .pill.paid{background:#dcfce7;color:#15803d}
+.hxc.hy .hy-tt .pill.rejected{background:#fee2e2;color:#b91c1c}
+.hxc.hy .hy-tt .pill.expired,.hxc.hy .hy-tt .pill.cancelled{background:#f1f5f9;color:#64748b}
+.hy-am{flex:none;font-size:17px;font-weight:800;line-height:1.2;white-space:nowrap;letter-spacing:-.2px}
 .hy-am.neg{color:#dc2626}.hy-am.pos{color:#16a34a}
-.hxc.hy .hy-r .pill{padding:3px 11px;font-size:13px;font-weight:700;line-height:1.45;border-radius:99px;background:#f1f5f9;color:#475569;white-space:nowrap}
-.hxc.hy .hy-r .pill::before{content:"";display:inline-block;width:7px;height:7px;margin:0 6px 1px 0;border-radius:50%;background:currentColor}
-.hxc.hy .hy-r .pill::after{content:none}
-.hxc.hy .hy-r .pill.pending,.hxc.hy .hy-r .pill.review,.hxc.hy .hy-r .pill.processing,.hxc.hy .hy-r .pill.submitted{background:#fef3c7;color:#b45309}
-.hxc.hy .hy-r .pill.approved,.hxc.hy .hy-r .pill.paid{background:#dcfce7;color:#15803d}
-.hxc.hy .hy-r .pill.rejected{background:#fee2e2;color:#b91c1c}
-.hxc.hy .hy-r .pill.expired,.hxc.hy .hy-r .pill.cancelled{background:#f1f5f9;color:#64748b}
-.hy-g{display:grid;grid-template-columns:1fr 1fr;gap:11px 14px;margin-top:13px;padding-top:13px;border-top:1px solid var(--ln)}
+.hy-g{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:10px;padding-top:9px;border-top:1px solid var(--ln)}
 .hy-g>div{min-width:0}
-.hy-g span{display:block;font-size:13px;color:var(--mut);margin-bottom:2px;font-weight:500}
-.hy-g b{display:block;font-size:15.5px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.hy-g span{display:block;font-size:12px;color:var(--mut);margin-bottom:1px;font-weight:500}
+.hy-g b{display:block;font-size:14px;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
 .hy-g .na{color:var(--mut);font-weight:400}
-.hy-cm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px;padding:10px 13px;border-radius:13px;background:linear-gradient(120deg,#1d4ed814,#0f766e1f);border:1px solid #0f766e33}
-.hy-cm>span{font-size:15.5px;font-weight:700;color:#0f766e;min-width:0}
-.hy-cm>b{flex:none;font-size:18px;font-weight:800;color:#15803d;white-space:nowrap}
-.hy-cm>b.na{font-size:16px;color:var(--mut);font-weight:500}
-.hy-cm .gft{font-size:17px;margin-right:4px}
+.hy-cm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;padding:7px 11px;border-radius:11px;background:#0f766e12;border:1px solid #0f766e26}
+.hy-cm>span{font-size:14px;font-weight:700;color:#0f766e;min-width:0}
+.hy-cm>b{flex:none;font-size:16px;font-weight:800;color:#15803d;white-space:nowrap}
+.hy-cm>b.na{font-size:15px;color:var(--mut);font-weight:500}
+.hy-cm .gft{font-size:15px;margin-right:4px}
 :root[data-theme=dark] .hy-cm>span{color:#5eead4}
 :root[data-theme=dark] .hy-cm>b{color:#86efac}
-:root[data-theme=dark] .hy-cm{border-color:#0f766e66}
-@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hy-cm>span{color:#5eead4}:root:not([data-theme=light]) .hy-cm>b{color:#86efac}:root:not([data-theme=light]) .hy-cm{border-color:#0f766e66}}
-.hy-more{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:11px;font-size:13.5px;color:var(--mut);font-weight:500}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hy-cm>span{color:#5eead4}:root:not([data-theme=light]) .hy-cm>b{color:#86efac}}
+.hy-more{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:7px;font-size:12.5px;color:var(--mut);font-weight:500}
 .hy-more i{font-style:normal;transition:transform .25s}.hxc.open .hy-more i{transform:rotate(180deg)}
-.hy .hxd .hxr:first-child{margin-top:8px;padding-top:10px;border-top:1px solid var(--ln)}
-.hy .hxd .hxr,.hxc.open.hy .hxd .hxr{font-size:14.5px;padding:7px 0}
-@media(max-width:380px){.hxc.hy{padding:12px 12px 12px 14px}.hy-ic{width:38px;height:38px;font-size:18px}.hy-tt b{font-size:16px}.hy-am{font-size:17.5px}.hy-g{gap:10px 10px}.hy-g b{font-size:15px}.hy-cm>b{font-size:17px}}
+.hy .hxd .hxr:first-child{margin-top:6px;padding-top:8px;border-top:1px solid var(--ln)}
+.hy .hxd .hxr,.hxc.open.hy .hxd .hxr{font-size:13.5px;padding:5px 0}
+@media(max-width:380px){.hxc.hy{padding:10px 11px}.hy-ic{width:32px;height:32px;font-size:16px}.hy-tt b{font-size:15px}.hy-am{font-size:16px}.hy-g{gap:8px 8px}.hy-g b{font-size:13.5px}.hy-cm>b{font-size:15.5px}}
 </style>
 <div class="hxt">{% for k,lb in tabs %}<a class="{{'on' if f==k}}" href="/history{{'' if k=='all' else '?f='+k}}">{{lb}}</a>{% endfor %}</div>
 {% if not items %}<div class="card"><div class="empty">কোনো লেনদেন নেই</div></div>{% endif %}
-{% for it in items %}<div class="hxc hy" role="button" tabindex="0" aria-expanded="false">
+{% for it in items %}<div class="hxc hy hy-{{it.cls}}" role="button" tabindex="0" aria-expanded="false">
 <div class="hy-top"><span class="hy-ic {{it.dk}}">{{'↓' if it.dk=='deposit' else '↑'}}</span>
-<div class="hy-tt"><b>{{it.kind}}</b><span>{{it.when or '—'}}</span></div>
-<div class="hy-r"><b class="hy-am {{it.tone}}">{{it.amt}}</b><span class="pill {{it.cls}}">{{it.status}}</span></div></div>
+<div class="hy-tt"><b>{{it.kind}}</b><span class="pill {{it.cls}}">{{it.status}}</span></div>
+<b class="hy-am {{it.tone}}">{{it.amt}}</b></div>
 <div class="hy-g">
 <div><span>{{L.order}}</span><b>{% if it.order %}{{it.order}}{% else %}<span class="na">—</span>{% endif %}</b></div>
 <div><span>{{L.method}}</span><b>{{it.method or '—'}}</b></div>
-<div style="grid-column:1/-1"><span>{{L.number}}</span><b>{{it.number or '—'}}</b></div></div>
+<div><span>{{L.number}}</span><b>{{it.number or '—'}}</b></div>
+<div><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div></div>
 <div class="hy-cm"><span><span class="gft">🎁</span>{{L.comm}}</span>{% if it.comm %}<b>{{it.comm}}</b>{% else %}<b class="na">—</b>{% endif %}</div>
 {% if it.extra %}<div class="hy-more">{{L.more}} <i>▾</i></div>
 <div class="hxd"><div>{% for k,v in it.extra %}<div class="hxr"><span>{{L[k]}}</span><b{% if k in ('why','ins') %} style="white-space:pre-line;font-weight:500"{% endif %}>{{v}}</b></div>{% endfor %}</div></div>{% endif %}</div>{% endfor %}
