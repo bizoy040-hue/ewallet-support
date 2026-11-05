@@ -2136,6 +2136,18 @@ def history():
 .hxc.hy{padding:11px 13px;margin-bottom:9px;border-radius:16px;box-shadow:0 1px 4px #0f172a0f;position:relative;overflow:hidden}
 .hxc.hy.hy-pending::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:2px;border-radius:2px;background:#f59e0b;opacity:.55}
 .hxc.hy.open{border-color:#4169C9;box-shadow:0 3px 12px #0f172a18}
+.hxc.hy{background:#F5EFE3;background-image:linear-gradient(180deg,#F8F3E9 0%,#F1EADB 100%);border-color:#E8DFD0;box-shadow:0 1px 3px #5a46280f,0 4px 12px -6px #5a46281a}
+.hxc.hy.open{box-shadow:0 4px 16px -4px #5a462829}
+.hxc.hy .hy-g,.hxc.hy .hy-g .hxr,.hy .hxd .hxr:first-child{border-color:#E8DFD0}
+.hxc.hy .hy-tt .pill{box-shadow:inset 0 0 0 1px #0000000f}
+.hxc.hy .hy-tt .pill.expired,.hxc.hy .hy-tt .pill.cancelled{background:#EAE2D2;color:#5f5a4f}
+.hxc.hy .hy-cm{background:#4169C914;border-color:#4169C933}
+:root[data-theme=dark] .hxc.hy{background:#1f1b16;background-image:linear-gradient(180deg,#231f19 0%,#1a1713 100%);border-color:#38312a;box-shadow:0 1px 3px #0006}
+:root[data-theme=dark] .hxc.hy.open{border-color:#4169C9;box-shadow:0 4px 16px -4px #0009}
+:root[data-theme=dark] .hxc.hy .hy-g,:root[data-theme=dark] .hy .hxd .hxr:first-child{border-color:#38312a}
+:root[data-theme=dark] .hxc.hy .hy-tt .pill{box-shadow:inset 0 0 0 1px #ffffff12}
+:root[data-theme=dark] .hxc.hy .hy-tt .pill.expired,:root[data-theme=dark] .hxc.hy .hy-tt .pill.cancelled{background:#2d2822;color:#b8b0a2}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hxc.hy{background:#1f1b16;background-image:linear-gradient(180deg,#231f19 0%,#1a1713 100%);border-color:#38312a;box-shadow:0 1px 3px #0006}:root:not([data-theme=light]) .hxc.hy.open{border-color:#4169C9;box-shadow:0 4px 16px -4px #0009}:root:not([data-theme=light]) .hxc.hy .hy-g,:root:not([data-theme=light]) .hy .hxd .hxr:first-child{border-color:#38312a}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill{box-shadow:inset 0 0 0 1px #ffffff12}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.expired,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.cancelled{background:#2d2822;color:#b8b0a2}}
 .hy-top{display:flex;align-items:center;gap:10px}
 .hy-ic{flex:none;width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;line-height:1;background:#4169C914;color:#4169C9}
 .hy-ic.deposit{background:#16a34a17;color:#15803d}
