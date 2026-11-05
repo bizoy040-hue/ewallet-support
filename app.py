@@ -2127,8 +2127,12 @@ def history():
     tabs = [("all", "All" if en else "সব"), ("deposit", "Deposit" if en else "ডিপোজিট"), ("withdraw", "Withdraw" if en else "উইথড্র")]
     return page("""<style>
 .hxt{gap:8px;background:none;border:0;padding:0;margin-bottom:12px}
-.hxt a{border:1.5px solid var(--ln);background:var(--card);border-radius:12px;padding:10px 4px;font-weight:700;font-size:14px;color:var(--mut);text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.hxt a.on{background:#4169C9;border-color:#4169C9;color:#fff}
+.hxt a{border:1.5px solid #DCE6F6;background:linear-gradient(180deg,#F6F9FE 0%,#E9F0FB 100%);border-radius:12px;padding:10px 4px;font-weight:700;font-size:14px;color:#4A5F86;text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent;box-shadow:0 1px 2px #4169C910,inset 0 1px 0 #ffffffcc;transition:background .25s ease,color .25s ease,border-color .25s ease,box-shadow .25s ease,transform .15s ease}
+.hxt a:active{transform:scale(.97)}
+.hxt a.on{background:linear-gradient(180deg,#4B77D6 0%,#3558B8 100%);border-color:#3558B8;color:#fff;box-shadow:0 5px 14px -4px #3558B88c,inset 0 1px 0 #ffffff38}
+:root[data-theme=dark] .hxt a{border-color:#26385e;background:linear-gradient(180deg,#18274a 0%,#141f3a 100%);color:#A9C1F2;box-shadow:0 1px 2px #0006,inset 0 1px 0 #ffffff0d}
+:root[data-theme=dark] .hxt a.on{background:linear-gradient(180deg,#4B77D6 0%,#3558B8 100%);border-color:#4B77D6;color:#fff;box-shadow:0 5px 14px -4px #0009,inset 0 1px 0 #ffffff38}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hxt a{border-color:#26385e;background:linear-gradient(180deg,#18274a 0%,#141f3a 100%);color:#A9C1F2;box-shadow:0 1px 2px #0006,inset 0 1px 0 #ffffff0d}:root:not([data-theme=light]) .hxt a.on{background:linear-gradient(180deg,#4B77D6 0%,#3558B8 100%);border-color:#4B77D6;color:#fff;box-shadow:0 5px 14px -4px #0009,inset 0 1px 0 #ffffff38}}
 .hxc.hy{padding:11px 13px;margin-bottom:9px;border-radius:16px;box-shadow:0 1px 4px #0f172a0f;position:relative;overflow:hidden}
 .hxc.hy.hy-pending::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:2px;border-radius:2px;background:#f59e0b;opacity:.55}
 .hxc.hy.open{border-color:#4169C9;box-shadow:0 3px 12px #0f172a18}
