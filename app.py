@@ -2113,7 +2113,7 @@ def history():
             slabel = "Processing" if en else "প্রসেসিং"
         else:
             slabel = REQ_LABEL.get(status, status)
-        items.append(dict(order=order or "", method=method or "", number=number or "", kind=REQ_KIND.get(dkind, dkind),
+        items.append(dict(order=order or "", method=method or "", number=number or "", kind=REQ_KIND.get(dkind, dkind), dk=dkind,
                           amt=amt, tone=tone, status=slabel,
                           cls="pending" if status in ("submitted", "review") else status,
                           comm=("৳ " + money(comm)) if comm is not None else "", when=str(created or "")[:16], extra=extra))
@@ -2121,22 +2121,59 @@ def history():
     if f == "all":
         user_seen(lambda link, title, ts: _user_badge_key(link, title) == "/history")
     L = (dict(order="Order ID", method="Method", number="Number", kind="Type", amount="Amount", status="Status",
-              comm="Commission", when="Date & Time", trx="TrxID", sub="Submitted", upd="Updated", why="Rejection reason", ins="Instructions") if en else
+              comm="Commission", when="Date & Time", trx="TrxID", sub="Submitted", upd="Updated", why="Rejection reason", ins="Instructions", more="Details") if en else
          dict(order="অর্ডার আইডি", method="মাধ্যম", number="নম্বর", kind="ধরন", amount="পরিমাণ", status="অবস্থা",
-              comm="কমিশন", when="তারিখ ও সময়", trx="ট্রানজেকশন আইডি", sub="জমার সময়", upd="আপডেট", why="রিজেক্টের কারণ", ins="নির্দেশনা"))
+              comm="কমিশন", when="তারিখ ও সময়", trx="ট্রানজেকশন আইডি", sub="জমার সময়", upd="আপডেট", why="রিজেক্টের কারণ", ins="নির্দেশনা", more="বিস্তারিত"))
     tabs = [("all", "All" if en else "সব"), ("deposit", "Deposit" if en else "ডিপোজিট"), ("withdraw", "Withdraw" if en else "উইথড্র")]
-    return page("""<div class="hxt">{% for k,lb in tabs %}<a class="{{'on' if f==k}}" href="/history{{'' if k=='all' else '?f='+k}}">{{lb}}</a>{% endfor %}</div>
+    return page("""<style>
+.hxt{gap:8px;background:none;border:0;padding:0;margin-bottom:12px}
+.hxt a{border:1.5px solid var(--ln);background:var(--card);border-radius:12px;padding:10px 4px;font-weight:700;font-size:14px;color:var(--mut);text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.hxt a.on{background:#2563eb;border-color:#2563eb;color:#fff}
+.hxc.hy{padding:12px 14px;margin-bottom:10px;box-shadow:none}
+.hxc.hy.open{border-color:#2563eb;box-shadow:0 3px 12px #0f172a1a}
+.hy-top{display:flex;align-items:center;gap:10px}
+.hy-ic{flex:none;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;line-height:1;background:#2563eb1f;color:#2563eb}
+.hy-ic.deposit{background:#16a34a1f;color:#16a34a}
+.hy-tt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.hy-tt b{font-size:15px;font-weight:700}
+.hy-tt span{font-size:12px;color:var(--mut)}
+.hy-r{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.hy-am{font-size:17px;font-weight:800;line-height:1.2;white-space:nowrap}
+.hy-am.neg{color:#dc2626}.hy-am.pos{color:#16a34a}
+.hxc.hy .hy-r .pill{padding:2px 10px;font-size:12px;font-weight:700;line-height:1.5;border-radius:99px;background:#f1f5f9;color:#475569}
+.hxc.hy .hy-r .pill::before{content:"";display:inline-block;width:6px;height:6px;margin:0 5px 1px 0;border-radius:50%;background:currentColor}
+.hxc.hy .hy-r .pill::after{content:none}
+.hxc.hy .hy-r .pill.pending,.hxc.hy .hy-r .pill.review,.hxc.hy .hy-r .pill.processing,.hxc.hy .hy-r .pill.submitted{background:#fef3c7;color:#b45309}
+.hxc.hy .hy-r .pill.approved,.hxc.hy .hy-r .pill.paid{background:#dcfce7;color:#15803d}
+.hxc.hy .hy-r .pill.rejected{background:#fee2e2;color:#b91c1c}
+.hxc.hy .hy-r .pill.expired,.hxc.hy .hy-r .pill.cancelled{background:#f1f5f9;color:#64748b}
+.hy-g{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px;margin-top:11px;padding-top:11px;border-top:1px solid var(--ln)}
+.hy-g>div{min-width:0}
+.hy-g span{display:block;font-size:11.5px;color:var(--mut);margin-bottom:1px}
+.hy-g b{display:block;font-size:13.5px;font-weight:600;overflow-wrap:anywhere}
+.hy-g .na{color:var(--mut);font-weight:400}
+.hy .cmv{display:inline-block;padding:0 9px;border-radius:99px;background:#dcfce7;color:#166534;font-weight:700}
+:root[data-theme=dark] .hy .cmv{background:#14532d55;color:#86efac}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hy .cmv{background:#14532d55;color:#86efac}}
+.hy-more{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:9px;font-size:12px;color:var(--mut)}
+.hy-more i{font-style:normal;transition:transform .25s}.hxc.open .hy-more i{transform:rotate(180deg)}
+.hy .hxd .hxr:first-child{margin-top:8px;padding-top:10px;border-top:1px solid var(--ln)}
+.hy .hxd .hxr,.hxc.open.hy .hxd .hxr{font-size:13px;padding:5px 0}
+@media(max-width:360px){.hy-am{font-size:16px}.hy-g{gap:8px 10px}}
+</style>
+<div class="hxt">{% for k,lb in tabs %}<a class="{{'on' if f==k}}" href="/history{{'' if k=='all' else '?f='+k}}">{{lb}}</a>{% endfor %}</div>
 {% if not items %}<div class="card"><div class="empty">কোনো লেনদেন নেই</div></div>{% endif %}
-{% for it in items %}<div class="hxc" role="button" tabindex="0" aria-expanded="false">
-<div class="hxr"><span>{{L.order}}</span><b>{% if it.order %}{{it.order}}{% else %}<span class="na">—</span>{% endif %}</b></div>
-<div class="hxr"><span>{{L.method}}</span><b>{{it.method or '—'}}</b></div>
-<div class="hxr"><span>{{L.number}}</span><b>{{it.number or '—'}}</b></div>
-<div class="hxr"><span>{{L.kind}}</span><b>{{it.kind}}</b></div>
-<div class="hxr"><span>{{L.amount}}</span><b class="{{it.tone}}">{{it.amt}}</b></div>
-<div class="hxr"><span>{{L.status}}</span><span class="pill {{it.cls}}">{{it.status}}</span></div>
-<div class="hxr"><span><span class="gft">🎁</span>{{L.comm}}</span><b>{% if it.comm %}<span class="cmv">{{it.comm}}</span>{% else %}<span class="na">—</span>{% endif %}</b></div>
-<div class="hxr"><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div>
-{% if it.extra %}<div class="hxd"><div>{% for k,v in it.extra %}<div class="hxr"><span>{{L[k]}}</span><b{% if k in ('why','ins') %} style="white-space:pre-line;font-weight:500"{% endif %}>{{v}}</b></div>{% endfor %}</div></div>{% endif %}</div>{% endfor %}
+{% for it in items %}<div class="hxc hy" role="button" tabindex="0" aria-expanded="false">
+<div class="hy-top"><span class="hy-ic {{it.dk}}">{{'↓' if it.dk=='deposit' else '↑'}}</span>
+<div class="hy-tt"><b>{{it.kind}}</b><span>{{it.when or '—'}}</span></div>
+<div class="hy-r"><b class="hy-am {{it.tone}}">{{it.amt}}</b><span class="pill {{it.cls}}">{{it.status}}</span></div></div>
+<div class="hy-g">
+<div><span>{{L.order}}</span><b>{% if it.order %}{{it.order}}{% else %}<span class="na">—</span>{% endif %}</b></div>
+<div><span>{{L.method}}</span><b>{{it.method or '—'}}</b></div>
+<div><span>{{L.number}}</span><b>{{it.number or '—'}}</b></div>
+<div><span><span class="gft">🎁</span> {{L.comm}}</span><b>{% if it.comm %}<span class="cmv">{{it.comm}}</span>{% else %}<span class="na">—</span>{% endif %}</b></div></div>
+{% if it.extra %}<div class="hy-more">{{L.more}} <i>▾</i></div>
+<div class="hxd"><div>{% for k,v in it.extra %}<div class="hxr"><span>{{L[k]}}</span><b{% if k in ('why','ins') %} style="white-space:pre-line;font-weight:500"{% endif %}>{{v}}</b></div>{% endfor %}</div></div>{% endif %}</div>{% endfor %}
 <script>(function(){if(window._hxInit)return;window._hxInit=1;function t(c){var o=!c.classList.contains('open');c.classList.toggle('open',o);c.setAttribute('aria-expanded',o?'true':'false');document.body.classList.toggle('hx1',o);if(o){window.scrollTo(0,0)}else{c.scrollIntoView({block:'center'})}}
 document.addEventListener('click',function(e){var c=e.target.closest&&e.target.closest('.hxc');if(c)t(c)});
 document.addEventListener('keydown',function(e){if((e.key==='Enter'||e.key===' ')&&e.target.classList&&e.target.classList.contains('hxc')){e.preventDefault();t(e.target)}})})();</script>
