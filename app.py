@@ -4411,45 +4411,171 @@ def admin_request_find():
                          blocked=bool(r["blocked"]), rate=_pct(effective_rate(r))) for r in rows])
 
 
+# ---- Request Management UI: two tabs (Admin -> User = `requests`, User -> Admin = `tx`), serial card lists, details, editing
+TX_LABEL = {"pending": "অপেক্ষমাণ", "review": "যাচাইয়ে", "processing": "প্রসেসিং", "approved": "অনুমোদিত",
+            "paid": "সম্পন্ন", "rejected": "রিজেক্ট"}
+TX_OPEN = {"deposit": ("pending", "review"), "withdraw": ("pending", "processing", "approved")}
+REQ_EDIT_OPEN = ("pending", "submitted", "review")   # an admin-created request can be edited only until it is completed
+
+RQ_STYLE = """<style>
+.rq-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}
+.rq-tab{position:relative;display:flex;align-items:center;gap:8px;padding:10px 10px;border-radius:14px;background:var(--card);border:1.5px solid var(--ln);color:var(--tx);min-width:0;box-shadow:0 1px 3px #0f172a14;text-decoration:none}
+.rq-tab .ic{font-size:20px;flex:none}
+.rq-tab .tt{display:flex;flex-direction:column;font-weight:700;font-size:14px;line-height:1.25;min-width:0}
+.rq-tab small{font-weight:500;font-size:11px;opacity:.75}
+.rq-tab.on{background:linear-gradient(100deg,#2563eb,#0f9d6b);color:#fff;border-color:transparent;box-shadow:0 4px 12px -4px #1d4ed880}
+.rq-tab .n{position:absolute;top:-7px;right:-3px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ef4444;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.rq-card{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--ln);border-left:4px solid #2563eb;border-radius:14px;padding:10px 12px;margin-bottom:8px;color:var(--tx);box-shadow:0 1px 3px #0f172a14;touch-action:manipulation;text-decoration:none}
+.rq-card:active{transform:scale(.99)}
+.rq-sn{flex:none;min-width:34px;height:34px;padding:0 6px;border-radius:10px;background:#2563eb14;color:#1d4ed8;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center}
+.rq-b{flex:1;min-width:0}
+.rq-t,.rq-m{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.rq-id{font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rq-t .pill{flex:none;white-space:nowrap}
+.rq-u{font-size:13px;margin:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rq-ty{font-size:12.5px;color:var(--mut)}
+.rq-am{font-size:15px;color:#047857;white-space:nowrap}
+.rq-d{font-size:12px;color:var(--mut);margin-top:2px}
+.rq-f input,.rq-f select{margin-bottom:8px}
+.rq-f2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rq-amt{font-size:26px;font-weight:800;margin:6px 0 4px;color:#047857}
+.rq-dl{margin:6px 0 0}
+.rq-dl>div{display:flex;gap:10px;justify-content:space-between;padding:7px 0;border-top:1px solid var(--ln)}
+.rq-dl dt{flex:0 0 38%;color:var(--mut);font-size:13px}
+.rq-dl dd{margin:0;flex:1;text-align:right;font-size:14px;word-break:break-word}
+.rq-lock{font-size:13px;line-height:1.5}
+</style>"""
+
+RQ_HEAD = """<div class="rq-tabs">
+<a class="rq-tab {{'on' if tab=='admin'}}" href="/admin/requests?tab=admin"><span class="ic">📤</span><span class="tt">অ্যাডমিন → ইউজার<small>অ্যাডমিনের পাঠানো</small></span>{% if n_admin %}<b class="n">{{n_admin}}</b>{% endif %}</a>
+<a class="rq-tab {{'on' if tab=='user'}}" href="/admin/requests?tab=user"><span class="ic">📥</span><span class="tt">ইউজার → অ্যাডমিন<small>ইউজারের জমা দেওয়া</small></span>{% if n_user %}<b class="n">{{n_user}}</b>{% endif %}</a></div>
+<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{'অ্যাডমিন → ইউজার রিকোয়েস্ট' if tab=='admin' else 'ইউজার → অ্যাডমিন রিকোয়েস্ট'}}</h2>
+{% if tab=='admin' %}<a class="btn sm g" href="/admin/requests/new" style="flex:0;white-space:nowrap">➕ নতুন</a>{% endif %}</div>
+<form class="rq-f" style="margin-top:10px"><input type="hidden" name="tab" value="{{tab}}"><input name="q" value="{{q}}" placeholder="{{ph}}">
+<div class="rq-f2"><select name="status">{% for k,l in sopts %}<option value="{{k}}" {{'selected' if st==k}}>{{l}}</option>{% endfor %}</select>
+<select name="kind"><option value="">ডিপোজিট + উইথড্র</option>{% for k,l in kopts %}<option value="{{k}}" {{'selected' if kd==k}}>{{l}}</option>{% endfor %}</select></div>
+<button style="width:100%">ফিল্টার</button></form></div>"""
+
+
+def _rq_counts(u):
+    kinds_ok = [k for k, p in KIND_PERM.items() if has_perm(p, u)]
+    n_admin = q1("SELECT COUNT(*) n FROM requests WHERE status IN ('submitted','review')")["n"]
+    n_user = 0
+    for k in kinds_ok:
+        n_user += q1("SELECT COUNT(*) n FROM tx WHERE kind=? AND status IN (%s)" % ",".join("?" * len(TX_OPEN[k])), (k,) + TX_OPEN[k])["n"]
+    return kinds_ok, n_admin, n_user
+
+
 @app.route("/admin/requests")
 @staff_required("requests")
 def admin_requests():
     expire_requests()
+    u = me()
+    tab = "user" if request.args.get("tab") == "user" else "admin"
+    kinds_ok, n_admin, n_user = _rq_counts(u)
     t0 = now()
     st, kd = request.args.get("status", "open"), request.args.get("kind", "")
     q = request.args.get("q", "").strip().lstrip("#")[:40]
     like = "%" + q + "%"
     where, args = [], []
-    if st == "open":
-        where.append("r.status IN ('submitted','review')")
-    elif st in REQ_LABEL:
-        where.append("r.status=?"); args.append(st)
+    if tab == "admin":
+        if st == "open":
+            where.append("r.status IN ('submitted','review')")
+        elif st in REQ_LABEL:
+            where.append("r.status=?"); args.append(st)
+        else:
+            st = "all"
+        if kd in REQ_KIND:
+            where.append("r.kind=?"); args.append(kd)
+        if q:
+            where.append("(r.order_id LIKE ? OR u.name LIKE ? OR u.phone LIKE ? OR u.member_id LIKE ? OR r.trx LIKE ?)"); args += [like] * 5
+        wh = (" WHERE " + " AND ".join(where)) if where else ""
+        pg = make_pg(q1("SELECT COUNT(*) n FROM requests r JOIN users u ON u.id=r.user_id%s" % wh, args)["n"], 30)
+        rows = qa("SELECT r.*,u.name,u.phone,u.member_id FROM requests r JOIN users u ON u.id=r.user_id%s ORDER BY r.id DESC LIMIT ? OFFSET ?" % wh,
+                  args + [30, pg["off"]])
+        if not q and not kd and st in ("open", "all") and pg["p"] == 1:
+            shown = {"/admin/requests/%d" % r["id"] for r in rows}
+            every = len(rows) < 30
+            alerts_seen(lambda link, ts: _admin_badge_key(link) == "/admin/requests" and ((every and ts < t0) or link in shown))
+        sopts = [("open", "যাচাইয়ের অপেক্ষায় (জমা + যাচাইয়ে)"), ("all", "সব")] + list(REQ_LABEL.items())
+        return page(RQ_STYLE + RQ_HEAD + """{% if not rows %}<div class="card empty">কোনো রিকোয়েস্ট নেই</div>{% endif %}
+{% for r in rows %}<a class="rq-card" href="/admin/requests/{{r['id']}}"><span class="rq-sn">{{pg.total - pg.off - loop.index0}}</span><div class="rq-b">
+<div class="rq-t"><b class="rq-id">{{r['order_id']}}</b><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div>
+<div class="rq-u">{{r['name']}} · #{{r['member_id']}}</div>
+<div class="rq-m"><span class="rq-ty">{{rk(r)}} · {{r['method']}}</span><b class="rq-am">৳ {{money(r['amount'])}}</b></div>
+<div class="rq-d">{{r['created'][:16]}}{% if r['trx'] %} · TrxID: {{r['trx']}}{% endif %}{% if r['screenshot'] %} · 🖼{% endif %}</div></div></a>{% endfor %}""" + PAGER,
+                    active="/admin/requests", rows=rows, st=st, kd=kd, q=q, labels=REQ_LABEL, pg=pg, tab=tab, n_admin=n_admin, n_user=n_user,
+                    sopts=sopts, kopts=list(REQ_KIND.items()), ph="Order ID / নাম / ফোন / আইডি / TrxID")
+    # ---- User -> Admin tab (tx table: deposits / withdrawals submitted by users); only kinds this staff member may handle
+    ks = [kd] if kd in kinds_ok else list(kinds_ok)
+    if ks:
+        where.append("t.kind IN (%s)" % ",".join("?" * len(ks))); args += ks
+        if st == "open":
+            parts = []
+            for k in ks:
+                parts.append("(t.kind=? AND t.status IN (%s))" % ",".join("?" * len(TX_OPEN[k]))); args += [k] + list(TX_OPEN[k])
+            where.append("(" + " OR ".join(parts) + ")")
+        elif st in TX_LABEL:
+            where.append("t.status=?"); args.append(st)
+        else:
+            st = "all"
+        if q:
+            m = re.fullmatch(r"(?i)(dep|wd)-?0*(\d+)", q)
+            if m:
+                where.append("(t.id=? AND t.kind=?)"); args += [int(m.group(2)), "deposit" if m.group(1).lower() == "dep" else "withdraw"]
+            else:
+                where.append("(u.name LIKE ? OR u.phone LIKE ? OR u.member_id LIKE ? OR t.trx LIKE ? OR t.number LIKE ?)"); args += [like] * 5
+        wh = " WHERE " + " AND ".join(where)
+        pg = make_pg(q1("SELECT COUNT(*) n FROM tx t JOIN users u ON u.id=t.user_id%s" % wh, args)["n"], 30)
+        rows = qa("SELECT t.*,u.name,u.phone,u.member_id FROM tx t JOIN users u ON u.id=t.user_id%s ORDER BY t.id DESC LIMIT ? OFFSET ?" % wh,
+                  args + [30, pg["off"]])
     else:
-        st = "all"
-    if kd in REQ_KIND:
-        where.append("r.kind=?"); args.append(kd)
-    if q:
-        where.append("(r.order_id LIKE ? OR u.name LIKE ? OR u.phone LIKE ? OR u.member_id LIKE ? OR r.trx LIKE ?)"); args += [like] * 5
-    wh = (" WHERE " + " AND ".join(where)) if where else ""
-    pg = make_pg(q1("SELECT COUNT(*) n FROM requests r JOIN users u ON u.id=r.user_id%s" % wh, args)["n"], 30)
-    rows = qa("SELECT r.*,u.name,u.phone,u.member_id FROM requests r JOIN users u ON u.id=r.user_id%s ORDER BY r.id DESC LIMIT ? OFFSET ?" % wh,
-              args + [30, pg["off"]])
-    if not q and not kd and st in ("open", "all") and pg["p"] == 1:
-        shown = {"/admin/requests/%d" % r["id"] for r in rows}
-        every = len(rows) < 30
-        alerts_seen(lambda link, ts: _admin_badge_key(link) == "/admin/requests" and ((every and ts < t0) or link in shown))
-    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">রিকোয়েস্ট</h2><a class="btn sm g" href="/admin/requests/new" style="flex:0;white-space:nowrap">➕ নতুন</a></div>
-<form style="margin-top:10px"><input name="q" value="{{q}}" placeholder="Order ID / নাম / ফোন / আইডি / TrxID">
-<select name="status"><option value="open" {{'selected' if st=='open'}}>যাচাইয়ের অপেক্ষায় (জমা + যাচাইয়ে)</option><option value="all" {{'selected' if st=='all'}}>সব</option>
-{% for k,l in labels.items() %}<option value="{{k}}" {{'selected' if st==k}}>{{l}}</option>{% endfor %}</select>
-<select name="kind"><option value="">ডিপোজিট + উইথড্র</option>{% for k,l in kinds.items() %}<option value="{{k}}" {{'selected' if kd==k}}>{{l}}</option>{% endfor %}</select>
-<button style="width:100%">ফিল্টার</button></form></div>
-{% if not rows %}<div class="card empty">কোনো রিকোয়েস্ট নেই</div>{% endif %}
-{% for r in rows %}<a href="/admin/requests/{{r['id']}}"><div class="card"><div class="row" style="align-items:center"><b>{{rk(r)}} · ৳ {{money(r['amount'])}}</b>
-<span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
-<div class="k">Order {{r['order_id']}} · {{r['method']}} · #{{r['member_id']}} {{r['name']}}</div>
-<div class="k">{{r['created'][:16]}}{% if r['trx'] %} · TrxID: {{r['trx']}}{% endif %}{% if r['screenshot'] %} · 🖼{% endif %}</div></div></a>{% endfor %}""" + PAGER,
-                active="/admin/requests", rows=rows, st=st, kd=kd, q=q, labels=REQ_LABEL, kinds=REQ_KIND, pg=pg)
+        st, pg, rows = "all", make_pg(0, 30), []
+    sopts = [("open", "চলমান (প্রক্রিয়াধীন)"), ("all", "সব")] + list(TX_LABEL.items())
+    return page(RQ_STYLE + RQ_HEAD + """{% if not rows %}<div class="card empty">{{'কোনো রিকোয়েস্ট নেই' if kopts else 'এই তালিকা দেখার অনুমতি নেই'}}</div>{% endif %}
+{% for t in rows %}<a class="rq-card" href="/admin/requests/user/{{t['id']}}"><span class="rq-sn">{{pg.total - pg.off - loop.index0}}</span><div class="rq-b">
+<div class="rq-t"><b class="rq-id">{{'DEP' if t['kind']=='deposit' else 'WD'}}-{{'%05d'|format(t['id'])}}</b><span class="pill {{t['status']}}">{{txl.get(t['status'], t['status'])}}</span></div>
+<div class="rq-u">{{t['name']}} · #{{t['member_id']}}</div>
+<div class="rq-m"><span class="rq-ty">{{kinds[t['kind']]}} · {{t['method']}}</span><b class="rq-am">৳ {{money(t['amount'])}}</b></div>
+<div class="rq-d">{{t['created'][:16]}}{% if t['trx'] %} · TrxID: {{t['trx']}}{% endif %}{% if t['screenshot'] %} · 🖼{% endif %}</div></div></a>{% endfor %}""" + PAGER,
+                active="/admin/requests", rows=rows, st=st, kd=kd, q=q, txl=TX_LABEL, kinds=REQ_KIND, pg=pg, tab=tab, n_admin=n_admin, n_user=n_user,
+                sopts=sopts, kopts=[(k, REQ_KIND[k]) for k in kinds_ok], ph="রেফারেন্স / নাম / ফোন / আইডি / TrxID")
+
+
+@app.route("/admin/requests/user/<int:i>")
+@staff_required("requests")
+def admin_request_user_view(i):
+    """Read-only details of a user-submitted deposit/withdrawal. Processing still goes through the existing /admin/tx/<id> action."""
+    u = me()
+    t = q1("SELECT t.*,u.name,u.phone,u.member_id,u.balance FROM tx t JOIN users u ON u.id=t.user_id WHERE t.id=?", (i,))
+    if not t or t["kind"] not in KIND_PERM:
+        abort(404)
+    if not has_perm(KIND_PERM[t["kind"]], u):
+        abort(403)
+    hist = qa("SELECT actor,action,created FROM audit WHERE SUBSTR(action,1,3)='tx_' AND detail LIKE ? ORDER BY id", ("tx#%d %%" % i,))
+    return page(RQ_STYLE + """<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{kinds[t['kind']]}} রিকোয়েস্ট</h2>
+<span class="pill {{t['status']}}" style="flex:0;white-space:nowrap">{{txl.get(t['status'], t['status'])}}</span></div>
+<div class="rq-amt">৳ {{money(t['amount'])}}</div>
+<dl class="rq-dl">
+<div><dt>Order ID</dt><dd><b>{{'DEP' if t['kind']=='deposit' else 'WD'}}-{{'%05d'|format(t['id'])}}</b></dd></div>
+<div><dt>ইউজার</dt><dd><a href="/admin/users/{{t['user_id']}}">{{t['name']}} · #{{t['member_id']}}</a><br><span class="k">{{t['phone']}} · ব্যালেন্স ৳ {{money(t['balance'])}}</span></dd></div>
+<div><dt>ধরন</dt><dd>{{kinds[t['kind']]}}</dd></div>
+<div><dt>পেমেন্ট মাধ্যম</dt><dd>{{t['method']}}</dd></div>
+<div><dt>পেমেন্ট নম্বর</dt><dd>{{t['number'] or '—'}}</dd></div>
+<div><dt>পরিমাণ</dt><dd>৳ {{money(t['amount'])}}</dd></div>
+<div><dt>Transaction ID</dt><dd>{{t['trx'] or '—'}}</dd></div>
+<div><dt>জমা দেওয়ার সময়</dt><dd>{{t['created'][:16]}}</dd></div>
+<div><dt>সর্বশেষ আপডেট</dt><dd>{{(t['updated'] or t['created'])[:16]}}</dd></div>
+<div><dt>বর্তমান অবস্থা</dt><dd>{{txl.get(t['status'], t['status'])}}</dd></div>
+{% if t['note'] %}<div><dt>নোট</dt><dd>{{t['note']}}</dd></div>{% endif %}</dl>
+{% if t['screenshot'] %}<div class="k" style="margin-top:8px">স্ক্রিনশট</div><a href="/shot/{{t['screenshot']}}" target="_blank"><img class="shot" src="/shot/{{t['screenshot']}}" alt="screenshot"></a>{% endif %}</div>
+{% if t['status'] in open_st %}<div class="card"><h3>কাজ</h3><form method="post" action="/admin/tx/{{t['id']}}" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><div class="row">
+{% for a,l,c in acts[t['kind']] %}{% if t['status'] in a %}<button name="act" value="{{l[0]}}" class="btn sm {{c}}">{{l[1]}}</button>{% endif %}{% endfor %}</div></form></div>{% endif %}
+<div class="card"><h3>ইতিহাস</h3>{% if hist %}<div class="tw"><table>{% for h in hist %}<tr><td>{{h['created'][:16]}}</td><td>{{h['action'][3:]}}</td><td>{{h['actor']}}</td></tr>{% endfor %}</table></div>
+{% else %}<div class="k">এখনো কোনো প্রক্রিয়াকরণ হয়নি।</div>{% endif %}</div>
+<a class="btn s" href="/admin/requests?tab=user" style="width:100%">← সব রিকোয়েস্ট</a>""", active="/admin/requests", t=t, hist=hist, kinds=REQ_KIND, txl=TX_LABEL,
+                open_st=TX_OPEN[t["kind"]], acts=ACTIONS)
 
 
 @app.route("/admin/requests/<int:i>")
@@ -4460,28 +4586,118 @@ def admin_request_view(i):
     if not r:
         abort(404)
     log = qa("SELECT * FROM request_log WHERE request_id=? ORDER BY id", (i,))
+    le = q1("SELECT actor,created FROM request_log WHERE request_id=? AND action='edit' ORDER BY id DESC LIMIT 1", (i,))
     alerts_seen(lambda link, ts: link == "/admin/requests/%d" % i)
-    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}} · ৳ {{money(r['amount'])}}</h2>
+    return page(RQ_STYLE + """<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}}</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
-<div class="k" style="margin-top:8px">Order ID: <b>{{r['order_id']}}</b> · {{r['method']}} · {{r['pay_number']}}</div>
-<div class="k"><a href="/admin/users/{{r['user_id']}}">#{{r['member_id']}} {{r['name']}}</a> · {{r['phone']}} · ব্যালেন্স ৳ {{money(r['balance'])}}</div>
-<div class="k">তৈরি: {{r['created'][:16]}} ({{r['created_by']}}){% if r['expires_at'] %} · মেয়াদ: {{r['expires_at'][:16]}} UTC{% endif %}</div>
+<div class="rq-amt">৳ {{money(r['amount'])}}</div>
+<dl class="rq-dl">
+<div><dt>Order ID</dt><dd><b>{{r['order_id']}}</b></dd></div>
+<div><dt>ইউজার</dt><dd><a href="/admin/users/{{r['user_id']}}">{{r['name']}} · #{{r['member_id']}}</a><br><span class="k">{{r['phone']}} · ব্যালেন্স ৳ {{money(r['balance'])}}</span></dd></div>
+<div><dt>ধরন</dt><dd>{{rk(r)}}</dd></div>
+<div><dt>পেমেন্ট মাধ্যম</dt><dd>{{r['method']}}</dd></div>
+<div><dt>পেমেন্ট নম্বর</dt><dd>{{r['pay_number']}}</dd></div>
+<div><dt>পরিমাণ</dt><dd>৳ {{money(r['amount'])}}</dd></div>
+<div><dt>Transaction ID</dt><dd>{{r['trx'] or '—'}}{% if r['submitted_at'] %}<br><span class="k">(জমা: {{(r['submitted_at'] or '')[:16]}})</span>{% endif %}</dd></div>
+<div><dt>তৈরি</dt><dd>{{r['created'][:16]}}<br><span class="k">({{r['created_by']}})</span></dd></div>
+{% if r['expires_at'] %}<div><dt>মেয়াদ</dt><dd>{{r['expires_at'][:16]}} UTC</dd></div>{% endif %}
+<div><dt>সর্বশেষ আপডেট</dt><dd>{{(r['updated'] or r['created'])[:16]}}</dd></div>
+{% if le %}<div><dt>সর্বশেষ সম্পাদনা</dt><dd>{{le['actor']}}<br><span class="k">{{le['created'][:16]}}</span></dd></div>{% endif %}</dl>
 {% if r['flow'] %}<div class="hl" style="margin-top:6px"><b>{{rk(r)}}</b> · মূল ৳{{money(r['amount'])}} · কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%) ৳{{money(r['commission'] or 0)}}{% if r['purpose'] %}<br>উদ্দেশ্য: {{r['purpose']}}{% endif %}{% if r['purpose_en'] %}<br>Purpose: {{r['purpose_en']}}{% endif %}<br>
 {% if r['flow']=='client_confirm' %}ক্লায়েন্টের সিদ্ধান্তের অপেক্ষা — অ্যাডমিন অ্যাপ্রুভ/রিজেক্ট করতে পারবে না (শুধু বাতিল)।{% else %}অ্যাপ্রুভ করলে ওয়ালেটে যোগ: ৳{{money(r['amount']+(r['commission'] or 0))}}{% endif %}</div>
 {% if r['flow']=='admin_review' and r['status'] in ('submitted','review') and (r['commission'] or 0) > pool_av %}<div class="msg error" style="margin-top:8px">⚠ কমিশন পুলে পর্যাপ্ত ফান্ড নেই — অ্যাপ্রুভ করা যাবে না (উপলব্ধ ৳{{money(pool_av)}}) — আগে পুলে ফান্ড যোগ করুন।</div>{% endif %}{% endif %}
 {% if r['instructions'] %}<div class="hl" style="margin-top:6px">{{r['instructions']}}</div>{% endif %}
-{% if r['trx'] %}<div style="margin-top:8px">TrxID: <b>{{r['trx']}}</b> <span class="k">(জমা: {{(r['submitted_at'] or '')[:16]}})</span></div>{% endif %}
-{% if r['screenshot'] %}<a href="/shot/{{r['screenshot']}}" target="_blank"><img class="shot" src="/shot/{{r['screenshot']}}" alt="screenshot"></a>{% endif %}
+{% if r['screenshot'] %}<div class="k" style="margin-top:8px">স্ক্রিনশট</div><a href="/shot/{{r['screenshot']}}" target="_blank"><img class="shot" src="/shot/{{r['screenshot']}}" alt="screenshot"></a>{% endif %}
 {% if r['decided_by'] %}<div class="k">সিদ্ধান্ত: {{r['decided_by']}} · {{(r['decided_at'] or '')[:16]}}{% if r['reject_reason'] %} · {{r['reject_reason']}}{% endif %}</div>{% endif %}
 {% if r['kind']=='withdraw' and r['status'] in ('submitted','review') and r['balance'] < r['amount'] %}<div class="msg error" style="margin-top:8px">⚠ ইউজারের বর্তমান ব্যালেন্স অনুরোধের চেয়ে কম — অ্যাপ্রুভ করা যাবে না।</div>{% endif %}</div>
-{% if r['status'] in ('pending','submitted','review') %}<div class="card"><h3>কাজ</h3>
+{% if r['status'] in ('pending','submitted','review') %}<a class="btn s" style="width:100%;margin-bottom:10px" href="/admin/requests/{{r['id']}}/edit">✏️ রিকোয়েস্ট সম্পাদনা করুন</a>
+<div class="card"><h3>কাজ</h3>
 <form method="post" action="/admin/requests/{{r['id']}}/act" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <input name="reason" placeholder="কারণ / নোট (রিজেক্টে আবশ্যক)" maxlength="200"><div class="row">
 {% if r['status']=='submitted' %}<button name="act" value="review" class="btn sm s">যাচাইয়ে নিন</button>{% endif %}
 {% if r['status'] in ('submitted','review') %}<button name="act" value="approve" class="btn sm g">✅ অ্যাপ্রুভ</button><button name="act" value="reject" class="btn sm r">❌ রিজেক্ট</button>{% endif %}
 <button name="act" value="cancel" class="btn sm s">বাতিল করুন</button></div></form></div>{% endif %}
 <div class="card"><h3>ইতিহাস</h3><div class="tw"><table>{% for l in log %}<tr><td>{{l['created'][:16]}}</td><td>{{l['action']}}</td><td>{{l['from_status'] or '-'}} → {{l['to_status']}}</td><td>{{l['actor']}}</td><td>{{l['note'] or ''}}</td></tr>{% endfor %}</table></div></div>
-<a class="btn s" href="/admin/requests" style="width:100%">← সব রিকোয়েস্ট</a>""", active="/admin/requests", r=r, log=log, kinds=REQ_KIND, labels=REQ_LABEL, pool_av=pool_available(exclude=i))
+<a class="btn s" href="/admin/requests?tab=admin" style="width:100%">← সব রিকোয়েস্ট</a>""", active="/admin/requests", r=r, log=log, le=le, kinds=REQ_KIND, labels=REQ_LABEL, pool_av=pool_available(exclude=i))
+
+
+@app.route("/admin/requests/<int:i>/edit", methods=["GET", "POST"])
+@staff_required("requests")
+def admin_request_edit(i):
+    """Edit an admin-created request (table `requests`) until it is completed. Never touches amount, commission, ledger or balances.
+    Every change is written to the immutable request_log (who / when / old -> new) and to the audit trail; the user is notified."""
+    a = me()
+    expire_requests()
+    r = q1("SELECT r.*,u.name,u.member_id FROM requests r JOIN users u ON u.id=r.user_id WHERE r.id=?", (i,))
+    if not r:
+        abort(404)
+    back_to = "/admin/requests/%d" % i
+    if r["status"] not in REQ_EDIT_OPEN:
+        err("এই রিকোয়েস্ট আর সম্পাদনা করা যাবে না (সম্পন্ন বা বন্ধ হয়ে গেছে)।"); return redirect(back_to)
+    cc = r["flow"] == "client_confirm"
+    if request.method == "POST":
+        method = request.form.get("method", "")
+        num = request.form.get("number", "").strip()
+        ins = request.form.get("instructions", "").strip()[:500]
+        purpose = request.form.get("purpose", "").strip()[:300]
+        purpose_en = request.form.get("purpose_en", "").strip()[:300]
+        hrs_raw = request.form.get("hours", "").strip()
+        if cc:
+            num = num if PHONE_RE.fullmatch(num) else "-"
+        if not (method in METHODS or (cc and method == r["method"])):
+            err("সঠিক পেমেন্ট মাধ্যম বাছাই করুন।"); return redirect(back_to + "/edit")
+        if not cc and not PHONE_RE.fullmatch(num):
+            err("১১ ডিজিটের সঠিক পেমেন্ট নম্বর দিন।"); return redirect(back_to + "/edit")
+        if cc and len(purpose) < 5:
+            err("উদ্দেশ্য (Purpose) লিখুন — ক্লায়েন্টকে অনুমোদনের আগে এটি দেখানো হয়।"); return redirect(back_to + "/edit")
+        if hrs_raw and (not re.fullmatch(r"\d{1,3}", hrs_raw) or int(hrs_raw) > 720):
+            err("মেয়াদ ০–৭২০ ঘণ্টার মধ্যে দিন।"); return redirect(back_to + "/edit")
+        try:
+            with atomic():
+                c = q1("SELECT * FROM requests WHERE id=?", (i,))
+                if not c or c["status"] not in REQ_EDIT_OPEN:
+                    raise ReqError("এই রিকোয়েস্ট আর সম্পাদনা করা যাবে না (সম্পন্ন বা বন্ধ হয়ে গেছে)।")
+                exp = c["expires_at"]
+                if hrs_raw and c["status"] == "pending":
+                    exp = (datetime.utcnow() + timedelta(hours=int(hrs_raw))).strftime("%Y-%m-%d %H:%M:%S") if int(hrs_raw) else None
+                new = {"method": method, "pay_number": num, "instructions": ins, "expires_at": exp}
+                if c["flow"]:
+                    new["purpose"], new["purpose_en"] = purpose or None, purpose_en or None
+                names = {"method": "মাধ্যম", "pay_number": "নম্বর", "instructions": "নির্দেশনা", "purpose": "উদ্দেশ্য", "purpose_en": "Purpose", "expires_at": "মেয়াদ"}
+                ch = {k: (c[k], v) for k, v in new.items() if (c[k] or "") != (v or "")}
+                if not ch:
+                    raise ReqError("কোনো পরিবর্তন করা হয়নি।")
+                val = lambda k: new[k] if k in new else c[k]
+                cur = db().execute("UPDATE requests SET method=?, pay_number=?, instructions=?, expires_at=?, purpose=?, purpose_en=?, updated=? "
+                                   "WHERE id=? AND status=?",
+                                   (val("method"), val("pay_number"), val("instructions"), val("expires_at"), val("purpose"), val("purpose_en"),
+                                    now(), i, c["status"]))
+                if cur.rowcount != 1:
+                    raise ReqError("রিকোয়েস্টটি এইমাত্র বদলে গেছে — পেজ রিলোড করে আবার চেষ্টা করুন।")
+                for k, (o, n) in ch.items():  # original values stay in the immutable history
+                    req_log(i, "edit", c["status"], c["status"], a["member_id"], a["id"], "%s: %s → %s" % (names[k], (o or "-")[:110], (n or "-")[:110]))
+                audit("req_edit", "req#%d order=%s admin_id=%d changes=%s" % (i, c["order_id"], a["id"], _json.dumps({k: [o, n] for k, (o, n) in ch.items()}, ensure_ascii=False)))
+                notif_read_link(c["user_id"], "/requests/%d" % i)
+                notify(c["user_id"], "অনুরোধ সংশোধিত", "Order %s এর তথ্য অ্যাডমিন আপডেট করেছেন।" % c["order_id"], "/requests/%d" % i,
+                       "Request updated", "The admin updated the details of order %s." % c["order_id"])
+        except ReqError as ex:
+            err(str(ex)); return redirect(back_to)
+        flash("রিকোয়েস্ট আপডেট হয়েছে। পরিবর্তনের ইতিহাস সংরক্ষিত হয়েছে।"); return redirect(back_to)
+    return page(RQ_STYLE + """<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">✏️ রিকোয়েস্ট সম্পাদনা</h2>
+<span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
+<div class="k" style="margin-top:6px">Order <b>{{r['order_id']}}</b> · {{r['name']}} · #{{r['member_id']}} · ৳ {{money(r['amount'])}}</div>
+<div class="hl rq-lock" style="margin-top:8px">🔒 Order ID, ইউজার, ধরন, পরিমাণ ও কমিশন বদলানো যায় না (আর্থিক হিসাব অপরিবর্তিত থাকে)। এগুলো ভুল হলে রিকোয়েস্টটি বাতিল করে নতুন পাঠান।
+প্রতিটি পরিবর্তন (কে, কখন, পুরনো → নতুন) ইতিহাসে সংরক্ষিত হয় এবং ইউজারকে জানানো হয়।</div></div>
+<div class="card"><form method="post" data-confirm="পরিবর্তন সংরক্ষণ করবেন? ইউজারকে জানানো হবে।"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<label>পেমেন্ট মাধ্যম</label><select name="method">{% if r['method'] not in methods %}<option value="{{r['method']}}" selected>{{r['method']}}</option>{% endif %}
+{% for m in methods %}<option value="{{m}}" {{'selected' if m==r['method']}}>{{m}}</option>{% endfor %}</select>
+<label>পেমেন্ট নম্বর{% if cc %} (ঐচ্ছিক){% else %} (১১ ডিজিট){% endif %}</label><input name="number" inputmode="numeric" maxlength="11" value="{{'' if r['pay_number']=='-' else r['pay_number']}}">
+{% if r['flow'] %}<label>উদ্দেশ্য — বাংলা{% if cc %} (আবশ্যক){% endif %}</label><textarea name="purpose" rows="2" maxlength="300">{{r['purpose'] or ''}}</textarea>
+<label>Purpose — English (optional)</label><textarea name="purpose_en" rows="2" maxlength="300">{{r['purpose_en'] or ''}}</textarea>{% endif %}
+<label>নির্দেশনা (ঐচ্ছিক)</label><textarea name="instructions" rows="3" maxlength="500">{{r['instructions'] or ''}}</textarea>
+{% if r['status']=='pending' %}<label>নতুন মেয়াদ (এখন থেকে কত ঘণ্টা; ০ = মেয়াদ নেই; ফাঁকা = অপরিবর্তিত)</label><input name="hours" type="number" min="0" max="720" placeholder="{{'বর্তমান: ' ~ r['expires_at'][:16] ~ ' UTC' if r['expires_at'] else 'বর্তমানে মেয়াদ নেই'}}">{% endif %}
+<button style="width:100%">💾 সংরক্ষণ করুন</button></form></div>
+<a class="btn s" href="/admin/requests/{{r['id']}}" style="width:100%">← ফিরে যান</a>""", active="/admin/requests", r=r, cc=cc, methods=METHODS, labels=REQ_LABEL)
 
 
 @app.route("/admin/requests/<int:i>/act", methods=["POST"])
