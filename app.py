@@ -4199,12 +4199,45 @@ def requests_list():
     rows = qa("SELECT * FROM requests WHERE user_id=? ORDER BY (status='pending') DESC, id DESC LIMIT 100", (u["id"],))
     shown = {"/requests/%d" % r["id"] for r in rows}
     user_seen(lambda link, title, ts: link in shown)
-    return page("""<div class="card"><h2>অনুরোধ</h2><p class="k">অ্যাডমিনের পাঠানো ডিপোজিট/উইথড্র অনুরোধ এখানে দেখা যায়।</p></div>
-{% if not rows %}<div class="card empty">কোনো অনুরোধ নেই</div>{% endif %}
-{% for r in rows %}<a href="/requests/{{r['id']}}"><div class="card {{'new' if r['status']=='pending' else ''}}">
-<div class="row" style="align-items:center"><b>{{rk(r)}} · ৳ {{money(r['amount'])}}</b><span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
-<div class="k">Order: {{r['order_id']}} · {{r['method']}} · {{r['created'][:16]}}</div></div></a>{% endfor %}""",
-                active="/requests", rows=rows, kinds=REQ_KIND, labels=REQ_LABEL)
+    cnt = {"all": len(rows), "pending": sum(1 for r in rows if r["status"] in OPEN_REQ),
+           "success": sum(1 for r in rows if r["status"] == "approved")}
+    return page("""<style>
+.ur-f{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}
+.ur-f button{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:42px;margin:0;padding:0 8px;border-radius:12px;border:1.5px solid var(--ln);background:var(--card);background-image:none;box-shadow:none;color:var(--mut);font-weight:700;font-size:14px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.ur-f button i{font-style:normal;font-size:12px;min-width:20px;padding:1px 6px;border-radius:99px;background:var(--bg)}
+.ur-f button.on{color:#fff;border-color:#2563eb;background:#2563eb}
+.ur-f button.on[data-f=pending]{border-color:#d97706;background:#d97706}
+.ur-f button.on[data-f=success]{border-color:#16a34a;background:#16a34a}
+.ur-f button.on i{background:#ffffff33;color:#fff}
+.ur-card{display:block;background:var(--card);border:1px solid var(--ln);border-left:4px solid #94a3b8;border-radius:14px;padding:12px 14px;margin-bottom:10px;color:var(--tx);text-decoration:none}
+.ur-card[hidden]{display:none}
+.ur-card[data-g=pending]{border-left-color:#f59e0b}.ur-card[data-g=success]{border-left-color:#16a34a}
+.ur-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.ur-ty{font-size:13.5px;font-weight:600;color:var(--mut);min-width:0}
+.ur-am{font-size:21px;font-weight:800;margin:5px 0 8px;line-height:1.2}
+.ur-meta{display:flex;flex-wrap:wrap;gap:3px 14px;font-size:12.5px;color:var(--mut)}
+.ur-meta b{color:var(--tx);font-weight:600}
+.ur-b{display:inline-flex;align-items:center;gap:5px;flex:none;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap;background:#f1f5f9;color:#475569}
+.ur-b::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.ur-b.pending,.ur-b.review{background:#fef3c7;color:#b45309}.ur-b.submitted{background:#dbeafe;color:#1d4ed8}
+.ur-b.approved{background:#dcfce7;color:#15803d}.ur-b.rejected{background:#fee2e2;color:#b91c1c}
+.ur-b.expired,.ur-b.cancelled{background:#f1f5f9;color:#64748b}
+</style>
+<div class="card"><h2>অনুরোধ</h2><p class="k">অ্যাডমিনের পাঠানো ডিপোজিট/উইথড্র অনুরোধ এখানে দেখা যায়।</p></div>
+{% if not rows %}<div class="card empty">কোনো অনুরোধ নেই</div>{% else %}
+<div class="ur-f" id="urf"><button type="button" data-f="all" class="on" aria-pressed="true">{{'All' if lang=='en' else 'সব'}} <i>{{cnt.all}}</i></button>
+<button type="button" data-f="pending" aria-pressed="false">{{'Pending' if lang=='en' else 'অপেক্ষমাণ'}} <i>{{cnt.pending}}</i></button>
+<button type="button" data-f="success" aria-pressed="false">{{'Success' if lang=='en' else 'সফল'}} <i>{{cnt.success}}</i></button></div>
+<div class="card empty" id="urn" hidden>কোনো অনুরোধ নেই</div>
+{% for r in rows %}<a class="ur-card" data-g="{{'success' if r['status']=='approved' else ('pending' if r['status'] in ('pending','submitted','review') else 'other')}}" href="/requests/{{r['id']}}">
+<div class="ur-top"><span class="ur-ty">{{rk(r)}}</span><span class="ur-b {{r['status']}}">{{labels[r['status']]}}</span></div>
+<div class="ur-am">৳ {{money(r['amount'])}}</div>
+<div class="ur-meta"><span>Order: <b>{{r['order_id']}}</b></span><span>{{r['method']}}</span><span>{{r['created'][:16]}}</span></div></a>{% endfor %}
+<script>(function(){var bar=document.getElementById('urf');if(!bar)return;var cards=document.querySelectorAll('.ur-card'),none=document.getElementById('urn');
+bar.addEventListener('click',function(e){var b=e.target.closest('button[data-f]');if(!b)return;var f=b.getAttribute('data-f'),n=0;
+bar.querySelectorAll('button').forEach(function(x){var on=x===b;x.classList.toggle('on',on);x.setAttribute('aria-pressed',on?'true':'false')});
+cards.forEach(function(c){var show=f==='all'||c.getAttribute('data-g')===f;c.hidden=!show;if(show)n++});none.hidden=n>0})})()</script>{% endif %}""",
+                active="/requests", rows=rows, kinds=REQ_KIND, labels=REQ_LABEL, cnt=cnt)
 
 
 @app.route("/requests/<int:i>", methods=["GET", "POST"])
