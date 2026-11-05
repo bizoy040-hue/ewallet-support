@@ -4209,9 +4209,10 @@ def requests_list():
 .ur-f button.on[data-f=pending]{border-color:#d97706;background:#d97706}
 .ur-f button.on[data-f=success]{border-color:#16a34a;background:#16a34a}
 .ur-f button.on i{background:#ffffff33;color:#fff}
-.ur-card{display:block;background:var(--card);border:1px solid var(--ln);border-left:4px solid #94a3b8;border-radius:14px;padding:12px 14px;margin-bottom:10px;color:var(--tx);text-decoration:none}
+.ur-card{display:block;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:12px 14px;margin-bottom:10px;color:var(--tx);text-decoration:none}
 .ur-card[hidden]{display:none}
-.ur-card[data-g=pending]{border-left-color:#f59e0b}.ur-card[data-g=success]{border-left-color:#16a34a}
+.ur-card[data-g=pending]{border-left:2px solid #fbbf24}.ur-card[data-s=rejected]{border-left:2px solid #fca5a5}
+.ur-h{padding:10px 14px;margin-bottom:10px}.ur-h h2{margin:0 0 2px;font-size:18px;line-height:1.25}.ur-h p{margin:0;font-size:12.5px;line-height:1.4}
 .ur-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .ur-ty{font-size:13.5px;font-weight:600;color:var(--mut);min-width:0}
 .ur-am{font-size:21px;font-weight:800;margin:5px 0 8px;line-height:1.2}
@@ -4223,13 +4224,13 @@ def requests_list():
 .ur-b.approved{background:#dcfce7;color:#15803d}.ur-b.rejected{background:#fee2e2;color:#b91c1c}
 .ur-b.expired,.ur-b.cancelled{background:#f1f5f9;color:#64748b}
 </style>
-<div class="card"><h2>অনুরোধ</h2><p class="k">অ্যাডমিনের পাঠানো ডিপোজিট/উইথড্র অনুরোধ এখানে দেখা যায়।</p></div>
+<div class="card ur-h"><h2>অনুরোধ</h2><p class="k">অ্যাডমিনের পাঠানো ডিপোজিট/উইথড্র অনুরোধ এখানে দেখা যায়।</p></div>
 {% if not rows %}<div class="card empty">কোনো অনুরোধ নেই</div>{% else %}
 <div class="ur-f" id="urf"><button type="button" data-f="all" class="on" aria-pressed="true">{{'All' if lang=='en' else 'সব'}} <i>{{cnt.all}}</i></button>
 <button type="button" data-f="pending" aria-pressed="false">{{'Pending' if lang=='en' else 'অপেক্ষমাণ'}} <i>{{cnt.pending}}</i></button>
 <button type="button" data-f="success" aria-pressed="false">{{'Success' if lang=='en' else 'সফল'}} <i>{{cnt.success}}</i></button></div>
 <div class="card empty" id="urn" hidden>কোনো অনুরোধ নেই</div>
-{% for r in rows %}<a class="ur-card" data-g="{{'success' if r['status']=='approved' else ('pending' if r['status'] in ('pending','submitted','review') else 'other')}}" href="/requests/{{r['id']}}">
+{% for r in rows %}<a class="ur-card" data-s="{{r['status']}}" data-g="{{'success' if r['status']=='approved' else ('pending' if r['status'] in ('pending','submitted','review') else 'other')}}" href="/requests/{{r['id']}}">
 <div class="ur-top"><span class="ur-ty">{{rk(r)}}</span><span class="ur-b {{r['status']}}">{{labels[r['status']]}}</span></div>
 <div class="ur-am">৳ {{money(r['amount'])}}</div>
 <div class="ur-meta"><span>Order: <b>{{r['order_id']}}</b></span><span>{{r['method']}}</span><span>{{r['created'][:16]}}</span></div></a>{% endfor %}
