@@ -1222,19 +1222,75 @@ function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
 function curTheme(){var t=document.documentElement.getAttribute('data-theme');if(t)return t;
  return(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light'}
 function paintToggles(){var a=document.getElementById('thv');if(a)a.textContent=curTheme()==='dark'?'চালু':'বন্ধ';
- var b=document.getElementById('sndv');if(b)b.textContent=sndOn()?'চালু':'বন্ধ'}
+ var b=document.getElementById('sndv');if(b)b.textContent=sndOn()?'চালু':'বন্ধ';
+ var c=document.getElementById('bnv');if(c)c.textContent=nfLabel()}
 function toggleTheme(){var n=curTheme()==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);lsSet('theme',n);paintToggles()}
 var _ac=null;
 function sndOn(){var v=lsGet('snd');if(v===null)v=(document.body&&document.body.dataset.snd)||'1';return v==='1'}
 function beep(){try{var C=window.AudioContext||window.webkitAudioContext;if(!C)return;_ac=_ac||new C();var o=_ac.createOscillator(),g=_ac.createGain();
  o.connect(g);g.connect(_ac.destination);o.frequency.value=880;g.gain.value=.08;o.start();o.stop(_ac.currentTime+.18)}catch(e){}}
-function setSnd(v){lsSet('snd',v?'1':'0');paintToggles();if(v)beep()}
+function setSnd(v){lsSet('snd',v?'1':'0');paintToggles();if(v){unlockAudio();playChime().then(function(ok){if(!ok)beep()})}}
+/* ===== browser notifications + chime (additive; the in-app bell/badges above are untouched) ===== */
+var _au=null,_auOk=false;
+function chimeEl(){if(!_au){_au=new Audio('/static/sounds/notification.mp3?v=1');_au.preload='auto';_au.volume=1}return _au}
+function unlockAudio(){if(_auOk)return;try{var a=chimeEl();a.muted=true;var p=a.play();
+ var done=function(){a.pause();a.currentTime=0;a.muted=false;_auOk=true};
+ if(p&&p.then)p.then(done,function(){a.muted=false});else done()}catch(e){}}
+function playChime(){try{var a=chimeEl();a.muted=false;a.currentTime=0;var p=a.play();
+ return p&&p.then?p.then(function(){return true},function(){return false}):Promise.resolve(true)}catch(e){return Promise.resolve(false)}}
+function nfSupported(){return 'Notification' in window&&'serviceWorker' in navigator}
+function nfPerm(){return nfSupported()?Notification.permission:'unsupported'}
+function nfActive(){return nfPerm()==='granted'&&lsGet('nf')!=='0'}
+function nfEn(){return document.documentElement.lang==='en'}
+function nfLabel(){var p=nfPerm(),en=nfEn();
+ if(p==='unsupported')return en?'Not supported':'সাপোর্টেড নয়';
+ if(p==='denied')return en?'Blocked':'ব্লক করা';
+ if(p==='granted')return nfActive()?(en?'On':'চালু'):(en?'Off':'বন্ধ');
+ return en?'Tap to enable':'চালু করুন'}
+function nfShow(it,site,quiet){if(!nfActive())return;
+ var o={body:it.body||'',icon:'/static/icons/icon-192.png',tag:'ewn-'+it.id,renotify:false,silent:!!quiet,data:{url:it.url||'/',id:it.id}},t=(site?site+' · ':'')+(it.title||'');
+ var fb=function(){try{new Notification(t,o)}catch(e){}};
+ try{navigator.serviceWorker.getRegistration('/').then(function(r){if(r&&r.showNotification)return r.showNotification(t,o);fb()}).catch(fb)}catch(e){fb()}}
+function nfNotify(items,site){if(!items||!items.length)return;
+ var top=items[items.length-1],sk='nsnd:'+nfNotify.uid,heard=parseInt(lsGet(sk)||'0',10)||0,go=function(q){items.forEach(function(it){nfShow(it,site,q)})};
+ if(!sndOn()){go(true);return}  // sound switched off in the site: native notifications stay silent
+ if(top.id<=heard){go(true);return}  // another tab already played the chime for this notification
+ lsSet(sk,String(top.id));  // claimed before playing: the sound plays once per notification
+ playChime().then(function(ok){go(ok)})}  // if the browser blocked the chime, let the OS notification sound play instead
+function nfCheck(j){if(!j||j.uid==null)return;var key='nl:'+j.uid,st=lsGet(key),seen=st===null?NaN:parseInt(st,10);
+ if(isNaN(seen)){lsSet(key,String(j.latest));return}  // first run on this device: remember the current position, never replay old notifications
+ if(j.latest<seen){lsSet(key,String(j.latest));return}
+ if(j.latest===seen)return;
+ lsSet(key,String(j.latest));  // claim first so a second open tab does not notify the same ids again
+ if(!nfActive()&&!sndOn())return;
+ fetch('/api/notif/new?after='+seen,{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(n){
+  if(!n||!n.items||!n.items.length){return}
+  nfNotify.uid=j.uid;
+  if(n.count>n.items.length){var top=n.items[n.items.length-1];n.items=[{id:top.id,title:nfEn()?'New notifications':'নতুন নোটিফিকেশন',body:nfEn()?(n.count+' new notifications'):(n.count+'টি নতুন নোটিফিকেশন'),url:'/'+(n.admin?'admin/alerts':'notifications')}]}
+  nfNotify(n.items,n.site)}).catch(function(){lsSet(key,String(seen))})}
+function enableBrowserNotif(){unlockAudio();
+ if(!nfSupported()){alert(nfEn()?'This browser does not support notifications. On iPhone, add the site to the Home Screen first.':'এই ব্রাউজারে নোটিফিকেশন সাপোর্ট নেই। iPhone-এ আগে সাইটটি Home Screen-এ যুক্ত করুন।');return}
+ var p=Notification.permission;
+ if(p==='denied'){alert(nfEn()?'Notifications are blocked for this site. Allow them from the browser/site settings, then try again.':'এই সাইটের নোটিফিকেশন ব্লক করা আছে। ব্রাউজারের সাইট সেটিংস থেকে অনুমতি দিয়ে আবার চেষ্টা করুন।');return}
+ if(p==='granted'){if(lsGet('nf')==='0'){lsSet('nf','1');paintToggles();nfTest()}else{lsSet('nf','0');paintToggles()}return}
+ lsSet('nfAsk','1');
+ var done=function(r){if(r==='granted'){lsSet('nf','1');nfTest()}paintToggles()};
+ try{var q=Notification.requestPermission(done);if(q&&q.then)q.then(done)}catch(e){}}
+function nfTest(){var site=(document.querySelector('.top b')||{}).textContent||'';
+ var it={id:'t'+Date.now(),title:nfEn()?'Notifications enabled':'নোটিফিকেশন চালু হয়েছে',body:nfEn()?'You will now see alerts here.':'এখন থেকে নতুন নোটিফিকেশন এখানে দেখাবে।',url:'/'};
+ (sndOn()?playChime():Promise.resolve(false)).then(function(ok){nfShow(it,site,ok)})}
+(function(){var first=function(){document.removeEventListener('click',first,true);document.removeEventListener('keydown',first,true);document.removeEventListener('touchend',first,true);
+ unlockAudio();  // one-time sound activation: the first tap anywhere lets the page play the chime later
+ if(document.body&&document.body.dataset.poll&&nfSupported()&&Notification.permission==='default'&&lsGet('nfAsk')===null){lsSet('nfAsk','1');  // asked once, never again automatically
+  try{var q=Notification.requestPermission(function(r){if(r==='granted')lsSet('nf','1');paintToggles()});if(q&&q.then)q.then(function(r){if(r==='granted')lsSet('nf','1');paintToggles()})}catch(e){}}};
+ document.addEventListener('click',first,true);document.addEventListener('keydown',first,true);document.addEventListener('touchend',first,true);
+ document.addEventListener('visibilitychange',function(){if(!document.hidden&&typeof pollNotif==='function')pollNotif()})})();
 var _last=null;
-function pollNotif(){if(document.hidden)return;
+function pollNotif(){if(document.hidden&&!nfActive())return;  // background tabs keep polling only when browser notifications are on
  fetch('/api/notif',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
   if(!j)return;var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
   if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}
-  if(_last!==null&&j.latest>_last&&sndOn())beep();_last=j.latest}).catch(function(){})}
+  nfCheck(j);_last=j.latest}).catch(function(){})}
 function applyBadges(j){var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
  if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}}
 var _rq=Promise.resolve();
@@ -1515,7 +1571,7 @@ EN_PHRASES = {
     "বিষয়": "Subject", "বার্তা": "Message", "টিকিট জমা দিন": "Submit ticket", "যাচাই": "Verify",
     "↳ সাপোর্ট:": "↳ Support:",
     # account
-    "ডার্ক মোড": "Dark mode", "নোটিফিকেশন সাউন্ড": "Notification sound", "সেটিংস": "Settings",
+    "ডার্ক মোড": "Dark mode", "নোটিফিকেশন সাউন্ড": "Notification sound", "ব্রাউজার নোটিফিকেশন": "Browser notifications", "📲 ব্রাউজার:": "📲 Browser:", "সেটিংস": "Settings",
     "পেমেন্ট নম্বর ব্যবস্থাপনা": "Manage payment numbers", "ফিডব্যাক": "Feedback", "আমাদের সম্পর্কে": "About us",
     "সাম্প্রতিক লগইন": "Recent logins", "শর্তাবলি": "Terms", "শর্তাবলি ও তথ্য": "Terms & Information",
     "ভাষা": "Language", "বদলান": "Change", "এই ফিচারটি শীঘ্রই আসছে।": "This feature is coming soon.",
@@ -2381,6 +2437,7 @@ def account():
 <button type="button" class="li" onclick="toggleTheme()"><span class="ic">🌙</span><span class="lt">ডার্ক মোড</span><span class="k" id="thv"></span></button>
 <a class="li" href="/notifications"><span class="ic">🔔</span><span class="lt">নোটিফিকেশন</span>{% if unread %}<span class="bd">{{unread}}</span>{% endif %}<span class="ch">›</span></a>
 <button type="button" class="li" onclick="setSnd(!sndOn())"><span class="ic">🔊</span><span class="lt">নোটিফিকেশন সাউন্ড</span><span class="k" id="sndv"></span></button>
+<button type="button" class="li" onclick="enableBrowserNotif()"><span class="ic">📲</span><span class="lt">ব্রাউজার নোটিফিকেশন</span><span class="k" id="bnv"></span></button>
 <a class="li" href="/lang/{{'bn' if lang=='en' else 'en'}}?next=/account"><span class="ic">🌐</span><span class="lt">ভাষা</span><span class="k">{{'বাংলা (Bangla)' if lang=='en' else 'English'}}</span><span class="ch">›</span></a>
 <a class="li" href="/account/settings"><span class="ic">⚙️</span><span class="lt">সেটিংস</span><span class="ch">›</span></a>
 <a class="li" href="/payment-numbers"><span class="ic">💳</span><span class="lt">পেমেন্ট নম্বর ব্যবস্থাপনা</span><span class="bd" data-bd="/payment-numbers"{% if not nb('/payment-numbers') %} hidden{% endif %}>{{nb('/payment-numbers')}}</span><span class="ch">›</span></a>
@@ -3862,7 +3919,41 @@ def api_notif():
         latest = q1("SELECT COALESCE(MAX(a.id),0) m FROM admin_alerts a WHERE %s AND a.created>=?" % f, pa + [u["created"] or ""])["m"]
     else:
         latest = q1("SELECT COALESCE(MAX(id),0) m FROM notifications WHERE user_id=?", (u["id"],))["m"]
-    return jsonify(unread=bd.get("*", 0), latest=latest, badges=bd)
+    return jsonify(unread=bd.get("*", 0), latest=latest, badges=bd, uid=u["id"])
+
+
+def _safe_link(link, admin):
+    l = link or ""
+    if admin:
+        return l if l.startswith("/admin") else "/admin/alerts"
+    return l if l.startswith("/") and not l.startswith("//") else "/notifications"
+
+
+@app.route("/api/notif/new")
+@login_required
+def api_notif_new():
+    """Read-only: the signed-in user's own notifications (staff: permitted alerts) newer than ?after=<id>, for native browser notifications."""
+    u = me()
+    after = request.args.get("after", type=int)
+    if after is None or after < 0:
+        abort(400)
+    en = cur_lang() == "en"
+    if u["is_admin"]:
+        f, pa = _alert_filter(u)
+        where, args = "%s AND a.created>=? AND a.id>?" % f, pa + [u["created"] or "", after]
+        rows = qa("SELECT a.id,a.title,a.body,a.link FROM admin_alerts a WHERE %s ORDER BY a.id DESC LIMIT 5" % where, args)
+        count = q1("SELECT COUNT(*) c FROM admin_alerts a WHERE %s" % where, args)["c"]
+        items = [dict(id=r["id"], title=r["title"], body=r["body"], link=r["link"]) for r in rows]
+    else:
+        rows = qa("SELECT id,title,body,link,title_en,body_en FROM notifications WHERE user_id=? AND id>? ORDER BY id DESC LIMIT 5", (u["id"], after))
+        count = q1("SELECT COUNT(*) c FROM notifications WHERE user_id=? AND id>?", (u["id"], after))["c"]
+        items = [dict(id=r["id"], title=(r["title_en"] if en and r["title_en"] else r["title"]),
+                      body=(r["body_en"] if en and r["body_en"] else r["body"]), link=r["link"]) for r in rows]
+    out = [dict(id=i["id"], title=tr(i["title"] or "") if en else (i["title"] or ""), body=tr(i["body"] or "") if en else (i["body"] or ""),
+                url=_safe_link(i["link"], bool(u["is_admin"]))) for i in reversed(items)]
+    resp = jsonify(items=out, count=count, admin=bool(u["is_admin"]), site=(setting("site_name") or SITE)[:60])
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.route("/api/notif/read", methods=["POST"])
@@ -3894,7 +3985,8 @@ def admin_alerts():
               [u["id"]] + pa + [u["created"] or ""])
     return page("""<div class="card"><h2>নোটিফিকেশন</h2><div class="row">
 <form method="post" action="/admin/alerts/readall"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm s" style="width:100%">✔ সব পঠিত করুন</button></form>
-<button type="button" class="btn sm s" onclick="setSnd(!sndOn())">🔊 সাউন্ড: <span id="sndv"></span></button></div></div>
+<button type="button" class="btn sm s" onclick="setSnd(!sndOn())">🔊 সাউন্ড: <span id="sndv"></span></button>
+<button type="button" class="btn sm s" onclick="enableBrowserNotif()">📲 ব্রাউজার: <span id="bnv"></span></button></div></div>
 {% if not rows %}<div class="card empty">কোনো নোটিফিকেশন নেই</div>{% endif %}
 <div id="nlist" data-csrf="{{csrf_token}}">{% for a in rows %}<div class="card {{'' if a['rd'] else 'new'}}"{% if not a['rd'] %} data-nid="{{a['id']}}"{% endif %}><b>{{a['title']}}</b>{% if not a['rd'] %} <span class="pill pending">নতুন</span>{% endif %}
 <div>{{a['body']}}</div><div class="k">{{a['created'][:16]}}</div>
@@ -5591,9 +5683,29 @@ def pwa_manifest():
     return r
 
 
+SW_NOTIFY_JS = """
+/* ---- browser notifications (appended by app.py) ---- */
+self.addEventListener('install',function(){self.skipWaiting()});
+self.addEventListener('activate',function(e){e.waitUntil(self.clients.claim())});
+self.addEventListener('notificationclick',function(e){
+  e.notification.close();
+  var d=e.notification.data||{},url=new URL(d.url||'/',self.location.origin).href;
+  e.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(function(list){
+    for(var i=0;i<list.length;i++){var c=list[i];
+      if(new URL(c.url).origin===self.location.origin&&'focus' in c){
+        return c.focus().then(function(w){return(w&&'navigate' in w)?w.navigate(url):null}).catch(function(){return self.clients.openWindow(url)})}}
+    return self.clients.openWindow(url)}))});
+"""
+
+
 @app.route("/service-worker.js")
 def pwa_service_worker():
-    r = send_from_directory(PWA_DIR, "service-worker.js", mimetype="application/javascript")
+    try:  # the existing static/service-worker.js is served unchanged, with the notification handlers appended
+        with open(os.path.join(PWA_DIR, "service-worker.js"), "r", encoding="utf-8") as fh:
+            base_js = fh.read()
+    except OSError:
+        base_js = ""
+    r = Response(base_js + "\n" + SW_NOTIFY_JS, mimetype="application/javascript")
     r.headers["Cache-Control"] = "no-cache"
     r.headers["Service-Worker-Allowed"] = "/"
     return r
