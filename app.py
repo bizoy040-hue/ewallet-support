@@ -2789,7 +2789,7 @@ USER_ROWS_TPL = """{% if not rows and p==1 %}<div class="card empty">কোন�
 {% for x in rows %}<div class="uc{{' blocked' if x['blocked']}}"><a class="uc-main" href="/admin/users/{{x['id']}}"><div class="uc-t"><b>{{x['name']}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span></div>
 <div class="uc-m">#{{x['member_id']}} · 📱 {{x['phone']}}</div>
 <div class="uc-b"><span>ব্যালেন্স <b>৳ {{money(x['balance'])}}</b></span>{% if can('requests') and x['open_req'] %}<span class="uc-o">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</span>{% endif %}</div></a>
-{% if can('requests') and not x['blocked'] %}<div class="uc-a"><a class="btn sm s" href="/admin/requests/new?uid={{x['id']}}&type=client_confirm">📨 ডিপোজিট রিকোয়েস্ট</a><a class="btn sm s" href="/admin/requests/new?uid={{x['id']}}&type=admin_review">🏧 উইথড্র রিকোয়েস্ট</a></div>{% endif %}</div>{% endfor %}
+</div>{% endfor %}
 {% if more %}<button type="button" class="btn s uc-more" data-next="{{p+1}}" style="width:100%;margin-bottom:10px">আরও দেখান</button>{% endif %}"""
 
 
