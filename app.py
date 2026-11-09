@@ -4534,9 +4534,19 @@ REQ_TYPES = {"client_confirm": ("withdraw", "client_confirm"), "admin_review": (
              "deposit": ("deposit", None), "withdraw": ("withdraw", None)}
 
 
+# Purpose is optional: when the admin leaves it empty a neutral default label is used (existing records are never rewritten).
+PURPOSE_DEFAULT = {"client_confirm": ("ডিপোজিট রিকোয়েস্ট", "Deposit request"),
+                   "admin_review": ("উইথড্র/পেমেন্ট রিকোয়েস্ট", "Withdrawal / payment request")}
+
+
+def default_purpose(flow, lang="bn"):
+    d = PURPOSE_DEFAULT.get(flow)
+    return d[1 if lang == "en" else 0] if d else ""
+
+
 def _confirm_view(r, u):
     lang = cur_lang()
-    pur = (r["purpose_en"] if lang == "en" and r["purpose_en"] else r["purpose"]) or ""
+    pur = (r["purpose_en"] if lang == "en" and r["purpose_en"] else r["purpose"]) or default_purpose(r["flow"], lang)
     principal, com = round(float(r["amount"]), 2), round(float(r["commission"] or 0), 2)
     bal = round(float(u["balance"]), 2)
     return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">ডিপোজিট রিকোয়েস্ট</h2>
@@ -4850,7 +4860,7 @@ def _req_prepare(f):
         raise ReqError(e)
     method = pn["method"] if pn else f.get("method", "")
     num = pn["number"] if pn else f.get("number", "").strip()
-    order = re.sub(r"[^A-Z0-9_-]", "", f.get("order_id", "").upper())[:32]
+    order = re.sub(r"[^A-Z0-9_-]", "", f.get("order_id", "").upper())[:32] or ("ORD" + secrets.token_hex(4).upper())
     amt = parse_amount(f.get("amount"))
     ins = f.get("instructions", "").strip()[:500]
     purpose = f.get("purpose", "").strip()[:300]
@@ -4862,8 +4872,10 @@ def _req_prepare(f):
     bad = len(order) < 4 or amt <= 0 or amt > 100_000_000 or not re.fullmatch(r"\d{1,3}", hrs_raw) or int(hrs_raw) > 720
     if flow != "client_confirm" and (method not in METHODS or not PHONE_RE.fullmatch(num)):
         bad = True
-    if flow == "client_confirm" and len(purpose) < 5:
-        raise ReqError("উদ্দেশ্য (Purpose) লিখুন — ক্লায়েন্টকে অনুমোদনের আগে এটি দেখানো হবে।")
+    pdef = False
+    if flow and not purpose:  # Purpose is optional: fall back to a neutral default label
+        purpose, pdef = default_purpose(flow, "bn"), True
+        purpose_en = purpose_en or default_purpose(flow, "en")
     if bad:
         raise ReqError("ধরন, ৪+ অক্ষরের Order ID (A-Z, 0-9, -, _), সঠিক পরিমাণ, মাধ্যম, ১১ ডিজিটের নম্বর (ক্লায়েন্ট-কনফার্ম ছাড়া) ও ০–৭২০ ঘণ্টার মেয়াদ দিন।")
     hrs = int(hrs_raw)
@@ -4873,7 +4885,7 @@ def _req_prepare(f):
     dup = q1("SELECT id,order_id FROM requests WHERE user_id=? AND kind=? AND COALESCE(flow,'')=? AND status IN ('pending','submitted','review') "
              "AND ABS(amount-?)<0.005 ORDER BY id DESC LIMIT 1", (x["id"], kind, flow or "", amt))
     return dict(x=x, rtype=rtype, kind=kind, flow=flow, method=method, num=num, order=order, amt=amt, ins=ins, purpose=purpose,
-                purpose_en=purpose_en, hrs=hrs, exp=exp, rate=rate, com=com, pn=pn, dup=dup)
+                purpose_en=purpose_en, purpose_default=pdef, hrs=hrs, exp=exp, rate=rate, com=com, pn=pn, dup=dup)
 
 
 def _req_checks(d):
@@ -4942,7 +4954,6 @@ def admin_request_new():
     x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (uid,)) if uid else None
     if x and x["blocked"]:
         err("ব্লকড ইউজারকে রিকোয়েস্ট পাঠানো যায় না।"); x = None
-    found = _find_users(q) if (q and not x) else []
     try:
         dh = int(setting("req_expiry_hours", "24") or 0)
     except ValueError:
@@ -4953,41 +4964,56 @@ def admin_request_new():
     panel = _panel_html(x, request.args.get("pn", type=int) or 0) if x else ""
     return page(DESK_STYLE + """<div class="card"><h2 style="margin-top:0">➕ নতুন রিকোয়েস্ট পাঠান</h2>
 <form method="post" id="rf"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" id="uid" value="{{x['id'] if x else ''}}"><input type="hidden" name="dup_ok" id="dupok" value="">
-<label>১. ইউজার</label>
-<div id="upick"{% if x %} hidden{% endif %}><input id="uq" type="search" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি / রেফারেল কোড" autocomplete="off"><div id="ures">
-{% for f in found %}<a class="btn sm s" style="display:block;text-align:left;margin-bottom:6px" href="/admin/requests/new?uid={{f['id']}}&type={{ptype}}">#{{f['member_id']}} {{f['name']}} · {{f['phone']}}</a>{% endfor %}</div></div>
+<style>.upl{max-height:56vh;overflow:auto;margin-bottom:8px}
+.upr{display:block;width:100%;text-align:left;margin:0 0 7px;padding:10px 12px;border-radius:12px;border:1.5px solid var(--ln);background:var(--card);background-image:none;box-shadow:none;color:var(--tx);font-weight:400;touch-action:manipulation}
+.upr:active{border-color:var(--b);transform:none}.upr-t{display:flex;justify-content:space-between;gap:8px;font-size:15px}.upr-t b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.upr-t span{flex:none;font-weight:700;color:var(--okt)}
+.upr-m{font-size:12.5px;color:var(--mut);margin-top:2px}</style>
+<label>১. ক্লায়েন্ট বাছাই করুন (একজনকে)</label>
+<div id="upick"{% if x %} hidden{% endif %}><input id="uq" type="search" inputmode="search" enterkeyhint="search" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি" autocomplete="off">
+<div class="chips" id="ufl">{% for k,l in flt %}<button type="button" data-f="{{k}}" class="{{'on' if k=='all'}}">{{l}}</button>{% endfor %}</div>
+<div class="sq-st" id="ust"></div><div id="ures" class="upl"></div></div>
 <div id="upanel">{{panel|safe}}</div>
 <div id="rest"{% if not x %} hidden{% endif %}>
-<div id="manual"><label>পেমেন্ট মাধ্যম</label><select name="method">{% for m in methods %}<option>{{m}}</option>{% endfor %}</select>
-<label>পেমেন্ট নম্বর (১১ ডিজিট; ডিপোজিট রিকোয়েস্টে লাগবে না)</label><input name="number" inputmode="numeric" maxlength="11"></div>
-<label>৩. ধরন</label><select name="type" id="rtype">
+<label>২. ধরন</label><select name="type" id="rtype">
 <optgroup label="ডিপোজিট"><option value="client_confirm" {{'selected' if ptype=='client_confirm'}}>ডিপোজিট রিকোয়েস্ট — ক্লায়েন্ট কনফার্ম করবে</option><option value="deposit" {{'selected' if ptype=='deposit'}}>সাধারণ ডিপোজিট (কমিশন ছাড়া)</option></optgroup>
 <optgroup label="উইথড্র"><option value="admin_review" {{'selected' if ptype=='admin_review'}}>উইথড্র/পেমেন্ট রিকোয়েস্ট — অ্যাডমিন যাচাই করবে</option><option value="withdraw" {{'selected' if ptype=='withdraw'}}>সাধারণ উইথড্র (কমিশন ছাড়া)</option></optgroup></select>
 <div class="k" id="tydesc" style="margin:-6px 0 10px"></div>
-<label>৪. পরিমাণ (৳ BDT)</label><input name="amount" type="number" step="0.01" min="0.01" required inputmode="decimal">
+<label>৩. পরিমাণ (৳ BDT)</label><input name="amount" type="number" step="0.01" min="0.01" required inputmode="decimal">
 <div class="k" style="margin:-6px 0 10px">পুলে উপলব্ধ ফান্ড: <b>৳{{money(avail)}}</b> · কমিশন সার্ভার হিসাব করবে, পর্যালোচনায় দেখানো হবে।</div>
-<label>উদ্দেশ্য — বাংলা (ডিপোজিট রিকোয়েস্টে আবশ্যক; ইউজারকে দেখানো হবে)</label><textarea name="purpose" id="purp" rows="2" maxlength="300"></textarea>
+<div id="manual"><label>পেমেন্ট মাধ্যম</label><select name="method">{% for m in methods %}<option>{{m}}</option>{% endfor %}</select>
+<label>পেমেন্ট নম্বর (১১ ডিজিট; ডিপোজিট রিকোয়েস্টে লাগবে না)</label><input name="number" inputmode="numeric" maxlength="11"></div>
+<details class="dt"><summary>⚙ আরও অপশন (সবই ঐচ্ছিক)</summary><div class="inn">
+<label>উদ্দেশ্য — বাংলা (ঐচ্ছিক; ফাঁকা থাকলে ডিফল্ট লেবেল বসবে)</label><textarea name="purpose" id="purp" rows="2" maxlength="300"></textarea>
 <label>Purpose — English (optional)</label><textarea name="purpose_en" rows="2" maxlength="300"></textarea>
-<label>নোট / নির্দেশনা (ঐচ্ছিক — ইউজারকে দেখানো হবে)</label><textarea name="instructions" rows="3" maxlength="500"></textarea>
-<label>Order ID</label><input name="order_id" required maxlength="32" value="{{oid}}" autocapitalize="characters">
-<label>মেয়াদ (ঘণ্টা; ০ = মেয়াদ নেই)</label><input name="hours" type="number" min="0" max="720" value="{{dh}}">
+<label>নোট / নির্দেশনা (ইউজারকে দেখানো হবে)</label><textarea name="instructions" rows="3" maxlength="500"></textarea>
+<label>Order ID (ফাঁকা রাখলে স্বয়ংক্রিয়)</label><input name="order_id" maxlength="32" value="{{oid}}" autocapitalize="characters">
+<label>মেয়াদ (ঘণ্টা; ০ = মেয়াদ নেই)</label><input name="hours" type="number" min="0" max="720" value="{{dh}}"></div></details>
 <button type="button" class="btn" id="rv" style="width:100%">🔍 পর্যালোচনা করুন</button>
 <div class="k" style="margin-top:6px">পাঠানোর আগে সব তথ্য একবার দেখানো হবে। শুধু অনুরোধ পাঠালে কোনো টাকা, কমিশন বা লেজার এন্ট্রি তৈরি হয় না।</div></div></form></div>
 <div class="dm" id="rmod" hidden><div class="dm-box"><h3>📋 পাঠানোর আগে দেখে নিন</h3><div id="rbody"></div>
 <div class="dm-btns"><button type="button" class="btn s" id="rback">← সম্পাদনা</button><button type="button" class="btn g" id="rsend">📨 নিশ্চিত করে পাঠান</button></div></div></div>
 <script>(function(){var $=function(i){return document.getElementById(i)},f=$('rf');if(!f)return;""" + PN_JS + """
-var uq=$('uq'),res=$('ures'),tm=null,seq=0,TY=$('rtype'),DESC={{tydesc|tojson}},rm=$('rmod'),rb=$('rbody'),rs=$('rsend');
-function tyc(){$('tydesc').textContent=DESC[TY.value]||'';$('purp').required=(TY.value==='client_confirm')}TY.addEventListener('change',tyc);tyc();pnBind(f);
+var uq=$('uq'),res=$('ures'),chips=$('ufl'),st=$('ust'),fl='all',tm=null,seq=0,TY=$('rtype'),DESC={{tydesc|tojson}},rm=$('rmod'),rb=$('rbody'),rs=$('rsend');
+function tyc(){$('tydesc').textContent=DESC[TY.value]||''}TY.addEventListener('change',tyc);tyc();pnBind(f);
 function pick(u){fetch('/admin/requests/panel/'+u.id+'?type='+encodeURIComponent(TY.value),{credentials:'same-origin'}).then(function(r){return r.ok?r.text():Promise.reject()}).then(function(h){
- $('upanel').innerHTML=h;$('uid').value=u.id;$('upick').hidden=true;$('rest').hidden=false;res.innerHTML='';uq.value='';pnBind(f);
+ $('upanel').innerHTML=h;$('uid').value=u.id;$('upick').hidden=true;$('rest').hidden=false;pnBind(f);
  try{history.replaceState(null,'','/admin/requests/new?uid='+u.id+'&type='+TY.value)}catch(e){}}).catch(function(){alert('ইউজারের তথ্য লোড করা যায়নি।')})}
-function render(list){res.innerHTML='';if(!list.length){var d=document.createElement('div');d.className='k';d.textContent='কোনো ইউজার পাওয়া যায়নি';res.appendChild(d);return}
- list.forEach(function(u){var b=document.createElement('button');b.type='button';b.className='btn sm s';b.style.cssText='display:block;width:100%;text-align:left;margin-bottom:6px';
-  b.textContent='#'+u.member_id+' '+u.name+' · '+u.phone+' · ৳'+u.balance+(u.blocked?' · ব্লকড':'');if(u.blocked)b.disabled=true;b.addEventListener('click',function(){pick(u)});res.appendChild(b)})}
-function find(){var q=uq.value.trim();if(!q){res.innerHTML='';return}var my=++seq;
- fetch('/admin/requests/find?q='+encodeURIComponent(q),{credentials:'same-origin'}).then(function(r){return r.ok?r.json():[]}).then(function(l){if(my===seq)render(l)}).catch(function(){})}
-uq.addEventListener('input',function(){clearTimeout(tm);tm=setTimeout(find,250)});
-$('upanel').addEventListener('click',function(e){if(e.target.closest('#uchg')){$('uid').value='';$('upanel').innerHTML='';$('rest').hidden=true;$('upick').hidden=false;uq.focus()}});
+function row(u){var b=document.createElement('button');b.type='button';b.className='upr';
+ var t=document.createElement('div');t.className='upr-t';var n=document.createElement('b');n.textContent=u.name;var bl=document.createElement('span');bl.textContent='৳ '+u.balance;t.appendChild(n);t.appendChild(bl);
+ var m=document.createElement('div');m.className='upr-m';m.textContent='#'+u.member_id+' · 📱 '+u.phone+(u.open_req?' · ⏳ '+u.open_req+'টি খোলা রিকোয়েস্ট':'');
+ b.appendChild(t);b.appendChild(m);b.addEventListener('click',function(){pick(u)});return b}
+function load(p,append,btn){var my=++seq;st.textContent='খুঁজছে…';
+ fetch('/admin/requests/find?q='+encodeURIComponent(uq.value.trim())+'&f='+encodeURIComponent(fl)+'&p='+p,{credentials:'same-origin'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){if(my!==seq)return;
+  if(btn)btn.remove();if(!append)res.innerHTML='';
+  j.rows.forEach(function(u){res.appendChild(row(u))});
+  if(!j.rows.length&&!append){var d=document.createElement('div');d.className='k';d.style.padding='8px 2px';d.textContent='কোনো ক্লায়েন্ট পাওয়া যায়নি';res.appendChild(d)}
+  if(j.more){var mb=document.createElement('button');mb.type='button';mb.className='btn s';mb.style.cssText='width:100%;margin:4px 0 8px';mb.textContent='আরও দেখান';mb.addEventListener('click',function(){mb.disabled=true;load(p+1,true,mb)});res.appendChild(mb)}
+  st.textContent=''}).catch(function(){if(my===seq){st.textContent='লোড করা যায়নি — আবার চেষ্টা করুন';if(btn)btn.disabled=false}})}
+uq.addEventListener('input',function(){clearTimeout(tm);tm=setTimeout(function(){load(1,false)},250)});
+uq.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();clearTimeout(tm);load(1,false);uq.blur()}});
+chips.addEventListener('click',function(e){var b=e.target.closest('button[data-f]');if(!b)return;chips.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});fl=b.dataset.f;load(1,false)});
+$('upanel').addEventListener('click',function(e){if(e.target.closest('#uchg')){$('uid').value='';$('upanel').innerHTML='';$('rest').hidden=true;$('upick').hidden=false;if(!res.children.length)load(1,false);uq.focus()}});
+if(!$('uid').value)load(1,false);
 function line(dl,k,v){var d=document.createElement('div'),a=document.createElement('dt'),b=document.createElement('dd');a.textContent=k;b.textContent=v;d.appendChild(a);d.appendChild(b);dl.appendChild(d)}
 function box(cls,t){var d=document.createElement('div');d.className=cls;d.textContent=t;return d}
 function show(d){rb.innerHTML='';$('dupok').value='';rs.disabled=false;
@@ -5002,7 +5028,7 @@ function review(){if(!$('uid').value){alert('আগে ইউজার বাছ
 $('rv').addEventListener('click',review);$('rback').addEventListener('click',function(){rm.hidden=true});rm.addEventListener('click',function(e){if(e.target===rm)rm.hidden=true});
 rs.addEventListener('click',function(){rs.disabled=true;f.dataset.ok='1';if(typeof ldShow==='function')ldShow();f.submit()});
 f.addEventListener('submit',function(e){if(f.dataset.ok==='1')return;e.preventDefault();e.stopPropagation();review()},true)})()</script>""",
-                active="/admin/requests", x=x, q=q, found=found, methods=METHODS, dh=dh, oid="ORD" + secrets.token_hex(4).upper(),
+                active="/admin/requests", x=x, q=q, flt=FIND_FILTERS, methods=METHODS, dh=dh, oid="ORD" + secrets.token_hex(4).upper(),
                 avail=pool_available(), ptype=ptype, panel=panel, tydesc=TYPE_DESC)
 
 
@@ -5025,7 +5051,7 @@ def admin_request_preview():
         rows.append(["কমিশন (%s%%)" % _pct(d["rate"]), "৳ " + money(com)])
     rows += [["পেমেন্ট মাধ্যম", d["method"]], ["পেমেন্ট নম্বর", (d["num"] if d["num"] != "-" else "—") + (" (ইউজারের নিবন্ধিত নম্বর)" if d["pn"] else "")]]
     if d["purpose"]:
-        rows.append(["উদ্দেশ্য", d["purpose"]])
+        rows.append(["উদ্দেশ্য", d["purpose"] + (" (ডিফল্ট)" if d["purpose_default"] else "")])
     rows += [["নোট / নির্দেশনা", d["ins"] or "—"], ["মেয়াদ", ("%d ঘণ্টা" % d["hrs"]) if d["hrs"] else "মেয়াদ নেই"], ["Order ID", d["order"]]]
     eff = ["এখন শুধু অনুরোধটি ইউজারের ড্যাশবোর্ডে ও নোটিফিকেশনে যাবে। এই ধাপে কোনো টাকা, কমিশন বা লেজার এন্ট্রি তৈরি হবে না।"]
     if flow == "client_confirm":
@@ -5056,19 +5082,60 @@ def admin_request_panel(uid):
     return r
 
 
+FIND_FILTERS = (("all", "সব ইউজার"), ("funded", "ব্যালেন্স আছে"), ("zero", "ব্যালেন্স শূন্য"), ("active7", "৭ দিনে সক্রিয়"),
+                ("inactive7", "৭+ দিন নিষ্ক্রিয়"), ("new", "নতুন নিবন্ধিত"), ("openreq", "খোলা রিকোয়েস্ট আছে"))
+FIND_PER = 15
+
+
+def _find_clients(q, f, p, per=FIND_PER):
+    """Client picker for 'send request': searchable + filterable, LIMIT/OFFSET pagination (per+1 rows fetched, no COUNT per keystroke).
+    Blocked users are never listed (they cannot receive requests). Read-only."""
+    where, args = ["u.is_admin=0", "COALESCE(u.blocked,0)=0"], []
+    if q:
+        like = "%" + q + "%"
+        cond = "u.name LIKE ? OR u.phone LIKE ? OR u.member_id LIKE ? OR u.referral_code LIKE ?"
+        args += [like] * 4
+        if has_perm("payment_numbers"):
+            cond += " OR EXISTS(SELECT 1 FROM payment_numbers pn WHERE pn.user_id=u.id AND pn.number LIKE ?)"
+            args.append(like)
+        where.append("(" + cond + ")")
+    if f == "funded":
+        where.append("u.balance>0")
+    elif f == "zero":
+        where.append("COALESCE(u.balance,0)<=0")
+    elif f == "active7":
+        where.append("u.last_login>=datetime('now','-7 days')")
+    elif f == "inactive7":
+        where.append("(u.last_login IS NULL OR u.last_login<datetime('now','-7 days'))")
+    elif f == "new":
+        where.append("u.created>=datetime('now','-7 days')")
+    elif f == "openreq":
+        where.append("EXISTS(SELECT 1 FROM requests r WHERE r.user_id=u.id AND r.status IN ('pending','submitted','review'))")
+    order, oargs = "u.id DESC", []
+    if q:
+        order, oargs = "(CASE WHEN u.member_id=? OR u.phone=? OR u.referral_code=? THEN 0 ELSE 1 END), u.id DESC", [q, q, q.upper()]
+    p = min(max(p, 1), 500)
+    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.comm_rate,"
+              "(SELECT COUNT(*) FROM requests r WHERE r.user_id=u.id AND r.status IN ('pending','submitted','review')) open_req "
+              "FROM users u WHERE " + " AND ".join(where) + " ORDER BY " + order + " LIMIT ? OFFSET ?",
+              args + oargs + [per + 1, (p - 1) * per])
+    return rows[:per], len(rows) > per
+
+
 @app.route("/admin/requests/find")
 @staff_required("requests")
 def admin_request_find():
-    """Live user search for the one-page 'send request' form (same permission as creating a request)."""
+    """Client list for the one-page 'send request' form (same permission as creating a request). Works with an empty search too."""
     q = _clean_q(request.args.get("q", ""))
-    if not q:
-        return jsonify([])
-    like = "%" + q + "%"
-    rows = qa("SELECT id,name,phone,member_id,balance,blocked,comm_rate FROM users WHERE is_admin=0 AND "
-              "(name LIKE ? OR phone LIKE ? OR member_id LIKE ? OR referral_code LIKE ?) "
-              "ORDER BY (CASE WHEN member_id=? OR phone=? THEN 0 ELSE 1 END), id DESC LIMIT 12", (like, like, like, like, q, q))
-    return jsonify([dict(id=r["id"], name=r["name"], phone=r["phone"], member_id=r["member_id"], balance=money(r["balance"]),
-                         blocked=bool(r["blocked"]), rate=_pct(effective_rate(r))) for r in rows])
+    f = request.args.get("f", "all")
+    if f not in {k for k, _ in FIND_FILTERS}:
+        f = "all"
+    p = request.args.get("p", type=int) or 1
+    rows, more = _find_clients(q, f, p)
+    resp = jsonify(rows=[dict(id=r["id"], name=r["name"], phone=r["phone"], member_id=r["member_id"], balance=money(r["balance"]),
+                              open_req=int(r["open_req"] or 0), rate=_pct(effective_rate(r))) for r in rows], more=more)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 # ---- Request Management UI: two tabs (Admin -> User = `requests`, User -> Admin = `tx`), serial card lists, details, editing
@@ -5502,8 +5569,6 @@ def admin_request_edit(i):
             err("সঠিক পেমেন্ট মাধ্যম বাছাই করুন।"); return redirect(back_to + "/edit")
         if not cc and not PHONE_RE.fullmatch(num):
             err("১১ ডিজিটের সঠিক পেমেন্ট নম্বর দিন।"); return redirect(back_to + "/edit")
-        if cc and len(purpose) < 5:
-            err("উদ্দেশ্য (Purpose) লিখুন — ক্লায়েন্টকে অনুমোদনের আগে এটি দেখানো হয়।"); return redirect(back_to + "/edit")
         if hrs_raw and (not re.fullmatch(r"\d{1,3}", hrs_raw) or int(hrs_raw) > 720):
             err("মেয়াদ ০–৭২০ ঘণ্টার মধ্যে দিন।"); return redirect(back_to + "/edit")
         try:
@@ -5520,6 +5585,8 @@ def admin_request_edit(i):
                     exp = (datetime.utcnow() + timedelta(hours=int(hrs_raw))).strftime("%Y-%m-%d %H:%M:%S") if int(hrs_raw) else None
                 new = {"method": method, "pay_number": num, "instructions": ins, "expires_at": exp}
                 if c["flow"]:
+                    if not purpose and c["purpose"]:  # cleared on purpose -> default label (an already-empty old record stays unchanged)
+                        purpose, purpose_en = default_purpose(c["flow"], "bn"), purpose_en or default_purpose(c["flow"], "en")
                     new["purpose"], new["purpose_en"] = purpose or None, purpose_en or None
                 names = {"method": "মাধ্যম", "pay_number": "নম্বর", "instructions": "নির্দেশনা", "purpose": "উদ্দেশ্য", "purpose_en": "Purpose", "expires_at": "মেয়াদ"}
                 ch = {k: (c[k], v) for k, v in new.items() if (c[k] or "") != (v or "")}
@@ -5558,7 +5625,7 @@ def admin_request_edit(i):
 <div id="manual"><label>পেমেন্ট মাধ্যম</label><select name="method">{% if r['method'] not in methods %}<option value="{{r['method']}}" selected>{{r['method']}}</option>{% endif %}
 {% for m in methods %}<option value="{{m}}" {{'selected' if m==r['method']}}>{{m}}</option>{% endfor %}</select>
 <label>পেমেন্ট নম্বর{% if cc %} (ঐচ্ছিক){% else %} (১১ ডিজিট){% endif %}</label><input name="number" inputmode="numeric" maxlength="11" value="{{'' if r['pay_number']=='-' else r['pay_number']}}"></div>
-{% if r['flow'] %}<label>উদ্দেশ্য — বাংলা{% if cc %} (আবশ্যক){% endif %}</label><textarea name="purpose" rows="2" maxlength="300">{{r['purpose'] or ''}}</textarea>
+{% if r['flow'] %}<label>উদ্দেশ্য — বাংলা (ঐচ্ছিক)</label><textarea name="purpose" rows="2" maxlength="300">{{r['purpose'] or ''}}</textarea>
 <label>Purpose — English (optional)</label><textarea name="purpose_en" rows="2" maxlength="300">{{r['purpose_en'] or ''}}</textarea>{% endif %}
 <label>নোট / নির্দেশনা (ঐচ্ছিক)</label><textarea name="instructions" rows="3" maxlength="500">{{r['instructions'] or ''}}</textarea>
 {% if r['status']=='pending' %}<label>নতুন মেয়াদ (এখন থেকে কত ঘণ্টা; ০ = মেয়াদ নেই; ফাঁকা = অপরিবর্তিত)</label><input name="hours" type="number" min="0" max="720" placeholder="{{'বর্তমান: ' ~ r['expires_at'][:16] ~ ' UTC' if r['expires_at'] else 'বর্তমানে মেয়াদ নেই'}}">{% endif %}
