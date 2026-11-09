@@ -1052,7 +1052,7 @@ def _ctx():
     u = me()
     unread = notif_badges().get("*", 0) if u else 0  # same single query that feeds the per-feature badges
     return dict(csrf_token=csrf(), u=u, site=(setting("site_name") or SITE)[:60], unread=unread, money=money, can=has_perm, nb=nb,
-                role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label, kycs=kyc_status, kycl=KYC_LABEL, ref_reward=referral_reward_amount,
+                role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label, rdt=req_dtype, kycs=kyc_status, kycl=KYC_LABEL, ref_reward=referral_reward_amount,
                 acct_lbl=ACCT_LABEL, mcol=METHOD_COLOR, xc_ok=xc_ok, is_wd=is_wd, ptl=PAY_TYPE_LABEL)
 
 
@@ -4431,6 +4431,17 @@ def req_label(r):
     return REQ_KIND.get(r["kind"], r["kind"])
 
 
+def req_dtype(r):
+    """Displayed request type: 'deposit' / 'withdraw'. For admin-created flow requests the type the admin chose (flow) decides
+    (client_confirm = Deposit, admin_review = Withdrawal/payment); `kind` is only the wallet direction and is the opposite for them.
+    Legacy requests without a flow use kind. Display only - never used for money movement."""
+    try:
+        f = r["flow"]
+    except (KeyError, IndexError):
+        f = None
+    return {"client_confirm": "deposit", "admin_review": "withdraw"}.get(f or "", r["kind"])
+
+
 def rate_cfg():
     """(default %, max %). The max can never exceed COMM_RATE_CEILING (10%)."""
     try:
@@ -4559,28 +4570,49 @@ def default_purpose(flow, lang="bn"):
     return d[1 if lang == "en" else 0] if d else ""
 
 
+RD_STYLE = """<style>
+.rd .card{padding:10px 12px;margin-bottom:8px;border-radius:12px}
+.rd h2{margin:0;font-size:15px;line-height:1.3;font-weight:700}
+.rd h3{margin:0 0 6px;font-size:13.5px;line-height:1.3}
+.rd .k{font-size:12px}
+.rd .rq-amt{font-size:18px;font-weight:700;line-height:1.3;margin:4px 0 2px;color:var(--tx)}
+.rd .rq-dl{margin:4px 0 0}
+.rd .rq-dl>div{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;padding:5px 0;border-top:1px solid var(--ln)}
+.rd .rq-dl dt{flex:0 0 36%;margin:0;color:var(--mut);font-size:12px;line-height:1.5}
+.rd .rq-dl dd{margin:0;flex:1;min-width:0;text-align:right;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.rd .hl{font-size:12.5px;line-height:1.5}
+.rd .tw table td,.rd .tw table th{font-size:12.5px;padding:5px 6px}
+.rd .btn{font-size:13px;padding:8px 12px}.rd .btn.sm{font-size:12px;padding:5px 10px}
+.rd .pill{font-size:11px;padding:2px 9px}
+.rd .msg{font-size:12.5px;padding:8px 10px}
+</style>"""
+
+
 def _confirm_view(r, u):
     lang = cur_lang()
     pur = (r["purpose_en"] if lang == "en" and r["purpose_en"] else r["purpose"]) or default_purpose(r["flow"], lang)
     principal, com = round(float(r["amount"]), 2), round(float(r["commission"] or 0), 2)
     bal = round(float(u["balance"]), 2)
-    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">ডিপোজিট রিকোয়েস্ট</h2>
+    return page(RD_STYLE + """<div class="rd"><div class="card"><div class="row" style="align-items:center;justify-content:space-between"><h2>ডিপোজিট রিকোয়েস্ট</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
-<div class="k" style="margin-top:10px">Order ID</div><div class="copybox">{{r['order_id']}}</div>
-<div class="k" style="margin-top:8px">উদ্দেশ্য (Purpose)</div><div class="hl" style="white-space:pre-line">{{pur}}</div>
-{% if r['instructions'] %}<div class="k" style="margin-top:8px">নির্দেশনা</div><div class="hl" style="white-space:pre-line">{{r['instructions']}}</div>{% endif %}
-<div class="tw" style="margin-top:10px"><table>
+<div class="rq-amt">৳ {{money(principal)}}</div>
+<dl class="rq-dl">
+<div><dt>Order ID</dt><dd><b style="user-select:all">{{r['order_id']}}</b></dd></div>
+<div><dt>ধরন</dt><dd>ডিপোজিট</dd></div>
+<div><dt>উদ্দেশ্য (Purpose)</dt><dd style="white-space:pre-line">{{pur}}</dd></div>
+{% if r['instructions'] %}<div><dt>নির্দেশনা</dt><dd style="white-space:pre-line">{{r['instructions']}}</dd></div>{% endif %}
+{% if r['expires_at'] and r['status']=='pending' %}<div><dt>⏳ মেয়াদ</dt><dd>{{r['expires_at'][:16]}} (UTC)</dd></div>{% endif %}</dl>
+<div class="tw" style="margin-top:8px"><table>
 <tr><td>মূল পরিমাণ (আপনার ওয়ালেট থেকে কাটা হবে)</td><td><b>− ৳ {{money(principal)}}</b></td></tr>
 <tr><td>কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%) — কোম্পানির প্রচারণা পুল থেকে যুক্ত হবে</td><td><b>+ ৳ {{money(com)}}</b></td></tr>
 <tr><td>নিট ওয়ালেট পরিবর্তন</td><td><b>− ৳ {{money(principal-com)}}</b></td></tr>
 <tr><td>বর্তমান ব্যালেন্স</td><td>৳ {{money(bal)}}</td></tr>
 <tr><td>অনুমোদনের পর ব্যালেন্স</td><td>৳ {{money(bal-principal+com)}}</td></tr></table></div>
-{% if r['expires_at'] and r['status']=='pending' %}<div class="k" style="margin-top:8px">⏳ মেয়াদ: {{r['expires_at'][:16]}} (UTC)</div>{% endif %}
 <div class="k" style="margin-top:8px">অনুমোদন করলে সঙ্গে সঙ্গে সম্পন্ন হবে; আর কোনো অ্যাডমিন অনুমোদন লাগবে না। বাতিল করলে আপনার ব্যালেন্স অপরিবর্তিত থাকবে।</div></div>
 {% if r['status']=='pending' %}<div class="card">{% if bal < principal %}<div class="msg error">আপনার ব্যালেন্স এই অনুরোধের জন্য পর্যাপ্ত নয়।</div>{% endif %}
 <form method="post" action="/requests/{{r['id']}}/decide" data-confirm="উদ্দেশ্য, মূল পরিমাণ ও কমিশন দেখে নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <div class="row"><button name="act" value="approve" class="btn g" {{'disabled' if bal < principal}}>✅ অনুমোদন করুন</button><button name="act" value="reject" class="btn r">❌ বাতিল করুন</button></div></form></div>{% endif %}
-<a class="btn s" href="/requests" style="width:100%">← সব অনুরোধ</a>""", active="/requests", r=r, pur=pur, principal=principal, com=com, bal=bal, labels=REQ_LABEL)
+<a class="btn s" href="/requests" style="width:100%">← সব অনুরোধ</a></div>""", active="/requests", r=r, pur=pur, principal=principal, com=com, bal=bal, labels=REQ_LABEL)
 
 
 # ---------------------------------------------------------------- manual requests (admin -> user)
@@ -4772,25 +4804,26 @@ def request_view(i):
         except Exception:
             _rm_upload(shot_name)
             raise
-        alert_admins("অনুরোধ জমা", "#%s %s — Order %s (%s ৳%s)" % (u["member_id"], u["name"], r["order_id"], REQ_KIND[r["kind"]], money(r["amount"])),
+        alert_admins("অনুরোধ জমা", "#%s %s — Order %s (%s ৳%s)" % (u["member_id"], u["name"], r["order_id"], REQ_KIND[req_dtype(r)], money(r["amount"])),
                      "/admin/requests/%d" % i, "requests")
         alert_admins("ট্রানজেকশন স্ক্রিনশট আপলোড", "#%s Order %s" % (u["member_id"], r["order_id"]), "/admin/requests/%d" % i, "requests")
         flash("জমা হয়েছে। অ্যাডমিন যাচাই করবেন।"); return redirect(back_to)
-    return page(WARN_TPL + """<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}} অনুরোধ</h2>
+    return page(RD_STYLE + '<div class="rd">' + WARN_TPL + """<div class="card"><div class="row" style="align-items:center;justify-content:space-between"><h2>{{rk(r)}}</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
-<div class="k" style="margin-top:10px">Order ID</div><div class="copybox">{{r['order_id']}}</div>
-<div class="k">পরিমাণ</div><div class="v">৳ {{money(r['amount'])}}</div>
-<div class="k" style="margin-top:8px">পেমেন্ট প্রোভাইডার</div><div><b>{{r['method']}}</b></div>
-<div class="k" style="margin-top:8px">পেমেন্ট নম্বর</div><div class="row" style="align-items:center"><div class="copybox" style="margin:6px 0">{{r['pay_number']}}</div>
-<button type="button" class="btn sm" style="flex:0" data-copy="{{r['pay_number']}}">📋 কপি</button></div>
-{% if r['pay_type'] %}<div class="k" style="margin-top:8px">পেমেন্ট টাইপ</div><div><b>{{ptl.get(r['pay_type'], r['pay_type'])}}</b></div>{% endif %}
+<div class="rq-amt">৳ {{money(r['amount'])}}</div>
+<dl class="rq-dl">
+<div><dt>Order ID</dt><dd><b style="user-select:all">{{r['order_id']}}</b></dd></div>
+<div><dt>ধরন</dt><dd>{{kinds[rdt(r)]}}</dd></div>
+<div><dt>পেমেন্ট প্রোভাইডার</dt><dd>{{r['method']}}</dd></div>
+<div><dt>পেমেন্ট নম্বর</dt><dd><b style="user-select:all">{{r['pay_number']}}</b> <button type="button" class="btn sm" style="flex:0" data-copy="{{r['pay_number']}}">📋 কপি</button></dd></div>
+{% if r['pay_type'] %}<div><dt>পেমেন্ট টাইপ</dt><dd>{{ptl.get(r['pay_type'], r['pay_type'])}}</dd></div>{% endif %}
+{% if r['expires_at'] and r['status']=='pending' %}<div><dt>⏳ মেয়াদ</dt><dd>{{r['expires_at'][:16]}} (UTC)</dd></div>{% endif %}</dl>
 {% if r['instructions'] %}<div class="k" style="margin-top:8px">অ্যাডমিনের নির্দেশনা</div><div class="hl" style="white-space:pre-line">{{r['instructions']}}</div>{% endif %}
 {% if r['pay_type'] and r['status']=='pending' %}<div class="hl" style="margin-top:8px"><b>কীভাবে পেমেন্ট করবেন</b><br>
 {% if r['pay_type']=='personal' %}আপনার {{r['method']}} অ্যাপ/মেনু থেকে <b>Send Money</b> বেছে নিন এবং উপরের নম্বরে ঠিক <b>৳{{money(r['amount'])}}</b> পাঠান।
 {% elif r['pay_type']=='agent' %}আপনার {{r['method']}} অ্যাপ/মেনু থেকে <b>Cash Out</b> বেছে নিন, এজেন্ট নম্বর হিসেবে উপরের নম্বর দিন এবং ঠিক <b>৳{{money(r['amount'])}}</b> Cash Out করুন।
 {% else %}আপনার {{r['method']}} অ্যাপ/মেনু থেকে <b>Payment</b> বেছে নিন, মার্চেন্ট নম্বর হিসেবে উপরের নম্বর দিন এবং ঠিক <b>৳{{money(r['amount'])}}</b> পেমেন্ট করুন।{% endif %}
 <br>পেমেন্ট শেষে নিচের ফর্মে TrxID ও স্ক্রিনশট জমা দিন।</div>{% endif %}
-{% if r['expires_at'] and r['status']=='pending' %}<div class="k" style="margin-top:8px">⏳ মেয়াদ: {{r['expires_at'][:16]}} (UTC)</div>{% endif %}
 {% if r['flow']=='admin_review' and r['commission'] and r['status']!='approved' %}<div class="hl" style="margin-top:8px">🎁 কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%): ৳{{money(r['commission'])}} — কোম্পানির প্রচারণা পুল থেকে। অনুমোদনের পর মোট ৳{{money(r['amount']+r['commission'])}} ওয়ালেটে যুক্ত হবে (মূল ৳{{money(r['amount'])}} + কমিশন ৳{{money(r['commission'])}})।</div>{% endif %}
 {% if r['flow']=='admin_review' and r['status']=='approved' %}<div class="k" style="margin-top:10px"><b>ওয়ালেটে যুক্ত হয়েছে</b></div><div class="tw"><table>
 <tr><td>মূল পরিমাণ</td><td><b>+ ৳ {{money(r['amount'])}}</b></td></tr>
@@ -4810,7 +4843,7 @@ def request_view(i):
 <a class="btn r" href="/requests/{{r['id']}}/cancel" style="width:100%;margin-top:8px">🚫 অনুরোধ বাতিল করুন</a></div>{% endif %}
 {% if r['status']=='cancelled' and r['cancel_by']=='user' %}<div class="card"><b>আপনি এই অনুরোধ বাতিল করেছেন</b><div class="k">বাতিল ফি ৳{{money(r['cancel_fee'] or 0)}} কাটা হয়েছে।</div></div>{% endif %}
 {% if r['status']=='rejected' and r['reject_reason'] %}<div class="card"><b>রিজেক্টের কারণ</b><div>{{r['reject_reason']}}</div></div>{% endif %}
-<a class="btn s" href="/requests" style="width:100%">← সব অনুরোধ</a>""", active="/requests", r=r, kinds=REQ_KIND, labels=REQ_LABEL, warns=warnings_for(u["id"], i), can_cancel=user_can_cancel(r), fee=cancel_fee())
+<a class="btn s" href="/requests" style="width:100%">← সব অনুরোধ</a></div>""", active="/requests", r=r, kinds=REQ_KIND, labels=REQ_LABEL, warns=warnings_for(u["id"], i), can_cancel=user_can_cancel(r), fee=cancel_fee())
 
 
 @app.route("/requests/<int:i>/cancel", methods=["GET", "POST"])
@@ -5093,7 +5126,7 @@ def admin_request_new():
                     notify(x["id"], "নতুন ডিপোজিট রিকোয়েস্ট", "৳%s কাটা হবে, কমিশন ৳%s। উদ্দেশ্য: %s। Order: %s" % (money(amt), money(com), d["purpose"], order), "/requests/%d" % rid,
                            "New deposit request", "৳%s will be deducted, commission ৳%s. Purpose: %s. Order: %s" % (money(amt), money(com), d["purpose_en"] or d["purpose"], order))
                 else:
-                    notify(x["id"], "নতুন অনুরোধ", "%s অনুরোধ — ৳%s (%s)%s। Order: %s" % (REQ_KIND[kind], money(amt), d["method"] + ((" · " + PAY_TYPE_LABEL[d["paytype"]] + " · " + d["num"]) if d["paytype"] else ""), (" + কমিশন ৳%s" % money(com)) if com else "", order),
+                    notify(x["id"], "নতুন অনুরোধ", "%s অনুরোধ — ৳%s (%s)%s। Order: %s" % (REQ_KIND[req_dtype({"flow": flow, "kind": kind})], money(amt), d["method"] + ((" · " + PAY_TYPE_LABEL[d["paytype"]] + " · " + d["num"]) if d["paytype"] else ""), (" + কমিশন ৳%s" % money(com)) if com else "", order),
                            "/requests/%d" % rid)
                 audit("req_create", "req#%d order=%s %s/%s ৳%s commission ৳%s user#%d admin_id=%d%s" % (rid, order, kind, flow or "-", amt, com or 0, x["id"], a["id"],
                                                                                                     (" pn#%d" % d["pn"]["id"]) if d["pn"] else ""))
@@ -5628,7 +5661,7 @@ def admin_request_user_view(i):
     notes = [{"text": (h["detail"] or "")[len("tx#%d " % i):], "actor": h["actor"], "created": h["created"]} for h in reversed(hist_all) if h["action"] == "tx_note"]
     led, pool, recent = _related_money("tx", i, t["user_id"])
     pns = qa("SELECT * FROM payment_numbers WHERE user_id=? ORDER BY id", (t["user_id"],)) if has_perm("payment_numbers") else []
-    return page(RQ_STYLE + DESK_STYLE + """<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{kinds[t['kind']]}} রিকোয়েস্ট</h2>
+    return page(RQ_STYLE + DESK_STYLE + RD_STYLE + """<div class="rd"><div class="card"><div class="row" style="align-items:center;justify-content:space-between"><h2>{{kinds[t['kind']]}} রিকোয়েস্ট</h2>
 <span class="pill {{t['status']}}" style="flex:0;white-space:nowrap">{{txl.get(t['status'], t['status'])}}</span></div>
 <div class="rq-amt">৳ {{money(t['amount'])}}</div>
 <dl class="rq-dl">
@@ -5648,7 +5681,7 @@ def admin_request_user_view(i):
 {% if can('payment_numbers') %}<div class="card"><h3 style="margin-top:0">💳 {{t['name']}} এর নিবন্ধিত পেমেন্ট নম্বর</h3>{% if not pns %}<div class="k">কোনো নম্বর যোগ করা নেই</div>{% endif %}</div>
 {% set hl = t['number'] %}{% set hm = t['method'] %}{% set send_uid = none %}""" + PM_CARDS_TPL + """{% endif %}
 <div class="row" style="gap:8px;margin-bottom:10px"><a class="btn sm s" href="/admin/users/{{t['user_id']}}">👤 ইউজার প্রোফাইল</a><a class="btn sm s" href="/admin/requests?tab=user&q={{t['member_id']}}&status=all">📚 এই ইউজারের সব রিকোয়েস্ট</a></div>""" + MONEY_TPL + TIMELINE_TPL.replace("{{l['created'][:16]}}", "{{l['created'][:16]}}") + NOTES_TPL + """
-<a class="btn s" href="/admin/requests?tab=user" style="width:100%">← সব রিকোয়েস্ট</a>""" + ACT_MODAL, active="/admin/requests", t=t, hist=hist, kinds=REQ_KIND, txl=TX_LABEL,
+<a class="btn s" href="/admin/requests?tab=user" style="width:100%">← সব রিকোয়েস্ট</a></div>""" + ACT_MODAL, active="/admin/requests", t=t, hist=hist, kinds=REQ_KIND, txl=TX_LABEL,
                 open_st=TX_OPEN[t["kind"]], acts=ACTIONS, pns=pns, tnote=tx_note, log=hist, notes=notes, led=led, pool=pool, recent=recent,
                 bal=t["balance"], uid=t["user_id"], note_url="/admin/requests/user/%d/note" % i)
 
@@ -5666,13 +5699,13 @@ def admin_request_view(i):
     le = q1("SELECT actor,created FROM request_log WHERE request_id=? AND action='edit' ORDER BY id DESC LIMIT 1", (i,))
     pns = qa("SELECT * FROM payment_numbers WHERE user_id=? ORDER BY id", (r["user_id"],)) if has_perm("payment_numbers") else []
     alerts_seen(lambda link, ts: link == "/admin/requests/%d" % i)
-    return page(RQ_STYLE + DESK_STYLE + """<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}}</h2>
+    return page(RQ_STYLE + DESK_STYLE + RD_STYLE + """<div class="rd"><div class="card"><div class="row" style="align-items:center;justify-content:space-between"><h2>{{rk(r)}}</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="rq-amt">৳ {{money(r['amount'])}}</div>
 <dl class="rq-dl">
 <div><dt>Order ID</dt><dd><b>{{r['order_id']}}</b></dd></div>
 <div><dt>ইউজার</dt><dd><a href="/admin/users/{{r['user_id']}}">{{r['name']}} · #{{r['member_id']}}</a><br><span class="k">{{r['phone']}} · ব্যালেন্স ৳ {{money(r['balance'])}}</span></dd></div>
-<div><dt>ধরন</dt><dd>{{rk(r)}}</dd></div>
+<div><dt>ধরন</dt><dd>{{kinds[rdt(r)]}}</dd></div>
 <div><dt>পেমেন্ট মাধ্যম</dt><dd>{{r['method']}}</dd></div>
 <div><dt>পেমেন্ট নম্বর</dt><dd>{{r['pay_number']}}</dd></div>
 {% if r['pay_type'] %}<div><dt>পেমেন্ট টাইপ</dt><dd>{{ptl.get(r['pay_type'], r['pay_type'])}}</dd></div>{% endif %}
@@ -5707,7 +5740,7 @@ def admin_request_view(i):
 {% set hl = r['pay_number'] %}{% set hm = r['method'] %}{% set send_uid = none %}""" + PM_CARDS_TPL + """{% endif %}
 <div class="row" style="gap:8px;margin-bottom:10px"><a class="btn sm s" href="/admin/users/{{r['user_id']}}">👤 ইউজার প্রোফাইল</a><a class="btn sm s" href="/admin/requests?tab=admin&q={{r['member_id']}}&status=all">📚 এই ইউজারের সব রিকোয়েস্ট</a>{% if not r['blocked'] %}<a class="btn sm" href="/admin/requests/new?uid={{r['user_id']}}">➕ নতুন রিকোয়েস্ট</a>{% endif %}</div>
 """ + MONEY_TPL + TIMELINE_TPL + NOTES_TPL + """
-<a class="btn s" href="/admin/requests?tab=admin" style="width:100%">← সব রিকোয়েস্ট</a>""" + ACT_MODAL, active="/admin/requests", r=r, log=log, le=le, kinds=REQ_KIND, labels=REQ_LABEL,
+<a class="btn s" href="/admin/requests?tab=admin" style="width:100%">← সব রিকোয়েস্ট</a></div>""" + ACT_MODAL, active="/admin/requests", r=r, log=log, le=le, kinds=REQ_KIND, labels=REQ_LABEL,
                 pool_av=pool_available(exclude=i), pns=pns, ra=req_actions, rbtn=RQ_BTN, rnote=req_note, warns=warnings_for(r["user_id"], i, 20),
                 notes=notes, led=led, pool=pool, recent=recent, bal=r["balance"], uid=r["user_id"], note_url="/admin/requests/%d/note" % i)
 
@@ -5949,14 +5982,14 @@ def admin_request_history():
 .rh-f a i{font-style:normal;font-size:10.5px;min-width:16px;padding:1px 5px;border-radius:99px;background:var(--bg);text-align:center}
 .rh-f a.on{color:#fff;border-color:#1E90FF;background:#1E90FF}.rh-f a.on[data-f=pending]{border-color:#d97706;background:#d97706}.rh-f a.on[data-f=success]{border-color:#0EA371;background:#0EA371}.rh-f a.on[data-f=cancelled]{border-color:#64748b;background:#64748b}.rh-f a.on[data-f=rejected]{border-color:#dc2626;background:#dc2626}.rh-f a.on i{background:#ffffff33;color:#fff}
 .rh-c{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card);border:1px solid var(--ln);border-radius:9px;padding:7px 10px;margin-bottom:5px;color:var(--tx);text-decoration:none}
-.rh-l{min-width:0}.rh-id{display:block;font-weight:700;font-size:13px;line-height:1.25;overflow-wrap:anywhere}.rh-t{display:block;font-size:11px;color:var(--mut);line-height:1.25}
-.rh-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:0 0 auto}.rh-am{font-size:14px;font-weight:700;line-height:1.25}
-.rh-c .pill{flex:0;white-space:nowrap;font-size:10.5px;padding:1px 8px;line-height:1.5}
+.rh-l{min-width:0}.rh-id{display:block;font-weight:700;font-size:13px;line-height:1.3;overflow-wrap:anywhere}.rh-t{display:block;font-size:12px;color:var(--mut);line-height:1.3}
+.rh-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:0 0 auto}.rh-am{font-size:13px;font-weight:700;line-height:1.3}
+.rh-c .pill{flex:0;white-space:nowrap;font-size:11px;padding:1px 8px;line-height:1.5}
 .rh-pg{display:flex;gap:6px;margin:4px 0 8px}.rh-pg a{flex:1}
 </style>
 <div class="rh-f">{% for k,lb in tabs %}<a data-f="{{k}}" class="{{'on' if f==k}}" href="/admin/request-history{{'' if k=='all' else '?f='+k}}">{{lb}} <i>{{cnt[k]}}</i></a>{% endfor %}</div>
 {% if not rows %}<div class="card empty">কোনো রিকোয়েস্ট নেই</div>{% endif %}
-{% for r in rows %}<a class="rh-c" href="/admin/requests/{{r['id']}}"><div class="rh-l"><span class="rh-id">{{r['order_id']}}</span><span class="rh-t">{{kinds.get(r['kind'], r['kind'])}}</span></div>
+{% for r in rows %}<a class="rh-c" href="/admin/requests/{{r['id']}}"><div class="rh-l"><span class="rh-id">{{r['order_id']}}</span><span class="rh-t">{{kinds.get(rdt(r), '')}}</span></div>
 <div class="rh-r"><span class="rh-am">৳ {{money(r['amount'])}}</span><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div></a>{% endfor %}
 {% if p>1 or more %}<div class="rh-pg">{% if p>1 %}<a class="btn sm s" href="/admin/request-history?f={{f}}&p={{p-1}}">← আগের</a>{% endif %}{% if more %}<a class="btn sm s" href="/admin/request-history?f={{f}}&p={{p+1}}">পরের →</a>{% endif %}</div>{% endif %}""",
                 active="/admin/request-history", rows=rows[:RH_PER], more=len(rows) > RH_PER, p=p, f=f, cnt=cnt, tabs=tabs, labels=REQ_LABEL, kinds=REQ_KIND)
