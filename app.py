@@ -5929,39 +5929,37 @@ RH_PER = 30
 @app.route("/admin/request-history")
 @staff_required("requests")
 def admin_request_history():
-    """Dedicated history of admin-created requests only (no deposits/withdrawals/ledger rows mixed in). Filters: All / Pending / Success."""
+    """Dedicated history of admin-created requests only (no deposits/withdrawals/ledger rows mixed in). Filters: All / Pending / Success / Cancelled / Rejected."""
     expire_requests()
     f = request.args.get("f", "all")
-    if f not in ("all", "pending", "success"):
+    if f not in ("all", "pending", "success", "cancelled", "rejected"):
         f = "all"
     p = min(max(request.args.get("p", type=int) or 1, 1), 2000)
-    where = {"all": "", "pending": " WHERE r.status IN ('pending','submitted','review')", "success": " WHERE r.status='approved'"}[f]
+    where = {"all": "", "pending": " WHERE r.status IN ('pending','submitted','review')", "success": " WHERE r.status='approved'",
+             "cancelled": " WHERE r.status='cancelled'", "rejected": " WHERE r.status='rejected'"}[f]
     rows = qa("SELECT r.id,r.order_id,r.kind,r.flow,r.amount,r.status,r.created,u.name,u.member_id FROM requests r JOIN users u ON u.id=r.user_id%s "
               "ORDER BY r.id DESC LIMIT ? OFFSET ?" % where, (RH_PER + 1, (p - 1) * RH_PER))
     by = {r["status"]: r["n"] for r in qa("SELECT status, COUNT(*) n FROM requests GROUP BY status")}
-    cnt = {"all": sum(by.values()), "pending": sum(by.get(s, 0) for s in OPEN_REQ), "success": by.get("approved", 0)}
-    tabs = [("all", "সব"), ("pending", "অপেক্ষমাণ"), ("success", "সফল")]
+    cnt = {"all": sum(by.values()), "pending": sum(by.get(s, 0) for s in OPEN_REQ), "success": by.get("approved", 0),
+           "cancelled": by.get("cancelled", 0), "rejected": by.get("rejected", 0)}
+    tabs = [("all", "সব"), ("pending", "অপেক্ষমাণ"), ("success", "সফল"), ("cancelled", "বাতিল"), ("rejected", "রিজেক্ট")]
     return page("""<style>
-.rh-f{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}
-.rh-f a{display:flex;align-items:center;justify-content:center;gap:6px;height:42px;border-radius:12px;border:1.5px solid var(--ln);background:var(--card);color:var(--mut);font-weight:700;font-size:14px;text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.rh-f a i{font-style:normal;font-size:12px;min-width:20px;padding:1px 6px;border-radius:99px;background:var(--bg);text-align:center}
-.rh-f a.on{color:#fff;border-color:#1E90FF;background:#1E90FF}.rh-f a.on[data-f=pending]{border-color:#d97706;background:#d97706}.rh-f a.on[data-f=success]{border-color:#0EA371;background:#0EA371}.rh-f a.on i{background:#ffffff33;color:#fff}
-.rh-c{display:block;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:12px 14px;margin-bottom:10px;color:var(--tx);text-decoration:none}
-.rh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.rh-id{font-weight:800;font-size:15px;overflow-wrap:anywhere;min-width:0}.rh-id span{display:block;font-size:11.5px;font-weight:500;color:var(--mut)}
-.rh-am{font-size:21px;font-weight:800;margin:6px 0 6px;line-height:1.2}
-.rh-g{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;color:var(--mut)}.rh-g b{display:block;color:var(--tx);font-size:13.5px;font-weight:600;overflow-wrap:anywhere}
-.rh-pg{display:flex;gap:8px;margin:4px 0 12px}.rh-pg a{flex:1}
+.rh-f{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px}
+.rh-f a{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--ln);background:var(--card);color:var(--mut);font-weight:600;font-size:12px;line-height:1;white-space:nowrap;text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.rh-f a i{font-style:normal;font-size:10.5px;min-width:16px;padding:1px 5px;border-radius:99px;background:var(--bg);text-align:center}
+.rh-f a.on{color:#fff;border-color:#1E90FF;background:#1E90FF}.rh-f a.on[data-f=pending]{border-color:#d97706;background:#d97706}.rh-f a.on[data-f=success]{border-color:#0EA371;background:#0EA371}.rh-f a.on[data-f=cancelled]{border-color:#64748b;background:#64748b}.rh-f a.on[data-f=rejected]{border-color:#dc2626;background:#dc2626}.rh-f a.on i{background:#ffffff33;color:#fff}
+.rh-c{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card);border:1px solid var(--ln);border-radius:9px;padding:7px 10px;margin-bottom:5px;color:var(--tx);text-decoration:none}
+.rh-l{min-width:0}.rh-id{display:block;font-weight:700;font-size:13px;line-height:1.25;overflow-wrap:anywhere}.rh-t{display:block;font-size:11px;color:var(--mut);line-height:1.25}
+.rh-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:0 0 auto}.rh-am{font-size:14px;font-weight:700;line-height:1.25}
+.rh-c .pill{flex:0;white-space:nowrap;font-size:10.5px;padding:1px 8px;line-height:1.5}
+.rh-pg{display:flex;gap:6px;margin:4px 0 8px}.rh-pg a{flex:1}
 </style>
-<div class="card"><h2 style="margin:0 0 2px">🧾 রিকোয়েস্ট হিস্ট্রি</h2><p class="k" style="margin:0">শুধু অ্যাডমিনের পাঠানো রিকোয়েস্ট — সাধারণ ডিপোজিট/উইথড্র বা ওয়ালেট লেনদেন এখানে নেই।</p></div>
 <div class="rh-f">{% for k,lb in tabs %}<a data-f="{{k}}" class="{{'on' if f==k}}" href="/admin/request-history{{'' if k=='all' else '?f='+k}}">{{lb}} <i>{{cnt[k]}}</i></a>{% endfor %}</div>
 {% if not rows %}<div class="card empty">কোনো রিকোয়েস্ট নেই</div>{% endif %}
-{% for r in rows %}<a class="rh-c" href="/admin/requests/{{r['id']}}"><div class="rh-top"><div class="rh-id"><span>Request ID</span>{{r['order_id']}}</div><span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
-<div class="rh-am">৳ {{money(r['amount'])}}</div>
-<div class="rh-g"><div>Request Type<b>{{rk(r)}}</b></div><div>Date<b>{{r['created'][:16]}}</b></div></div>
-<div class="k" style="margin-top:6px">👤 {{r['name']}} · #{{r['member_id']}}</div></a>{% endfor %}
-{% if p>1 or more %}<div class="rh-pg">{% if p>1 %}<a class="btn s" href="/admin/request-history?f={{f}}&p={{p-1}}">← আগের</a>{% endif %}{% if more %}<a class="btn s" href="/admin/request-history?f={{f}}&p={{p+1}}">পরের →</a>{% endif %}</div>{% endif %}""",
-                active="/admin/request-history", rows=rows[:RH_PER], more=len(rows) > RH_PER, p=p, f=f, cnt=cnt, tabs=tabs, labels=REQ_LABEL)
+{% for r in rows %}<a class="rh-c" href="/admin/requests/{{r['id']}}"><div class="rh-l"><span class="rh-id">{{r['order_id']}}</span><span class="rh-t">{{kinds.get(r['kind'], r['kind'])}}</span></div>
+<div class="rh-r"><span class="rh-am">৳ {{money(r['amount'])}}</span><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div></a>{% endfor %}
+{% if p>1 or more %}<div class="rh-pg">{% if p>1 %}<a class="btn sm s" href="/admin/request-history?f={{f}}&p={{p-1}}">← আগের</a>{% endif %}{% if more %}<a class="btn sm s" href="/admin/request-history?f={{f}}&p={{p+1}}">পরের →</a>{% endif %}</div>{% endif %}""",
+                active="/admin/request-history", rows=rows[:RH_PER], more=len(rows) > RH_PER, p=p, f=f, cnt=cnt, tabs=tabs, labels=REQ_LABEL, kinds=REQ_KIND)
 
 
 @app.route("/admin/warnings/new", methods=["POST"])
