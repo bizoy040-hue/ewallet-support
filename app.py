@@ -23,7 +23,7 @@ DB = os.environ.get("DATABASE_PATH", "ewallet.db")
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(DB)), "uploads"))
 SITE = "E-Wallet Support"
 METHODS = ("bKash", "Nagad", "Rocket")
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 CODE_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 # ---------------------------------------------------------------- roles & permissions (enforced server-side)
@@ -461,6 +461,8 @@ V5_COLUMNS = [
     ("users", "comm_rate", "REAL", "NUMERIC(7,3)"),
     ("requests", "flow", "TEXT", "TEXT"), ("requests", "commission", "REAL", "NUMERIC(14,2)"), ("requests", "commission_rate", "REAL", "NUMERIC(7,3)"),
     ("requests", "purpose", "TEXT", "TEXT"), ("requests", "purpose_en", "TEXT", "TEXT"), ("requests", "client_decided_at", "TEXT", "TEXT"),
+    ("requests", "pay_type", "TEXT", "TEXT"), ("requests", "extra_commission", "REAL", "NUMERIC(14,2)"),
+    ("requests", "cancel_fee", "REAL", "NUMERIC(14,2)"), ("requests", "cancel_by", "TEXT", "TEXT"),
     # @@COLUMNS
 ]
 # (name, CREATE TABLE template, [index statements], immutable?)  {ID}=primary key, {BIG}=integer ref, {NUM}=money
@@ -489,6 +491,10 @@ V5_TABLES = [
     ("pool_attestations",
      "CREATE TABLE IF NOT EXISTS pool_attestations(id {ID}, declared_balance {NUM} NOT NULL, ledger_balance {NUM} NOT NULL, difference {NUM} NOT NULL, "
      "holding_account TEXT NOT NULL, note TEXT, idem TEXT UNIQUE, actor TEXT, actor_id {BIG}, created TEXT NOT NULL)", [], True),
+    ("user_warnings",
+     "CREATE TABLE IF NOT EXISTS user_warnings(id {ID}, user_id {BIG} NOT NULL REFERENCES users(id), request_id {BIG}, message TEXT NOT NULL, "
+     "admin_id {BIG}, admin TEXT, created TEXT NOT NULL)",
+     ["CREATE INDEX IF NOT EXISTS ix_warn_user ON user_warnings(user_id)", "CREATE INDEX IF NOT EXISTS ix_warn_req ON user_warnings(request_id)"], True),
     # @@TABLES
 ]
 V5_INDEXES = [
@@ -618,7 +624,7 @@ def _seed_defaults(c):
     defaults = {"bkash": "", "nagad": "", "rocket": "", "min_deposit": "50", "min_withdraw": "100",
                 "telegram_url": "", "tg_enabled": "1", "tg_username": "", "tg_label_bn": "", "tg_label_en": "", "welcome": WELCOME_DEFAULT, "commission_note": "", "referral_bonus": "50",
                 "site_name": SITE, "default_theme": "auto", "signup_open": "1", "notif_sound": "1", "req_expiry_hours": "24",
-                "comm_rate_default": "5", "comm_rate_max": "10", "report_tz_hours": "6"}
+                "comm_rate_default": "5", "comm_rate_max": "10", "report_tz_hours": "6", "req_cancel_fee": "100"}
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (k, v))
     c.execute("INSERT OR IGNORE INTO pool_account(id,balance,updated) VALUES(1,0,?)", (now(),))  # the single pool row; starts at 0
@@ -1047,7 +1053,7 @@ def _ctx():
     unread = notif_badges().get("*", 0) if u else 0  # same single query that feeds the per-feature badges
     return dict(csrf_token=csrf(), u=u, site=(setting("site_name") or SITE)[:60], unread=unread, money=money, can=has_perm, nb=nb,
                 role_name=ROLES.get(u["role"], "") if u else "", tg=tg_url_active(), tg_label=tg_label(), lang=cur_lang(), rk=req_label, kycs=kyc_status, kycl=KYC_LABEL, ref_reward=referral_reward_amount,
-                acct_lbl=ACCT_LABEL, mcol=METHOD_COLOR)
+                acct_lbl=ACCT_LABEL, mcol=METHOD_COLOR, xc_ok=xc_ok, is_wd=is_wd, ptl=PAY_TYPE_LABEL)
 
 
 CSS = """
@@ -1342,7 +1348,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
 <main>{% for c,m in msgs %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
-{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active!='/admin'}}" href="/admin/menu">☰ কন্ট্রোল সেন্টার <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t" href="/admin/requests/new" style="background:#0EA371;border-color:#0EA371;color:#fff">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
+{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active not in ('/admin','/admin/request-history')}}" href="/admin/menu">☰ কন্ট্রোল সেন্টার <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t" href="/admin/request-history" style="background:#1668D0;border-color:#1668D0;color:#fff{{';box-shadow:0 0 0 3px #1668D04d' if active=='/admin/request-history'}}">🧾 রিকোয়েস্ট হিস্ট্রি</a><a class="t" href="/admin/requests/new" style="background:#0EA371;border-color:#0EA371;color:#fff">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
@@ -1627,6 +1633,12 @@ EN_PHRASES = {
     "অ্যাডমিন সিকিউরিটি কোড": "Admin security code", "কোড যাচাই করুন": "Verify code",
     "পাসওয়ার্ড সঠিক হয়েছে। চালিয়ে যেতে আলাদা অ্যাডমিন সিকিউরিটি কোডটি দিন।": "Password accepted. Enter your separate admin security code to continue.",
 }
+for _k, _v in {"পেমেন্ট প্রোভাইডার": "Payment Provider", "পেমেন্ট টাইপ": "Payment Type", "অ্যাডমিনের নির্দেশনা": "Admin Instructions",
+               "কীভাবে পেমেন্ট করবেন": "How to pay", "রিকোয়েস্ট হিস্ট্রি": "Request History", "অনুরোধ বাতিল করুন": "Cancel request",
+               "অ্যাডমিনের সতর্কবার্তা": "Admin warning", "এক্সট্রা কমিশন": "Extra commission", "ওয়ালেটে যুক্ত হয়েছে": "Added to your wallet",
+               "মোট ওয়ালেটে যুক্ত": "Total added to wallet", "বাতিল ফি": "Cancellation fee", "বাতিলের পর ব্যালেন্স": "Balance after cancellation",
+               "হ্যাঁ, বাতিল করুন": "Yes, cancel", "ফিরে যান": "Go back", "অপেক্ষমাণ": "Pending", "সফল": "Success"}.items():
+    EN_PHRASES.setdefault(_k, _v)
 _EN_RE = re.compile(r"(?<![\u0980-\u09FF])(" + "|".join(re.escape(k) for k in sorted(EN_PHRASES, key=len, reverse=True))
                     + r")(?![\u0980-\u09FF])")
 _BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
@@ -2909,7 +2921,7 @@ def _user_activity(uid, limit=40):
 
 
 REQ_BTNS = """{% for a in ra(r) %}{% if a=='edit' %}<a class="btn sm s" href="/admin/requests/{{r['id']}}/edit">✏️ সম্পাদনা</a>
-{% else %}<button type="button" class="btn sm {{rbtn[a][1]}}" data-do="{{a}}" data-u="/admin/requests/{{r['id']}}/act" data-c="{{rbtn[a][1]}}" data-t="{{rbtn[a][0]}}" data-need="{{1 if a in ('reject','cancel') else 0}}" data-m="{{rnote(r,a)}}">{{rbtn[a][0]}}</button>{% endif %}{% endfor %}"""
+{% else %}<button type="button" class="btn sm {{rbtn[a][1]}}" data-do="{{a}}" data-u="/admin/requests/{{r['id']}}/act" data-c="{{rbtn[a][1]}}" data-t="{{rbtn[a][0]}}" data-need="{{1 if a in ('reject','cancel') else 0}}" data-m="{{rnote(r,a)}}"{% if a=='approve' and xc_ok(r) %} data-extra="1"{% endif %}>{{rbtn[a][0]}}</button>{% endif %}{% endfor %}"""
 
 REQ_ROWS_TPL = """{% for r in lst %}<div class="pr" style="flex-wrap:wrap"><a class="pr-m" href="/admin/requests/{{r['id']}}"><div class="pr-t"><b>{{r['order_id']}}</b><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div>
 <div class="k">{{rk(r)}} · {{r['method']}} · {{r['created'][:16]}}{% if r['created_by'] %} · {{r['created_by']}}{% endif %}</div></a>
@@ -3000,6 +3012,9 @@ def admin_user(i):
 <label>শিরোনাম (বাংলা)</label><input name="title_bn" required maxlength="80"><label>বার্তা (বাংলা)</label><textarea name="body_bn" required rows="3" maxlength="1000"></textarea>
 <label>Title (English, optional)</label><input name="title_en" maxlength="80"><label>Message (English, optional)</label><textarea name="body_en" rows="3" maxlength="1000"></textarea>
 <button style="width:100%">পাঠান</button></form></div></details>{% endif %}
+{% if can('notices') or can('requests') %}<details class="dt"><summary>⚠ সতর্কবার্তা (Warning)</summary><div class="inn"><form method="post" action="/admin/warnings/new" data-confirm="সতর্কবার্তা ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" value="{{x['id']}}"><input type="hidden" name="next" value="/admin/users/{{x['id']}}">
+<textarea name="message" rows="3" required minlength="5" maxlength="500" placeholder="যেমন: Repeated cancellation of requests may result in temporary transaction restrictions."></textarea>
+<div class="k" style="margin-bottom:6px">ইউজার নোটিফিকেশন ও অনুরোধ পেজে দেখবেন। শুধু সতর্কবার্তায় কোনো লেনদেন সীমাবদ্ধ হয় না — ব্লক করতে আলাদা অ্যাকশন লাগে।</div><button style="width:100%">⚠ সতর্কবার্তা পাঠান</button></form></div></details>{% endif %}
 {% if can('reports') %}<a class="btn s" style="width:100%;margin-bottom:10px" href="/admin/reports/user/{{x['id']}}">📊 ইউজার রিপোর্ট</a>{% endif %}
 {% if can('referrals') %}<div class="card"><h3 style="margin-top:0">রেফারেল তথ্য {% if can('referrals') %}<a class="k" href="/admin/referrals/user/{{x['id']}}">বিস্তারিত →</a>{% endif %}</h3><p class="k">রেফার করেছেন: {{refs['n']}} (অনুমোদিত {{refs['a']}}){% if by %} · রেফারার: <a href="/admin/users/{{x['referred_by']}}">#{{by['member_id']}} {{by['name']}}</a> ({{(byrow['created'] or '')|bdd}}, {{byrow['status']}}){% else %} · কারও রেফারে আসেননি{% endif %}</p>
 {% if reffed %}<div class="tw"><table><tr><th>সদস্য</th><th>তারিখ</th><th>বোনাস</th><th>অবস্থা</th></tr>{% for r in reffed %}<tr><td><a href="/admin/users/{{r['referred_id']}}">#{{r['mid']}} {{r['nm']}}</a></td><td>{{r['created']|bdd}}</td><td>{{money(r['amount'])}}</td><td>{{r['status']}}</td></tr>{% endfor %}</table></div>{% endif %}</div>{% endif %}
@@ -3782,7 +3797,7 @@ SET_SECTIONS = [
     ("payment", "💳 পেমেন্ট সেটিংস",
      [("bkash", "text", "bKash নম্বর"), ("nagad", "text", "Nagad নম্বর"), ("rocket", "text", "Rocket নম্বর")], ""),
     ("deposit", "➕ ডিপোজিট সেটিংস", [("min_deposit", "money", "ন্যূনতম ডিপোজিট (৳)")], ""),
-    ("withdraw", "⬆ উইথড্র সেটিংস", [("min_withdraw", "money", "ন্যূনতম উইথড্র (৳)")], ""),
+    ("withdraw", "⬆ উইথড্র সেটিংস", [("min_withdraw", "money", "ন্যূনতম উইথড্র (৳)"), ("req_cancel_fee", "money", "ইউজার রিকোয়েস্ট বাতিল ফি (৳) — অ্যাডমিনের পাঠানো উইথড্র রিকোয়েস্ট ইউজার নিজে বাতিল করলে কাটা হবে")], ""),
     ("commission", "💰 কমিশন সেটিংস", [],
      "এই সিস্টেমে কমিশন স্বয়ংক্রিয় নয়। অ্যাডমিন কাজের কারণসহ ম্যানুয়ালি কমিশন দেন (কমিশন ট্যাব)। তাই এখানে কোনো হার সেট করার নেই।"),
     ("referral", "🎁 রেফারেল সেটিংস", [],
@@ -3805,7 +3820,7 @@ SET_KEYS = [f[0] for sec in SET_SECTIONS for f in sec[2]]
 def _validate_section(v):
     if "telegram_url" in v and v["telegram_url"] and not v["telegram_url"].startswith("https://"):
         return "টেলিগ্রাম লিংক https:// দিয়ে শুরু হতে হবে।"
-    for k in ("min_deposit", "min_withdraw"):
+    for k in ("min_deposit", "min_withdraw", "req_cancel_fee"):
         if k in v and parse_amount(v[k]) <= 0:
             return "পরিমাণ সঠিক দিন।"
     if "req_expiry_hours" in v:
@@ -3841,7 +3856,7 @@ def admin_settings():
         return redirect("/admin/settings?open=" + sec)
     st = {k: setting(k) for k in SET_KEYS}
     st.setdefault("default_theme", "auto")
-    for k, d in (("default_theme", "auto"), ("signup_open", "1"), ("notif_sound", "1"), ("req_expiry_hours", "24"), ("site_name", SITE)):
+    for k, d in (("default_theme", "auto"), ("signup_open", "1"), ("notif_sound", "1"), ("req_expiry_hours", "24"), ("site_name", SITE), ("req_cancel_fee", "100")):
         st[k] = st[k] or d
     op = request.args.get("open", "general")
     return page("""{% for sec in secs %}<details class="card set" {{'open' if op==sec[0]}} id="{{sec[0]}}"><summary>{{sec[1]}}</summary>
@@ -4586,6 +4601,59 @@ def req_log(rid, action, frm, to, actor, actor_id, note=""):
                  (rid, action, frm, to, actor, actor_id, (note or "")[:300], now()))
 
 
+# ---------------------------------------------------------------- v7: withdrawal payment details, user cancellation fee, extra commission, admin warnings
+REQ_CANCEL_FEE_DEFAULT = 100.0   # fallback only: the live value is the ONE central setting `req_cancel_fee` (Admin -> Settings -> Withdraw)
+PAY_TYPE_LABEL = {"personal": "Personal: Send Money", "agent": "Agent: Cash Out", "merchant": "Merchant: Payment"}
+PAY_TYPES = tuple(PAY_TYPE_LABEL)
+EXTRA_COMM_TYPES = ("agent",)    # Extra Commission is allowed ONLY for Agent Cash Out (enforced on the server, never only in the UI)
+EXTRA_RE = re.compile(r"[0-9]{1,8}(\.[0-9]{1,2})?")
+
+
+def is_wd(kind, flow=None):
+    """Admin-created *withdrawal* request = the user is shown a payment number to pay: the 'withdraw/payment' flow and the plain withdraw type.
+    For these the admin must type the provider / number / type; the user's saved payment numbers are never used."""
+    return flow == "admin_review" or (not flow and kind == "withdraw")
+
+
+def xc_ok(r):
+    """Display helper: may the approve dialog offer the optional Extra Commission field? (the server re-checks everything)"""
+    try:
+        return r["flow"] == "admin_review" and (r["pay_type"] or "") in EXTRA_COMM_TYPES and r["status"] in ("submitted", "review")
+    except (KeyError, IndexError):
+        return False
+
+
+def cancel_fee():
+    """The user-side cancellation fee (central setting; falls back to the default if missing or invalid)."""
+    v = parse_amount(setting("req_cancel_fee", ""))
+    return v if v > 0 else REQ_CANCEL_FEE_DEFAULT
+
+
+def user_can_cancel(r):
+    """A customer may cancel only an admin-created withdrawal request that is still waiting for their payment (nothing submitted yet)."""
+    return is_wd(r["kind"], r["flow"]) and r["status"] == "pending"
+
+
+def parse_extra(v):
+    """Extra commission input: blank -> 0; otherwise a plain positive number with up to 2 decimals (no sign, exponent, NaN or Infinity)."""
+    v = (v or "").replace(",", "").strip()
+    if not v:
+        return 0.0
+    if not EXTRA_RE.fullmatch(v):
+        raise ReqError("এক্সট্রা কমিশনের পরিমাণ সঠিক নয় (শুধু ০ বা ধনাত্মক সংখ্যা, সর্বোচ্চ ২ দশমিক)।")
+    return round(float(v), 2)
+
+
+def warnings_for(uid, rid=None, limit=5):
+    """Admin warnings visible to the customer: those attached to this request plus user-level ones (or all of the user's when rid is None)."""
+    if rid:
+        return qa("SELECT * FROM user_warnings WHERE user_id=? AND (request_id=? OR request_id IS NULL) ORDER BY id DESC LIMIT ?", (uid, rid, limit))
+    return qa("SELECT * FROM user_warnings WHERE user_id=? ORDER BY id DESC LIMIT ?", (uid, limit))
+
+
+WARN_TPL = """{% if warns %}<div class="card" style="border-left:4px solid #d97706"><h3 style="margin:0 0 8px">⚠ অ্যাডমিনের সতর্কবার্তা</h3>{% for w in warns %}<div style="white-space:pre-line;overflow-wrap:anywhere;margin-bottom:8px">{{w['message']}}<div class="k">{{w['created'][:16]}}</div></div>{% endfor %}</div>{% endif %}"""
+
+
 def expire_requests():
     """Lazily moves overdue, not-yet-submitted requests to 'expired' (no balance effect). Call outside atomic()."""
     t = now()
@@ -4617,7 +4685,7 @@ def requests_list():
     user_seen(lambda link, title, ts: link in shown)
     cnt = {"all": len(rows), "pending": sum(1 for r in rows if r["status"] in OPEN_REQ),
            "success": sum(1 for r in rows if r["status"] == "approved")}
-    return page("""<style>
+    return page(WARN_TPL + """<style>
 .ur-f{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}
 .ur-f button{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:42px;margin:0;padding:0 8px;border-radius:12px;border:1.5px solid var(--ln);background:var(--card);background-image:none;box-shadow:none;color:var(--mut);font-weight:700;font-size:14px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .ur-f button i{font-style:normal;font-size:12px;min-width:20px;padding:1px 6px;border-radius:99px;background:var(--bg)}
@@ -4654,7 +4722,7 @@ def requests_list():
 bar.addEventListener('click',function(e){var b=e.target.closest('button[data-f]');if(!b)return;var f=b.getAttribute('data-f'),n=0;
 bar.querySelectorAll('button').forEach(function(x){var on=x===b;x.classList.toggle('on',on);x.setAttribute('aria-pressed',on?'true':'false')});
 cards.forEach(function(c){var show=f==='all'||c.getAttribute('data-g')===f;c.hidden=!show;if(show)n++});none.hidden=n>0})})()</script>{% endif %}""",
-                active="/requests", rows=rows, kinds=REQ_KIND, labels=REQ_LABEL, cnt=cnt)
+                active="/requests", rows=rows, kinds=REQ_KIND, labels=REQ_LABEL, cnt=cnt, warns=warnings_for(u["id"]))
 
 
 @app.route("/requests/<int:i>", methods=["GET", "POST"])
@@ -4708,16 +4776,27 @@ def request_view(i):
                      "/admin/requests/%d" % i, "requests")
         alert_admins("ট্রানজেকশন স্ক্রিনশট আপলোড", "#%s Order %s" % (u["member_id"], r["order_id"]), "/admin/requests/%d" % i, "requests")
         flash("জমা হয়েছে। অ্যাডমিন যাচাই করবেন।"); return redirect(back_to)
-    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}} অনুরোধ</h2>
+    return page(WARN_TPL + """<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">{{rk(r)}} অনুরোধ</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="k" style="margin-top:10px">Order ID</div><div class="copybox">{{r['order_id']}}</div>
 <div class="k">পরিমাণ</div><div class="v">৳ {{money(r['amount'])}}</div>
-<div class="k" style="margin-top:8px">পেমেন্ট মাধ্যম</div><div><b>{{r['method']}}</b></div>
+<div class="k" style="margin-top:8px">পেমেন্ট প্রোভাইডার</div><div><b>{{r['method']}}</b></div>
 <div class="k" style="margin-top:8px">পেমেন্ট নম্বর</div><div class="row" style="align-items:center"><div class="copybox" style="margin:6px 0">{{r['pay_number']}}</div>
 <button type="button" class="btn sm" style="flex:0" data-copy="{{r['pay_number']}}">📋 কপি</button></div>
-{% if r['instructions'] %}<div class="k" style="margin-top:8px">নির্দেশনা</div><div class="hl">{{r['instructions']}}</div>{% endif %}
+{% if r['pay_type'] %}<div class="k" style="margin-top:8px">পেমেন্ট টাইপ</div><div><b>{{ptl.get(r['pay_type'], r['pay_type'])}}</b></div>{% endif %}
+{% if r['instructions'] %}<div class="k" style="margin-top:8px">অ্যাডমিনের নির্দেশনা</div><div class="hl" style="white-space:pre-line">{{r['instructions']}}</div>{% endif %}
+{% if r['pay_type'] and r['status']=='pending' %}<div class="hl" style="margin-top:8px"><b>কীভাবে পেমেন্ট করবেন</b><br>
+{% if r['pay_type']=='personal' %}আপনার {{r['method']}} অ্যাপ/মেনু থেকে <b>Send Money</b> বেছে নিন এবং উপরের নম্বরে ঠিক <b>৳{{money(r['amount'])}}</b> পাঠান।
+{% elif r['pay_type']=='agent' %}আপনার {{r['method']}} অ্যাপ/মেনু থেকে <b>Cash Out</b> বেছে নিন, এজেন্ট নম্বর হিসেবে উপরের নম্বর দিন এবং ঠিক <b>৳{{money(r['amount'])}}</b> Cash Out করুন।
+{% else %}আপনার {{r['method']}} অ্যাপ/মেনু থেকে <b>Payment</b> বেছে নিন, মার্চেন্ট নম্বর হিসেবে উপরের নম্বর দিন এবং ঠিক <b>৳{{money(r['amount'])}}</b> পেমেন্ট করুন।{% endif %}
+<br>পেমেন্ট শেষে নিচের ফর্মে TrxID ও স্ক্রিনশট জমা দিন।</div>{% endif %}
 {% if r['expires_at'] and r['status']=='pending' %}<div class="k" style="margin-top:8px">⏳ মেয়াদ: {{r['expires_at'][:16]}} (UTC)</div>{% endif %}
-{% if r['flow']=='admin_review' and r['commission'] %}<div class="hl" style="margin-top:8px">🎁 কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%): ৳{{money(r['commission'])}} — কোম্পানির প্রচারণা পুল থেকে। অনুমোদনের পর মোট ৳{{money(r['amount']+r['commission'])}} ওয়ালেটে যুক্ত হবে (মূল ৳{{money(r['amount'])}} + কমিশন ৳{{money(r['commission'])}})।</div>{% endif %}
+{% if r['flow']=='admin_review' and r['commission'] and r['status']!='approved' %}<div class="hl" style="margin-top:8px">🎁 কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%): ৳{{money(r['commission'])}} — কোম্পানির প্রচারণা পুল থেকে। অনুমোদনের পর মোট ৳{{money(r['amount']+r['commission'])}} ওয়ালেটে যুক্ত হবে (মূল ৳{{money(r['amount'])}} + কমিশন ৳{{money(r['commission'])}})।</div>{% endif %}
+{% if r['flow']=='admin_review' and r['status']=='approved' %}<div class="k" style="margin-top:10px"><b>ওয়ালেটে যুক্ত হয়েছে</b></div><div class="tw"><table>
+<tr><td>মূল পরিমাণ</td><td><b>+ ৳ {{money(r['amount'])}}</b></td></tr>
+{% if r['commission'] %}<tr><td>কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%)</td><td><b>+ ৳ {{money(r['commission'])}}</b></td></tr>{% endif %}
+{% if r['extra_commission'] %}<tr><td>এক্সট্রা কমিশন</td><td><b>+ ৳ {{money(r['extra_commission'])}}</b></td></tr>{% endif %}
+<tr><td>মোট ওয়ালেটে যুক্ত</td><td><b>+ ৳ {{money((r['amount'] or 0)+(r['commission'] or 0)+(r['extra_commission'] or 0))}}</b></td></tr></table></div>{% endif %}
 <div class="k" style="margin-top:8px">{% if r['kind']=='deposit' %}অ্যাডমিন অনুমোদন করলে ৳{{money(r['amount'])}} আপনার ওয়ালেটে যুক্ত হবে।
 {% else %}অ্যাডমিন অনুমোদন করলে ৳{{money(r['amount'])}} আপনার ওয়ালেট থেকে কাটা হবে।{% endif %} জমা দিলে ব্যালেন্স নিজে থেকে বদলায় না।</div></div>
 {% if r['status']=='pending' %}<div class="card"><h3>পেমেন্টের তথ্য জমা দিন</h3>
@@ -4727,8 +4806,78 @@ def request_view(i):
 <button style="width:100%">যাচাইয়ের জন্য জমা দিন</button></form></div>
 {% elif r['trx'] %}<div class="card"><h3>আপনার জমা দেওয়া তথ্য</h3><div>TrxID: <b>{{r['trx']}}</b></div><div class="k">জমা: {{(r['submitted_at'] or '')[:16]}}</div>
 {% if r['screenshot'] %}<a href="/shot/{{r['screenshot']}}" target="_blank"><img class="shot" src="/shot/{{r['screenshot']}}" alt="screenshot"></a>{% endif %}</div>{% endif %}
+{% if can_cancel %}<div class="card"><h3 style="margin-top:0">অনুরোধ বাতিল</h3><div class="k">পেমেন্ট করতে না চাইলে এই অনুরোধ বাতিল করতে পারেন। বাতিল করলে আপনার ওয়ালেট থেকে <b>৳{{money(fee)}}</b> ফি কাটা হবে (পরের ধাপে নিশ্চিত করতে হবে)।</div>
+<a class="btn r" href="/requests/{{r['id']}}/cancel" style="width:100%;margin-top:8px">🚫 অনুরোধ বাতিল করুন</a></div>{% endif %}
+{% if r['status']=='cancelled' and r['cancel_by']=='user' %}<div class="card"><b>আপনি এই অনুরোধ বাতিল করেছেন</b><div class="k">বাতিল ফি ৳{{money(r['cancel_fee'] or 0)}} কাটা হয়েছে।</div></div>{% endif %}
 {% if r['status']=='rejected' and r['reject_reason'] %}<div class="card"><b>রিজেক্টের কারণ</b><div>{{r['reject_reason']}}</div></div>{% endif %}
-<a class="btn s" href="/requests" style="width:100%">← সব অনুরোধ</a>""", active="/requests", r=r, kinds=REQ_KIND, labels=REQ_LABEL)
+<a class="btn s" href="/requests" style="width:100%">← সব অনুরোধ</a>""", active="/requests", r=r, kinds=REQ_KIND, labels=REQ_LABEL, warns=warnings_for(u["id"], i), can_cancel=user_can_cancel(r), fee=cancel_fee())
+
+
+@app.route("/requests/<int:i>/cancel", methods=["GET", "POST"])
+@customer_required
+def request_cancel(i):
+    """Customer cancels an eligible admin-created withdrawal request. The cancellation fee (central setting) is a separate ledger entry written in the
+    SAME transaction as the status change, exactly once (status guard + unique ledger key); a balance that cannot cover it blocks the cancellation."""
+    u = me()
+    expire_requests()
+    back_to = "/requests/%d" % i
+    r = q1("SELECT * FROM requests WHERE id=? AND user_id=?", (i, u["id"]))
+    if not r:
+        abort(404)
+    if not user_can_cancel(r):
+        err("এই অনুরোধটি এখন আর বাতিল করা যাবে না।"); return redirect(back_to)
+    if request.method == "POST":
+        if rate_hit("rqx:%d" % u["id"], 10, 3600):
+            err("অনেকবার চেষ্টা হয়েছে, পরে চেষ্টা করুন।"); return redirect(back_to)
+        alert = None
+        try:
+            with atomic():
+                c = q1("SELECT * FROM requests WHERE id=? AND user_id=?", (i, u["id"]))
+                if not c or not user_can_cancel(c):
+                    raise ReqError("এই অনুরোধটি আর বাতিল করা যাবে না (হয়তো আগেই জমা, বাতিল বা মেয়াদোত্তীর্ণ হয়েছে)।")
+                cu = q1("SELECT blocked,balance FROM users WHERE id=?", (u["id"],))
+                if not cu or cu["blocked"]:
+                    raise ReqError("আপনার অ্যাকাউন্ট সক্রিয় নয়।")
+                fee = cancel_fee()
+                bal = round(float(cu["balance"]), 2)
+                if round(bal - fee, 2) < 0:
+                    raise ReqError("বাতিল করতে ৳%s ফি লাগবে, কিন্তু আপনার ব্যালেন্স ৳%s। অনুরোধ বাতিল হয়নি, কিছুই কাটা হয়নি।" % (money(fee), money(bal)))
+                t = now()
+                cur = db().execute("UPDATE requests SET status='cancelled', updated=?, decided_by_id=?, decided_by=?, decided_at=?, reject_reason=?, cancel_fee=?, cancel_by='user' "
+                                   "WHERE id=? AND user_id=? AND status='pending'", (t, u["id"], u["member_id"], t, "ইউজার নিজে বাতিল করেছেন", fee, i, u["id"]))
+                if cur.rowcount != 1:
+                    raise ReqError("এই অনুরোধ আগেই প্রক্রিয়া হয়েছে।")
+                if not post(u["id"], "request_cancel_fee", -fee, "req:%d:cancelfee" % i, "request", i, "Order %s cancellation fee" % c["order_id"], u["member_id"]):
+                    raise ReqError("এই অনুরোধের বাতিল ফি আগেই কাটা হয়েছে।")
+                req_log(i, "cancel", "pending", "cancelled", u["member_id"], u["id"], "ইউজার বাতিল করেছেন · ফি ৳%s" % money(fee))
+                audit("req_user_cancel", "req#%d order=%s user#%d fee=৳%s at=%s" % (i, c["order_id"], u["id"], money(fee), t), actor=u)
+                notif_read_link(u["id"], back_to)
+                alerts_done("/admin/requests/%d" % i)
+                notify(u["id"], "অনুরোধ বাতিল", "Order %s বাতিল করা হয়েছে। বাতিল ফি ৳%s আপনার ওয়ালেট থেকে কাটা হয়েছে।" % (c["order_id"], money(fee)), back_to,
+                       "Request cancelled", "Order %s was cancelled. A cancellation fee of ৳%s was deducted from your wallet." % (c["order_id"], money(fee)))
+                alert = ("ইউজার অনুরোধ বাতিল করেছেন", "#%s %s — Order %s (ফি ৳%s)" % (u["member_id"], u["name"], c["order_id"], money(fee)))
+        except ReqError as ex:
+            err(str(ex)); return redirect(back_to)
+        except LedgerError:
+            err("আপনার ব্যালেন্স অপর্যাপ্ত — অনুরোধ বাতিল হয়নি, কিছুই কাটা হয়নি।"); return redirect(back_to)
+        if alert:
+            alert_admins(alert[0], alert[1], "/admin/requests/%d" % i, "requests")
+        flash("অনুরোধ বাতিল হয়েছে। বাতিল ফি ৳%s কাটা হয়েছে।" % money(fee))
+        return redirect(back_to)
+    fee = cancel_fee()
+    bal = round(float(q1("SELECT balance FROM users WHERE id=?", (u["id"],))["balance"]), 2)
+    return page("""<div class="card"><h2 style="margin-top:0">🚫 অনুরোধ বাতিল করবেন?</h2>
+<div class="k">Order ID</div><div class="copybox">{{r['order_id']}}</div>
+<div class="k" style="margin-top:8px">পরিমাণ</div><div class="v">৳ {{money(r['amount'])}}</div>
+<div class="hl" style="margin-top:10px">⚠ অ্যাডমিনের পাঠানো এই অনুরোধ আপনি নিজে বাতিল করলে আপনার ওয়ালেট থেকে <b>বাতিল ফি ৳{{money(fee)}}</b> কেটে নেওয়া হবে।</div>
+<div class="tw" style="margin-top:10px"><table>
+<tr><td>বর্তমান ব্যালেন্স</td><td>৳ {{money(bal)}}</td></tr>
+<tr><td>বাতিল ফি</td><td><b>− ৳ {{money(fee)}}</b></td></tr>
+<tr><td>বাতিলের পর ব্যালেন্স</td><td>৳ {{money(bal-fee)}}</td></tr></table></div></div>
+{% if bal < fee %}<div class="msg error">আপনার ব্যালেন্স বাতিল ফি-এর জন্য পর্যাপ্ত নয়, তাই এখন বাতিল করা যাবে না।</div>{% endif %}
+<div class="card"><form method="post" data-confirm="নিশ্চিত? আপনার ওয়ালেট থেকে ৳{{money(fee)}} কাটা হবে এবং অনুরোধটি বাতিল হবে।"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<div class="row"><button class="btn r" {{'disabled' if bal < fee}}>🚫 হ্যাঁ, বাতিল করুন</button><a class="btn s" href="/requests/{{r['id']}}">← ফিরে যান</a></div></form></div>""",
+                active="/requests", r=r, fee=fee, bal=bal)
 
 
 # ---- admin side (Admin Desk upgrade: guided "send request" flow, server-side preview, payment-method picker, inline actions)
@@ -4793,17 +4942,21 @@ def tx_note(t, act):
 
 
 ACT_MODAL = """<div class="dm" id="dmod" hidden><div class="dm-box"><h3 id="dm-t"></h3><div class="dm-note" id="dm-m" hidden></div>
-<label id="dm-l">নোট (ঐচ্ছিক)</label><textarea id="dm-r" rows="3" maxlength="200"></textarea><div class="dm-err" id="dm-e" hidden></div>
+<label id="dm-l">নোট (ঐচ্ছিক)</label><textarea id="dm-r" rows="3" maxlength="200"></textarea>
+<div id="dm-xw" hidden><label>এক্সট্রা কমিশন / অতিরিক্ত ক্ষতিপূরণ (৳, ঐচ্ছিক)</label><input id="dm-xv" type="number" step="0.01" min="0" inputmode="decimal" value="0"><div class="k" style="margin-bottom:6px">শুধু Agent Cash Out রিকোয়েস্টে। ০ রাখলে কিছু যোগ হবে না। দিলে ইউজারের ওয়ালেটে আলাদা এন্ট্রিতে যোগ হবে (কমিশন পুল থেকে) — নোটে কারণ/রেফারেন্স লিখুন।</div></div><div class="dm-err" id="dm-e" hidden></div>
 <div class="dm-btns"><button type="button" class="btn s" id="dm-x">← ফিরে যান</button><button type="button" class="btn" id="dm-ok">নিশ্চিত করুন</button></div></div></div>
-<form method="post" id="dform" style="display:none"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="act"><input type="hidden" name="reason"><input type="hidden" name="note"><input type="hidden" name="next"></form>
+<form method="post" id="dform" style="display:none"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="act"><input type="hidden" name="reason"><input type="hidden" name="note"><input type="hidden" name="extra_commission" value="0"><input type="hidden" name="next"></form>
 <script>(function(){var m=document.getElementById('dmod'),f=document.getElementById('dform');if(!m||!f)return;
-var T=document.getElementById('dm-t'),M=document.getElementById('dm-m'),R=document.getElementById('dm-r'),E=document.getElementById('dm-e'),OK=document.getElementById('dm-ok'),L=document.getElementById('dm-l'),cur=null,host=m.closest('main')||document;
+var T=document.getElementById('dm-t'),M=document.getElementById('dm-m'),R=document.getElementById('dm-r'),E=document.getElementById('dm-e'),OK=document.getElementById('dm-ok'),L=document.getElementById('dm-l'),XW=document.getElementById('dm-xw'),XV=document.getElementById('dm-xv'),cur=null,host=m.closest('main')||document;
 function close(){m.hidden=true;cur=null}
 host.addEventListener('click',function(e){var b=e.target.closest('[data-do]');if(!b)return;e.preventDefault();cur=b;
- T.textContent=b.dataset.t||'নিশ্চিত?';var msg=b.dataset.m||'';M.textContent=msg;M.hidden=!msg;R.value='';E.hidden=true;
- L.textContent=b.dataset.need==='1'?'কারণ (আবশ্যক, কমপক্ষে ৩ অক্ষর)':'নোট (ঐচ্ছিক)';OK.className='btn '+(b.dataset.c||'');OK.textContent=b.dataset.t||'নিশ্চিত করুন';OK.disabled=false;m.hidden=false;R.focus()});
+ T.textContent=b.dataset.t||'নিশ্চিত?';var msg=b.dataset.m||'';M.textContent=msg;M.hidden=!msg;R.value='';E.hidden=true;XW.hidden=b.dataset.extra!=='1';XV.value='0';
+ L.textContent=b.dataset.need==='1'?'কারণ (আবশ্যক, কমপক্ষে ৩ অক্ষর)':(b.dataset.extra==='1'?'নোট / কারণ (এক্সট্রা কমিশন দিলে আবশ্যক)':'নোট (ঐচ্ছিক)');OK.className='btn '+(b.dataset.c||'');OK.textContent=b.dataset.t||'নিশ্চিত করুন';OK.disabled=false;m.hidden=false;R.focus()});
 document.getElementById('dm-x').onclick=close;m.addEventListener('click',function(e){if(e.target===m)close()});
 OK.onclick=function(){if(!cur)return;var v=R.value.trim();if(cur.dataset.need==='1'&&v.length<3){E.textContent='কমপক্ষে ৩ অক্ষরের কারণ লিখুন।';E.hidden=false;R.focus();return}
+ var xa=0;if(!XW.hidden){var xr=(XV.value||'0').trim();xa=parseFloat(xr);if(!/^[0-9]{1,8}([.][0-9]{1,2})?$/.test(xr)||isNaN(xa)||xa<0){E.textContent='এক্সট্রা কমিশনের পরিমাণ সঠিক নয় (০ বা ধনাত্মক সংখ্যা, সর্বোচ্চ ২ দশমিক)।';E.hidden=false;XV.focus();return}
+  if(xa>0&&v.length<3){E.textContent='এক্সট্রা কমিশনের কারণ/রেফারেন্স নোটে লিখুন (কমপক্ষে ৩ অক্ষর)।';E.hidden=false;R.focus();return}}
+ f.elements['extra_commission'].value=xa>0?xr:'0';
  OK.disabled=true;f.action=cur.dataset.u;f.elements['act'].value=cur.dataset['do'];f.elements['reason'].value=v;f.elements['note'].value=v;f.elements['next'].value=location.pathname+location.search;
  if(typeof ldShow==='function')ldShow();f.submit()}})()</script>"""
 
@@ -4814,20 +4967,20 @@ PN_JS = """function pnBind(f){var man=document.getElementById('manual');if(!man)
 UPANEL_TPL = """<div class="copybox" style="user-select:auto"><b>#{{x['member_id']}} {{x['name']}}</b>
 <div class="k">{{x['phone']}} · ব্যালেন্স ৳ {{money(x['balance'])}} · কমিশন রেট {{rate|pct}}%</div>
 <div class="row" style="margin-top:6px"><a class="btn sm s" href="/admin/users/{{x['id']}}">👤 প্রোফাইল</a>{% if chg %}<button type="button" class="btn sm s" id="uchg">ইউজার বদলান</button>{% endif %}</div></div>
-{% if can_pn %}<label>পেমেন্ট মাধ্যম — {{x['name']}} এর নিবন্ধিত নম্বর থেকে বাছুন</label>
+{% if show_pn %}<div class="pnsel">{% if can_pn %}<label>পেমেন্ট মাধ্যম — {{x['name']}} এর নিবন্ধিত নম্বর থেকে বাছুন</label>
 {% for p in pns %}<label class="pmc{{' on' if p['id']==sel}}" style="--mc:{{mcol.get(p['method'],'#1E90FF')}}"><input type="radio" name="pn" value="{{p['id']}}" {{'checked' if p['id']==sel}}><span><b>{{p['method']}} · {{acct_lbl.get(p['account_type'],p['account_type'])}}</b><span class="n">{{p['number']}}</span></span></label>{% endfor %}
 {% if not pns %}<div class="k" style="margin-bottom:8px">ইউজার এখনো কোনো নম্বর যোগ করেননি — নিচে নিজে লিখুন।</div>{% endif %}
 <label class="pmc{{' on' if not sel}}"><input type="radio" name="pn" value="manual" {{'checked' if not sel}}><span><b>✍️ অন্য নম্বর / নিজে লিখব</b></span></label>
-{% else %}<div class="k" style="margin-bottom:8px">পেমেন্ট নম্বর দেখার অনুমতি নেই — মাধ্যম ও নম্বর নিজে লিখুন।</div>{% endif %}"""
+{% else %}<div class="k" style="margin-bottom:8px">পেমেন্ট নম্বর দেখার অনুমতি নেই — মাধ্যম ও নম্বর নিজে লিখুন।</div>{% endif %}</div>{% endif %}"""
 
 
-def _panel_html(x, sel=0, chg=True):
+def _panel_html(x, sel=0, chg=True, show_pn=True):
     """User box + that user's own registered payment methods (only rows WHERE user_id = x.id, only for staff holding payment_numbers)."""
     can_pn = has_perm("payment_numbers")
     pns = qa("SELECT id,method,account_type,number FROM payment_numbers WHERE user_id=? ORDER BY id", (x["id"],)) if can_pn else []
     if sel not in {p["id"] for p in pns}:
         sel = 0
-    return _frag(UPANEL_TPL, x=x, pns=pns, sel=sel, can_pn=can_pn, rate=effective_rate(x), chg=chg)
+    return _frag(UPANEL_TPL, x=x, pns=pns, sel=sel, can_pn=can_pn, rate=effective_rate(x), chg=chg, show_pn=show_pn)
 
 
 def _pn_resolve(uid, raw):
@@ -4855,11 +5008,15 @@ def _req_prepare(f):
     if rtype not in REQ_TYPES:
         raise ReqError("অনুরোধের ধরন বাছাই করুন।")
     kind, flow = REQ_TYPES[rtype]
-    pn, e = _pn_resolve(x["id"], f.get("pn"))
+    wd = is_wd(kind, flow)
+    pn, e = (None, None) if wd else _pn_resolve(x["id"], f.get("pn"))  # withdrawal requests NEVER use the user's saved payment numbers
     if e:
         raise ReqError(e)
     method = pn["method"] if pn else f.get("method", "")
     num = pn["number"] if pn else f.get("number", "").strip()
+    paytype = (f.get("pay_type") or "").strip().lower() if wd else ""
+    if wd and paytype not in PAY_TYPES:
+        raise ReqError("পেমেন্ট টাইপ বাছাই করুন (Personal: Send Money / Agent: Cash Out / Merchant: Payment)।")
     order = re.sub(r"[^A-Z0-9_-]", "", f.get("order_id", "").upper())[:32] or ("ORD" + secrets.token_hex(4).upper())
     amt = parse_amount(f.get("amount"))
     ins = f.get("instructions", "").strip()[:500]
@@ -4885,7 +5042,7 @@ def _req_prepare(f):
     dup = q1("SELECT id,order_id FROM requests WHERE user_id=? AND kind=? AND COALESCE(flow,'')=? AND status IN ('pending','submitted','review') "
              "AND ABS(amount-?)<0.005 ORDER BY id DESC LIMIT 1", (x["id"], kind, flow or "", amt))
     return dict(x=x, rtype=rtype, kind=kind, flow=flow, method=method, num=num, order=order, amt=amt, ins=ins, purpose=purpose,
-                purpose_en=purpose_en, purpose_default=pdef, hrs=hrs, exp=exp, rate=rate, com=com, pn=pn, dup=dup)
+                purpose_en=purpose_en, purpose_default=pdef, hrs=hrs, exp=exp, rate=rate, com=com, pn=pn, dup=dup, paytype=paytype)
 
 
 def _req_checks(d):
@@ -4927,16 +5084,16 @@ def admin_request_new():
                 _req_checks(d)
                 amt, com, order = d["amt"], d["com"], d["order"]
                 cur = db().execute("INSERT INTO requests(order_id,user_id,kind,amount,method,pay_number,instructions,expires_at,status,"
-                                   "created_by_id,created_by,created,updated,flow,commission,commission_rate,purpose,purpose_en) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                   "created_by_id,created_by,created,updated,flow,commission,commission_rate,purpose,purpose_en,pay_type) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                    (order, x["id"], kind, amt, d["method"], d["num"], d["ins"], d["exp"], "pending", a["id"], a["member_id"], now(), now(),
-                                    flow, com, d["rate"], d["purpose"] or None, d["purpose_en"] or None))
+                                    flow, com, d["rate"], d["purpose"] or None, d["purpose_en"] or None, d["paytype"] or None))
                 rid = cur.lastrowid
-                req_log(rid, "create", None, "pending", a["member_id"], a["id"], "%s/%s ৳%s commission ৳%s%s" % (kind, flow or "-", amt, com or 0, (" pn#%d" % d["pn"]["id"]) if d["pn"] else ""))
+                req_log(rid, "create", None, "pending", a["member_id"], a["id"], "%s/%s ৳%s commission ৳%s%s" % (kind, flow or "-", amt, com or 0, (" pn#%d" % d["pn"]["id"]) if d["pn"] else "") + ((" type=%s" % d["paytype"]) if d["paytype"] else ""))
                 if flow == "client_confirm":
                     notify(x["id"], "নতুন ডিপোজিট রিকোয়েস্ট", "৳%s কাটা হবে, কমিশন ৳%s। উদ্দেশ্য: %s। Order: %s" % (money(amt), money(com), d["purpose"], order), "/requests/%d" % rid,
                            "New deposit request", "৳%s will be deducted, commission ৳%s. Purpose: %s. Order: %s" % (money(amt), money(com), d["purpose_en"] or d["purpose"], order))
                 else:
-                    notify(x["id"], "নতুন অনুরোধ", "%s অনুরোধ — ৳%s (%s)%s। Order: %s" % (REQ_KIND[kind], money(amt), d["method"], (" + কমিশন ৳%s" % money(com)) if com else "", order),
+                    notify(x["id"], "নতুন অনুরোধ", "%s অনুরোধ — ৳%s (%s)%s। Order: %s" % (REQ_KIND[kind], money(amt), d["method"] + ((" · " + PAY_TYPE_LABEL[d["paytype"]] + " · " + d["num"]) if d["paytype"] else ""), (" + কমিশন ৳%s" % money(com)) if com else "", order),
                            "/requests/%d" % rid)
                 audit("req_create", "req#%d order=%s %s/%s ৳%s commission ৳%s user#%d admin_id=%d%s" % (rid, order, kind, flow or "-", amt, com or 0, x["id"], a["id"],
                                                                                                     (" pn#%d" % d["pn"]["id"]) if d["pn"] else ""))
@@ -4982,10 +5139,12 @@ def admin_request_new():
 <div class="k" style="margin:-6px 0 10px">পুলে উপলব্ধ ফান্ড: <b>৳{{money(avail)}}</b> · কমিশন সার্ভার হিসাব করবে, পর্যালোচনায় দেখানো হবে।</div>
 <div id="manual"><label>পেমেন্ট মাধ্যম</label><select name="method">{% for m in methods %}<option>{{m}}</option>{% endfor %}</select>
 <label>পেমেন্ট নম্বর (১১ ডিজিট; ডিপোজিট রিকোয়েস্টে লাগবে না)</label><input name="number" inputmode="numeric" maxlength="11"></div>
+<div id="wdbox" hidden><label>পেমেন্ট টাইপ</label><select name="pay_type"><option value="">— বাছাই করুন —</option><option value="personal">Personal: Send Money</option><option value="agent">Agent: Cash Out</option><option value="merchant">Merchant: Payment</option></select>
+<div class="k" style="margin:-6px 0 10px">উইথড্র রিকোয়েস্টে ইউজারের সেভ করা নম্বর ব্যবহার হয় না — এখানে দেওয়া প্রোভাইডার, নম্বর ও টাইপই ইউজারকে দেখানো হবে।</div></div>
+<label>পেমেন্ট নির্দেশনা (ঐচ্ছিক — ইউজারকে দেখানো হবে)</label><textarea name="instructions" rows="3" maxlength="500"></textarea>
 <details class="dt"><summary>⚙ আরও অপশন (সবই ঐচ্ছিক)</summary><div class="inn">
 <label>উদ্দেশ্য — বাংলা (ঐচ্ছিক; ফাঁকা থাকলে ডিফল্ট লেবেল বসবে)</label><textarea name="purpose" id="purp" rows="2" maxlength="300"></textarea>
 <label>Purpose — English (optional)</label><textarea name="purpose_en" rows="2" maxlength="300"></textarea>
-<label>নোট / নির্দেশনা (ইউজারকে দেখানো হবে)</label><textarea name="instructions" rows="3" maxlength="500"></textarea>
 <label>Order ID (ফাঁকা রাখলে স্বয়ংক্রিয়)</label><input name="order_id" maxlength="32" value="{{oid}}" autocapitalize="characters">
 <label>মেয়াদ (ঘণ্টা; ০ = মেয়াদ নেই)</label><input name="hours" type="number" min="0" max="720" value="{{dh}}"></div></details>
 <button type="button" class="btn" id="rv" style="width:100%">🔍 পর্যালোচনা করুন</button>
@@ -4994,9 +5153,13 @@ def admin_request_new():
 <div class="dm-btns"><button type="button" class="btn s" id="rback">← সম্পাদনা</button><button type="button" class="btn g" id="rsend">📨 নিশ্চিত করে পাঠান</button></div></div></div>
 <script>(function(){var $=function(i){return document.getElementById(i)},f=$('rf');if(!f)return;""" + PN_JS + """
 var uq=$('uq'),res=$('ures'),chips=$('ufl'),st=$('ust'),fl='all',tm=null,seq=0,TY=$('rtype'),DESC={{tydesc|tojson}},rm=$('rmod'),rb=$('rbody'),rs=$('rsend');
-function tyc(){$('tydesc').textContent=DESC[TY.value]||''}TY.addEventListener('change',tyc);tyc();pnBind(f);
+function wdSync(){var wd=TY.value==='admin_review'||TY.value==='withdraw',w=$('wdbox'),man=$('manual');if(w){w.hidden=!wd;var ps=f.elements['pay_type'];if(ps)ps.required=wd}
+ document.querySelectorAll('#upanel .pnsel').forEach(function(e){e.hidden=wd});
+ if(wd){var mr=f.querySelector('input[name=pn][value=manual]');if(mr)mr.checked=true;if(man)man.hidden=false}
+ else{var ck=f.querySelector('input[name=pn]:checked');if(ck)ck.dispatchEvent(new Event('change',{bubbles:true}))}}
+function tyc(){$('tydesc').textContent=DESC[TY.value]||'';wdSync()}TY.addEventListener('change',tyc);pnBind(f);tyc();
 function pick(u){fetch('/admin/requests/panel/'+u.id+'?type='+encodeURIComponent(TY.value),{credentials:'same-origin'}).then(function(r){return r.ok?r.text():Promise.reject()}).then(function(h){
- $('upanel').innerHTML=h;$('uid').value=u.id;$('upick').hidden=true;$('rest').hidden=false;pnBind(f);
+ $('upanel').innerHTML=h;$('uid').value=u.id;$('upick').hidden=true;$('rest').hidden=false;pnBind(f);wdSync();
  try{history.replaceState(null,'','/admin/requests/new?uid='+u.id+'&type='+TY.value)}catch(e){}}).catch(function(){alert('ইউজারের তথ্য লোড করা যায়নি।')})}
 function row(u){var b=document.createElement('button');b.type='button';b.className='upr';
  var t=document.createElement('div');t.className='upr-t';var n=document.createElement('b');n.textContent=u.name;var bl=document.createElement('span');bl.textContent='৳ '+u.balance;t.appendChild(n);t.appendChild(bl);
@@ -5050,6 +5213,8 @@ def admin_request_preview():
     if flow:
         rows.append(["কমিশন (%s%%)" % _pct(d["rate"]), "৳ " + money(com)])
     rows += [["পেমেন্ট মাধ্যম", d["method"]], ["পেমেন্ট নম্বর", (d["num"] if d["num"] != "-" else "—") + (" (ইউজারের নিবন্ধিত নম্বর)" if d["pn"] else "")]]
+    if d["paytype"]:
+        rows.append(["পেমেন্ট টাইপ", PAY_TYPE_LABEL[d["paytype"]]])
     if d["purpose"]:
         rows.append(["উদ্দেশ্য", d["purpose"] + (" (ডিফল্ট)" if d["purpose_default"] else "")])
     rows += [["নোট / নির্দেশনা", d["ins"] or "—"], ["মেয়াদ", ("%d ঘণ্টা" % d["hrs"]) if d["hrs"] else "মেয়াদ নেই"], ["Order ID", d["order"]]]
@@ -5064,6 +5229,8 @@ def admin_request_preview():
         eff.append("অ্যাপ্রুভ করলে ওয়ালেট থেকে ৳%s কাটা হবে।" % money(amt))
     if flow:
         eff.append("কমিশন শুধু কমিশন পুল থেকে যাবে (উপলব্ধ ৳%s)।" % money(pool_available()))
+    if flow == "admin_review" and d["paytype"] == "agent":
+        eff.append("Agent Cash Out: অ্যাপ্রুভের সময় ঐচ্ছিক এক্সট্রা কমিশন (এজেন্টের Cash Out ফি-এর ক্ষতিপূরণ) যোগ করা যাবে।")
     dup = ("এই ইউজারের একই ধরন ও পরিমাণের একটি খোলা অনুরোধ (Order %s) আগে থেকেই আছে।" % d["dup"]["order_id"]) if d["dup"] else None
     return jsonify(ok=True, rows=rows, effects=eff, dup=dup)
 
@@ -5508,6 +5675,7 @@ def admin_request_view(i):
 <div><dt>ধরন</dt><dd>{{rk(r)}}</dd></div>
 <div><dt>পেমেন্ট মাধ্যম</dt><dd>{{r['method']}}</dd></div>
 <div><dt>পেমেন্ট নম্বর</dt><dd>{{r['pay_number']}}</dd></div>
+{% if r['pay_type'] %}<div><dt>পেমেন্ট টাইপ</dt><dd>{{ptl.get(r['pay_type'], r['pay_type'])}}</dd></div>{% endif %}
 <div><dt>পরিমাণ</dt><dd>৳ {{money(r['amount'])}}</dd></div>
 <div><dt>Transaction ID</dt><dd>{{r['trx'] or '—'}}{% if r['submitted_at'] %}<br><span class="k">(জমা: {{(r['submitted_at'] or '')[:16]}})</span>{% endif %}</dd></div>
 <div><dt>তৈরি</dt><dd>{{r['created'][:16]}}<br><span class="k">📤 অ্যাডমিন: {{r['created_by']}}</span></dd></div>
@@ -5520,19 +5688,27 @@ def admin_request_view(i):
 {% if r['instructions'] %}<div class="k" style="margin-top:8px">নোট / নির্দেশনা</div><div class="hl" style="margin-top:2px">{{r['instructions']}}</div>{% endif %}
 {% if r['screenshot'] %}<div class="k" style="margin-top:8px">স্ক্রিনশট</div><a href="/shot/{{r['screenshot']}}" target="_blank"><img class="shot" src="/shot/{{r['screenshot']}}" alt="screenshot"></a>{% endif %}
 {% if r['decided_by'] %}<div class="k">সিদ্ধান্ত: {{r['decided_by']}} · {{(r['decided_at'] or '')[:16]}}{% if r['reject_reason'] %} · {{r['reject_reason']}}{% endif %}</div>{% endif %}
+{% if r['extra_commission'] %}<div class="hl" style="margin-top:8px">➕ এক্সট্রা কমিশন (Agent Cash Out): ৳{{money(r['extra_commission'])}} — মূল ৳{{money(r['amount'])}} + কমিশন ৳{{money(r['commission'] or 0)}} + এক্সট্রা ৳{{money(r['extra_commission'])}} = মোট ৳{{money((r['amount'] or 0)+(r['commission'] or 0)+(r['extra_commission'] or 0))}} ওয়ালেটে যুক্ত হয়েছে।</div>{% endif %}
+{% if r['cancel_by']=='user' %}<div class="hl" style="margin-top:8px">🚫 ইউজার নিজে বাতিল করেছেন — বাতিল ফি ৳{{money(r['cancel_fee'] or 0)}} ইউজারের ওয়ালেট থেকে কাটা হয়েছে।</div>{% elif r['cancel_by']=='admin' %}<div class="hl" style="margin-top:8px">🚫 অ্যাডমিন বাতিল করেছেন — কোনো ফি বা কমিশন কাটা হয়নি।</div>{% endif %}
+{% if xc_ok(r) %}<div class="hl" style="margin-top:8px">ℹ Agent Cash Out: অ্যাপ্রুভ করার সময় ঐচ্ছিক “এক্সট্রা কমিশন” দিয়ে এজেন্টের Cash Out ফি-এর ক্ষতিপূরণ ইউজারকে দিতে পারবেন।</div>{% endif %}
 {% if r['kind']=='withdraw' and r['status'] in ('submitted','review') and r['balance'] < r['amount'] %}<div class="msg error" style="margin-top:8px">⚠ ইউজারের বর্তমান ব্যালেন্স অনুরোধের চেয়ে কম — অ্যাপ্রুভ করা যাবে না।</div>{% endif %}</div>
 {% set al = ra(r) %}
 {% if al %}<div class="card"><h3 style="margin-top:0">কাজ</h3><div class="row" style="gap:8px">{% for a in al %}{% if a=='edit' %}<a class="btn sm s" href="/admin/requests/{{r['id']}}/edit">✏️ সম্পাদনা</a>
-{% else %}<button type="button" class="btn sm {{rbtn[a][1]}}" data-do="{{a}}" data-u="/admin/requests/{{r['id']}}/act" data-c="{{rbtn[a][1]}}" data-t="{{rbtn[a][0]}}" data-need="{{1 if a in ('reject','cancel') else 0}}" data-m="{{rnote(r,a)}}">{{rbtn[a][0]}}</button>{% endif %}{% endfor %}</div>
+{% else %}<button type="button" class="btn sm {{rbtn[a][1]}}" data-do="{{a}}" data-u="/admin/requests/{{r['id']}}/act" data-c="{{rbtn[a][1]}}" data-t="{{rbtn[a][0]}}" data-need="{{1 if a in ('reject','cancel') else 0}}" data-m="{{rnote(r,a)}}"{% if a=='approve' and xc_ok(r) %} data-extra="1"{% endif %}>{{rbtn[a][0]}}</button>{% endif %}{% endfor %}</div>
 <div class="k" style="margin-top:8px">সম্পাদনা শুধু মাধ্যম, নম্বর, উদ্দেশ্য, নোট ও মেয়াদে। পরিমাণ ও কমিশন বদলানো যায় না। প্রতিটি কাজের কারণ ও কে করেছেন তা ইতিহাসে স্থায়ীভাবে থাকে।</div></div>
 {% else %}<div class="card"><div class="hl rq-lock">🔒 এই রিকোয়েস্ট সম্পন্ন/বন্ধ — এটি আর সম্পাদনা করা যায় না এবং লেজারের কোনো এন্ট্রি বদলানো হয় না।
 {% if r['status']=='approved' and can('adjust') %}<br>ভুল হলে <a href="/admin/users/{{r['user_id']}}"><b>ইউজার প্রোফাইল → ব্যালেন্স সমন্বয়</b></a> দিয়ে নতুন সংশোধন এন্ট্রি যোগ করুন (পুরনো এন্ট্রি অপরিবর্তিত থাকে)।{% endif %}</div></div>{% endif %}
-{% if can('payment_numbers') %}<div class="card"><h3 style="margin-top:0">💳 {{r['name']}} এর নিবন্ধিত পেমেন্ট নম্বর</h3>{% if not pns %}<div class="k">কোনো নম্বর যোগ করা নেই</div>{% endif %}</div>
+<div class="card"><h3 style="margin-top:0">⚠ ইউজারকে সতর্কবার্তা</h3>
+<form method="post" action="/admin/warnings/new" data-confirm="সতর্কবার্তা ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" value="{{r['user_id']}}"><input type="hidden" name="request_id" value="{{r['id']}}"><input type="hidden" name="next" value="/admin/requests/{{r['id']}}">
+<textarea name="message" rows="3" required minlength="5" maxlength="500" placeholder="যেমন: Repeated cancellation of requests may result in temporary transaction restrictions."></textarea><button style="width:100%">⚠ সতর্কবার্তা পাঠান</button></form>
+<div class="k" style="margin-top:6px">সতর্কবার্তা ইউজার নোটিফিকেশনে ও অনুরোধের পেজে দেখবেন। শুধু সতর্কবার্তায় কোনো লেনদেন সীমাবদ্ধ হয় না — সীমাবদ্ধতার জন্য আলাদা অনুমোদিত অ্যাকশন (ইউজার ব্লক) লাগবে।</div>
+{% for w in warns %}<div class="pf-act"><span>⚠</span><span style="flex:1;min-width:0;overflow-wrap:anywhere;white-space:pre-line">{{w['message']}}<br><span class="k">{{w['admin']}} · {{'এই রিকোয়েস্ট' if w['request_id'] else 'ইউজার-লেভেল'}}</span></span><span class="k">{{w['created'][:16]}}</span></div>{% endfor %}</div>
+{% if can('payment_numbers') and not is_wd(r['kind'], r['flow']) %}<div class="card"><h3 style="margin-top:0">💳 {{r['name']}} এর নিবন্ধিত পেমেন্ট নম্বর</h3>{% if not pns %}<div class="k">কোনো নম্বর যোগ করা নেই</div>{% endif %}</div>
 {% set hl = r['pay_number'] %}{% set hm = r['method'] %}{% set send_uid = none %}""" + PM_CARDS_TPL + """{% endif %}
 <div class="row" style="gap:8px;margin-bottom:10px"><a class="btn sm s" href="/admin/users/{{r['user_id']}}">👤 ইউজার প্রোফাইল</a><a class="btn sm s" href="/admin/requests?tab=admin&q={{r['member_id']}}&status=all">📚 এই ইউজারের সব রিকোয়েস্ট</a>{% if not r['blocked'] %}<a class="btn sm" href="/admin/requests/new?uid={{r['user_id']}}">➕ নতুন রিকোয়েস্ট</a>{% endif %}</div>
 """ + MONEY_TPL + TIMELINE_TPL + NOTES_TPL + """
 <a class="btn s" href="/admin/requests?tab=admin" style="width:100%">← সব রিকোয়েস্ট</a>""" + ACT_MODAL, active="/admin/requests", r=r, log=log, le=le, kinds=REQ_KIND, labels=REQ_LABEL,
-                pool_av=pool_available(exclude=i), pns=pns, ra=req_actions, rbtn=RQ_BTN, rnote=req_note,
+                pool_av=pool_available(exclude=i), pns=pns, ra=req_actions, rbtn=RQ_BTN, rnote=req_note, warns=warnings_for(r["user_id"], i, 20),
                 notes=notes, led=led, pool=pool, recent=recent, bal=r["balance"], uid=r["user_id"], note_url="/admin/requests/%d/note" % i)
 
 
@@ -5550,10 +5726,16 @@ def admin_request_edit(i):
     if r["status"] not in REQ_EDIT_OPEN:
         err("এই রিকোয়েস্ট আর সম্পাদনা করা যাবে না (সম্পন্ন বা বন্ধ হয়ে গেছে)।"); return redirect(back_to)
     cc = r["flow"] == "client_confirm"
+    wd = is_wd(r["kind"], r["flow"])
     if request.method == "POST":
-        pn, e = _pn_resolve(r["user_id"], request.form.get("pn"))
+        pn, e = (None, None) if wd else _pn_resolve(r["user_id"], request.form.get("pn"))  # withdrawal requests never use saved numbers
         if e:
             err(e); return redirect(back_to + "/edit")
+        paytype = r["pay_type"]  # the payment type can be changed only while the request is still pending (before the user pays)
+        if wd and r["status"] == "pending":
+            paytype = (request.form.get("pay_type") or "").strip().lower()
+            if (paytype and paytype not in PAY_TYPES) or (not paytype and r["pay_type"]):
+                err("সঠিক পেমেন্ট টাইপ বাছাই করুন।"); return redirect(back_to + "/edit")
         method = pn["method"] if pn else request.form.get("method", "")
         num = pn["number"] if pn else request.form.get("number", "").strip()
         ins = request.form.get("instructions", "").strip()[:500]
@@ -5584,18 +5766,20 @@ def admin_request_edit(i):
                 if hrs_raw and c["status"] == "pending":
                     exp = (datetime.utcnow() + timedelta(hours=int(hrs_raw))).strftime("%Y-%m-%d %H:%M:%S") if int(hrs_raw) else None
                 new = {"method": method, "pay_number": num, "instructions": ins, "expires_at": exp}
+                if wd:
+                    new["pay_type"] = (paytype or None) if c["status"] == "pending" else c["pay_type"]
                 if c["flow"]:
                     if not purpose and c["purpose"]:  # cleared on purpose -> default label (an already-empty old record stays unchanged)
                         purpose, purpose_en = default_purpose(c["flow"], "bn"), purpose_en or default_purpose(c["flow"], "en")
                     new["purpose"], new["purpose_en"] = purpose or None, purpose_en or None
-                names = {"method": "মাধ্যম", "pay_number": "নম্বর", "instructions": "নির্দেশনা", "purpose": "উদ্দেশ্য", "purpose_en": "Purpose", "expires_at": "মেয়াদ"}
+                names = {"method": "মাধ্যম", "pay_number": "নম্বর", "instructions": "নির্দেশনা", "purpose": "উদ্দেশ্য", "purpose_en": "Purpose", "expires_at": "মেয়াদ", "pay_type": "পেমেন্ট টাইপ"}
                 ch = {k: (c[k], v) for k, v in new.items() if (c[k] or "") != (v or "")}
                 if not ch:
                     raise ReqError("কোনো পরিবর্তন করা হয়নি।")
                 val = lambda k: new[k] if k in new else c[k]
-                cur = db().execute("UPDATE requests SET method=?, pay_number=?, instructions=?, expires_at=?, purpose=?, purpose_en=?, updated=? "
+                cur = db().execute("UPDATE requests SET method=?, pay_number=?, instructions=?, expires_at=?, purpose=?, purpose_en=?, pay_type=?, updated=? "
                                    "WHERE id=? AND status=?",
-                                   (val("method"), val("pay_number"), val("instructions"), val("expires_at"), val("purpose"), val("purpose_en"),
+                                   (val("method"), val("pay_number"), val("instructions"), val("expires_at"), val("purpose"), val("purpose_en"), val("pay_type"),
                                     now(), i, c["status"]))
                 if cur.rowcount != 1:
                     raise ReqError("রিকোয়েস্টটি এইমাত্র বদলে গেছে — পেজ রিলোড করে আবার চেষ্টা করুন।")
@@ -5614,7 +5798,7 @@ def admin_request_edit(i):
     if has_perm("payment_numbers"):
         m = q1("SELECT id FROM payment_numbers WHERE user_id=? AND method=? AND number=?", (r["user_id"], r["method"], r["pay_number"]))
         sel = m["id"] if m else 0
-    panel = _panel_html(ux, sel, chg=False)
+    panel = _panel_html(ux, sel, chg=False, show_pn=not wd)
     return page(RQ_STYLE + DESK_STYLE + """<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0">✏️ রিকোয়েস্ট সম্পাদনা</h2>
 <span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
 <div class="k" style="margin-top:6px">Order <b>{{r['order_id']}}</b> · {{r['name']}} · #{{r['member_id']}} · ৳ {{money(r['amount'])}}</div>
@@ -5625,6 +5809,8 @@ def admin_request_edit(i):
 <div id="manual"><label>পেমেন্ট মাধ্যম</label><select name="method">{% if r['method'] not in methods %}<option value="{{r['method']}}" selected>{{r['method']}}</option>{% endif %}
 {% for m in methods %}<option value="{{m}}" {{'selected' if m==r['method']}}>{{m}}</option>{% endfor %}</select>
 <label>পেমেন্ট নম্বর{% if cc %} (ঐচ্ছিক){% else %} (১১ ডিজিট){% endif %}</label><input name="number" inputmode="numeric" maxlength="11" value="{{'' if r['pay_number']=='-' else r['pay_number']}}"></div>
+{% if wd %}{% if r['status']=='pending' %}<label>পেমেন্ট টাইপ</label><select name="pay_type"><option value="" {{'selected' if not r['pay_type']}}>— বাছাই করুন —</option>{% for k,l in ptl.items() %}<option value="{{k}}" {{'selected' if r['pay_type']==k}}>{{l}}</option>{% endfor %}</select>
+{% else %}<div class="k" style="margin-bottom:8px">পেমেন্ট টাইপ: <b>{{ptl.get(r['pay_type'], '—')}}</b> (ইউজার জমা দেওয়ার পর বদলানো যায় না)</div>{% endif %}{% endif %}
 {% if r['flow'] %}<label>উদ্দেশ্য — বাংলা (ঐচ্ছিক)</label><textarea name="purpose" rows="2" maxlength="300">{{r['purpose'] or ''}}</textarea>
 <label>Purpose — English (optional)</label><textarea name="purpose_en" rows="2" maxlength="300">{{r['purpose_en'] or ''}}</textarea>{% endif %}
 <label>নোট / নির্দেশনা (ঐচ্ছিক)</label><textarea name="instructions" rows="3" maxlength="500">{{r['instructions'] or ''}}</textarea>
@@ -5633,7 +5819,7 @@ def admin_request_edit(i):
 <button style="width:100%">💾 সংরক্ষণ করুন</button></form></div>
 <a class="btn s" href="/admin/requests/{{r['id']}}" style="width:100%">← ফিরে যান</a>
 <script>(function(){var f=document.getElementById('ef');if(!f)return;""" + PN_JS + """pnBind(f)})()</script>""",
-                active="/admin/requests", r=r, cc=cc, methods=METHODS, labels=REQ_LABEL, panel=panel)
+                active="/admin/requests", r=r, cc=cc, wd=wd, methods=METHODS, labels=REQ_LABEL, panel=panel)
 
 
 @app.route("/admin/requests/<int:i>/act", methods=["POST"])
@@ -5647,6 +5833,14 @@ def admin_request_act(i):
     back_to = _safe_next("/admin/requests/%d" % i)
     if act in ("reject", "cancel") and len(reason) < 3:  # every reject / cancel keeps its reason in the immutable history
         err("%s কারণ লিখুন (কমপক্ষে ৩ অক্ষর)।" % ("রিজেক্টের" if act == "reject" else "বাতিলের")); return redirect(back_to)
+    try:
+        extra = parse_extra(request.form.get("extra_commission"))
+    except ReqError as ex:
+        err(str(ex)); return redirect(back_to)
+    if extra > 0 and act != "approve":
+        err("এক্সট্রা কমিশন শুধু অ্যাপ্রুভের সময় দেওয়া যায়।"); return redirect(back_to)
+    if extra > 0 and len(reason) < 3:
+        err("এক্সট্রা কমিশনের কারণ/রেফারেন্স লিখুন (কমপক্ষে ৩ অক্ষর)।"); return redirect(back_to)
     expire_requests()
     try:
         with atomic():
@@ -5659,6 +5853,11 @@ def admin_request_act(i):
                 raise ReqError("এই ধরনের (%s) রিকোয়েস্ট প্রসেস করার অনুমতি আপনার নেই।" % ("ডিপোজিট" if r["kind"] == "deposit" else "উইথড্র"))
             if r["flow"] == "client_confirm" and act in ("review", "approve", "reject"):
                 raise ReqError("এই অনুরোধ ক্লায়েন্টের সিদ্ধান্তের অপেক্ষায় — অ্যাডমিন অনুমোদন/রিজেক্ট করতে পারবে না (শুধু বাতিল করা যায়)।")
+            if extra > 0:  # server-side rule: Extra Commission only for an admin-created Agent Cash Out withdrawal request
+                if r["flow"] != "admin_review" or (r["pay_type"] or "") not in EXTRA_COMM_TYPES:
+                    raise ReqError("এক্সট্রা কমিশন শুধু Agent Cash Out রিকোয়েস্টে দেওয়া যায় (Personal Send Money ও Merchant Payment-এ নয়)। অ্যাপ্রুভ হয়নি।")
+                if extra > float(r["amount"]) + 0.004:
+                    raise ReqError("এক্সট্রা কমিশন রিকোয়েস্টের মূল পরিমাণের (৳%s) বেশি হতে পারে না। অ্যাপ্রুভ হয়নি।" % money(r["amount"]))
             new, t = REQ_NEW[act], now()
             if act == "review":
                 cur = db().execute("UPDATE requests SET status='review', updated=? WHERE id=? AND status='submitted'", (t, i))
@@ -5669,6 +5868,8 @@ def admin_request_act(i):
                                    (new, t, a["id"], a["member_id"], t, reason or None, i) + REQ_ALLOWED[act])
             if cur.rowcount != 1:
                 raise ReqError("এই অনুরোধে এখন এই কাজ সম্ভব নয় (হয়তো আগেই সম্পন্ন হয়েছে)।")
+            if act == "cancel":  # admin cancellation: no fee, no commission, no wallet or pool movement
+                db().execute("UPDATE requests SET cancel_by='admin', cancel_fee=0 WHERE id=?", (i,))
             if act == "approve":
                 dep = r["kind"] == "deposit"
                 if not dep:  # re-check the balance at the exact moment of approval (we hold the write lock)
@@ -5683,11 +5884,20 @@ def admin_request_act(i):
                 if r["flow"] == "admin_review" and float(r["commission"] or 0) > 0:  # same transaction: principal + commission, or nothing
                     pool_pay(r["user_id"], "commission", r["commission"], "req:%d:commission" % i, "request", i,
                              "Order %s commission" % r["order_id"], a["member_id"], own_req=i)
+                if extra > 0:  # same transaction: pool -extra AND wallet +extra (separate ledger entry), idempotent on req:<id>:extra
+                    if not pool_pay(r["user_id"], "extra_commission", extra, "req:%d:extra" % i, "request", i,
+                                    "Order %s extra commission: %s" % (r["order_id"], reason[:120]), a["member_id"], own_req=i):
+                        raise ReqError("এই অনুরোধের এক্সট্রা কমিশন আগেই দেওয়া হয়েছে — অ্যাপ্রুভ বাতিল করা হয়েছে।")
+                    db().execute("UPDATE requests SET extra_commission=? WHERE id=?", (extra, i))
                 if dep and not r["flow"]:  # plain Add Money request: first approved deposit -> one referral reward
                     referral_reward_on_deposit(r["user_id"], a, "req#%d" % i, req_id=i)
-            req_log(i, act, r["status"], new, a["member_id"], a["id"], reason)
+            req_log(i, act, r["status"], new, a["member_id"], a["id"], (reason + " | extra ৳%s" % money(extra)) if extra > 0 else reason)
             audit("req_" + act, "req#%d order=%s %s ৳%s user#%d trx=%s admin_id=%d at=%s" %
-                  (i, r["order_id"], r["kind"], r["amount"], r["user_id"], r["norm_trx"] or "-", a["id"], t))
+                  (i, r["order_id"], r["kind"], r["amount"], r["user_id"], r["norm_trx"] or "-", a["id"], t)
+                  + (" fee=0 (admin cancel: no fee, no wallet or pool change)" if act == "cancel" else ""))
+            if extra > 0:
+                audit("req_extra_commission", "req#%d order=%s user#%d extra=৳%s type=%s admin_id=%d at=%s ref=%s" %
+                      (i, r["order_id"], r["user_id"], money(extra), r["pay_type"], a["id"], t, reason[:120]))
             msgs = {"review": ("অনুরোধ যাচাইয়ে আছে", "Order %s এখন যাচাই করা হচ্ছে।" % r["order_id"]),
                     "approve": ("অনুরোধ অনুমোদিত", ("৳%s আপনার ওয়ালেটে যুক্ত হয়েছে।" if r["kind"] == "deposit" else "৳%s আপনার ওয়ালেট থেকে কাটা হয়েছে।")
                                 % money(r["amount"]) + " Order %s" % r["order_id"]),
@@ -5695,6 +5905,10 @@ def admin_request_act(i):
                     "cancel": ("অনুরোধ বাতিল", "Order %s বাতিল করা হয়েছে।%s" % (r["order_id"], (" কারণ: " + reason) if reason else ""))}
             if act == "approve" and r["flow"] == "admin_review" and float(r["commission"] or 0) > 0:
                 msgs["approve"] = ("অনুরোধ অনুমোদিত", "৳%s + কমিশন ৳%s আপনার ওয়ালেটে যুক্ত হয়েছে। Order %s" % (money(r["amount"]), money(r["commission"]), r["order_id"]))
+            if act == "approve" and extra > 0:
+                parts = ["মূল ৳%s" % money(r["amount"])] + (["কমিশন ৳%s" % money(r["commission"])] if float(r["commission"] or 0) > 0 else []) + ["এক্সট্রা কমিশন ৳%s" % money(extra)]
+                msgs["approve"] = ("অনুরোধ অনুমোদিত", "মোট ৳%s আপনার ওয়ালেটে যুক্ত হয়েছে (%s)। Order %s" %
+                                   (money(float(r["amount"]) + float(r["commission"] or 0) + extra), " + ".join(parts), r["order_id"]))
             notif_read_link(r["user_id"], "/requests/%d" % i)  # earlier notifications of this request are handled; the new status one stays unread
             if act in ("approve", "reject", "cancel"):
                 alerts_done("/admin/requests/%d" % i)
@@ -5706,6 +5920,85 @@ def admin_request_act(i):
     except LedgerError as ex:
         err("লেজার ত্রুটি, কিছুই পরিবর্তন হয়নি: %s" % ex); return redirect(back_to)
     flash("সম্পন্ন: %s" % REQ_LABEL[new])
+    return redirect(back_to)
+
+
+RH_PER = 30
+
+
+@app.route("/admin/request-history")
+@staff_required("requests")
+def admin_request_history():
+    """Dedicated history of admin-created requests only (no deposits/withdrawals/ledger rows mixed in). Filters: All / Pending / Success."""
+    expire_requests()
+    f = request.args.get("f", "all")
+    if f not in ("all", "pending", "success"):
+        f = "all"
+    p = min(max(request.args.get("p", type=int) or 1, 1), 2000)
+    where = {"all": "", "pending": " WHERE r.status IN ('pending','submitted','review')", "success": " WHERE r.status='approved'"}[f]
+    rows = qa("SELECT r.id,r.order_id,r.kind,r.flow,r.amount,r.status,r.created,u.name,u.member_id FROM requests r JOIN users u ON u.id=r.user_id%s "
+              "ORDER BY r.id DESC LIMIT ? OFFSET ?" % where, (RH_PER + 1, (p - 1) * RH_PER))
+    by = {r["status"]: r["n"] for r in qa("SELECT status, COUNT(*) n FROM requests GROUP BY status")}
+    cnt = {"all": sum(by.values()), "pending": sum(by.get(s, 0) for s in OPEN_REQ), "success": by.get("approved", 0)}
+    tabs = [("all", "সব"), ("pending", "অপেক্ষমাণ"), ("success", "সফল")]
+    return page("""<style>
+.rh-f{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}
+.rh-f a{display:flex;align-items:center;justify-content:center;gap:6px;height:42px;border-radius:12px;border:1.5px solid var(--ln);background:var(--card);color:var(--mut);font-weight:700;font-size:14px;text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.rh-f a i{font-style:normal;font-size:12px;min-width:20px;padding:1px 6px;border-radius:99px;background:var(--bg);text-align:center}
+.rh-f a.on{color:#fff;border-color:#1E90FF;background:#1E90FF}.rh-f a.on[data-f=pending]{border-color:#d97706;background:#d97706}.rh-f a.on[data-f=success]{border-color:#0EA371;background:#0EA371}.rh-f a.on i{background:#ffffff33;color:#fff}
+.rh-c{display:block;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:12px 14px;margin-bottom:10px;color:var(--tx);text-decoration:none}
+.rh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.rh-id{font-weight:800;font-size:15px;overflow-wrap:anywhere;min-width:0}.rh-id span{display:block;font-size:11.5px;font-weight:500;color:var(--mut)}
+.rh-am{font-size:21px;font-weight:800;margin:6px 0 6px;line-height:1.2}
+.rh-g{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;color:var(--mut)}.rh-g b{display:block;color:var(--tx);font-size:13.5px;font-weight:600;overflow-wrap:anywhere}
+.rh-pg{display:flex;gap:8px;margin:4px 0 12px}.rh-pg a{flex:1}
+</style>
+<div class="card"><h2 style="margin:0 0 2px">🧾 রিকোয়েস্ট হিস্ট্রি</h2><p class="k" style="margin:0">শুধু অ্যাডমিনের পাঠানো রিকোয়েস্ট — সাধারণ ডিপোজিট/উইথড্র বা ওয়ালেট লেনদেন এখানে নেই।</p></div>
+<div class="rh-f">{% for k,lb in tabs %}<a data-f="{{k}}" class="{{'on' if f==k}}" href="/admin/request-history{{'' if k=='all' else '?f='+k}}">{{lb}} <i>{{cnt[k]}}</i></a>{% endfor %}</div>
+{% if not rows %}<div class="card empty">কোনো রিকোয়েস্ট নেই</div>{% endif %}
+{% for r in rows %}<a class="rh-c" href="/admin/requests/{{r['id']}}"><div class="rh-top"><div class="rh-id"><span>Request ID</span>{{r['order_id']}}</div><span class="pill {{r['status']}}" style="flex:0;white-space:nowrap">{{labels[r['status']]}}</span></div>
+<div class="rh-am">৳ {{money(r['amount'])}}</div>
+<div class="rh-g"><div>Request Type<b>{{rk(r)}}</b></div><div>Date<b>{{r['created'][:16]}}</b></div></div>
+<div class="k" style="margin-top:6px">👤 {{r['name']}} · #{{r['member_id']}}</div></a>{% endfor %}
+{% if p>1 or more %}<div class="rh-pg">{% if p>1 %}<a class="btn s" href="/admin/request-history?f={{f}}&p={{p-1}}">← আগের</a>{% endif %}{% if more %}<a class="btn s" href="/admin/request-history?f={{f}}&p={{p+1}}">পরের →</a>{% endif %}</div>{% endif %}""",
+                active="/admin/request-history", rows=rows[:RH_PER], more=len(rows) > RH_PER, p=p, f=f, cnt=cnt, tabs=tabs, labels=REQ_LABEL)
+
+
+@app.route("/admin/warnings/new", methods=["POST"])
+@staff_required("requests", "notices")
+def admin_warning_new():
+    """Warning / notice to a user (optionally attached to one of their requests). Stored with timestamp + admin identity (immutable table),
+    sent as an in-app notification and written to the audit log. It NEVER restricts anything by itself - blocking is a separate action."""
+    a = me()
+    uid = request.form.get("uid", type=int)
+    rid = request.form.get("request_id", type=int)
+    msg = request.form.get("message", "").strip()[:500]
+    back_to = _safe_next(("/admin/requests/%d" % rid) if rid else (("/admin/users/%d" % uid) if uid else "/admin"))
+    x = q1("SELECT id,member_id,name FROM users WHERE id=? AND is_admin=0", (uid,)) if uid else None
+    if not x:
+        err("ইউজার পাওয়া যায়নি।"); return redirect(back_to)
+    if len(msg) < 5:
+        err("সতর্কবার্তা লিখুন (কমপক্ষে ৫ অক্ষর)।"); return redirect(back_to)
+    if rate_hit("warn:%d" % a["id"], 30, 3600):
+        err("অনেক সতর্কবার্তা পাঠানো হয়েছে, পরে চেষ্টা করুন।"); return redirect(back_to)
+    try:
+        with atomic():
+            rq = None
+            if rid:
+                rq = q1("SELECT id,order_id,status FROM requests WHERE id=? AND user_id=?", (rid, x["id"]))
+                if not rq:
+                    raise ReqError("এই রিকোয়েস্টটি এই ইউজারের নয়।")
+            cur = db().execute("INSERT INTO user_warnings(user_id,request_id,message,admin_id,admin,created) VALUES(?,?,?,?,?,?)",
+                               (x["id"], rq["id"] if rq else None, msg, a["id"], a["member_id"], now()))
+            wid = cur.lastrowid
+            link = ("/requests/%d" % rq["id"]) if rq else "/requests"
+            notify(x["id"], "⚠ অ্যাডমিনের সতর্কবার্তা", msg, link, "⚠ Admin warning", msg)
+            if rq:
+                req_log(rq["id"], "warning", rq["status"], rq["status"], a["member_id"], a["id"], "warning#%s: %s" % (wid, msg[:200]))
+            audit("warning_issue", "warning#%s user#%d%s admin_id=%d: %s" % (wid, x["id"], (" req#%d order=%s" % (rq["id"], rq["order_id"])) if rq else "", a["id"], msg[:300]))
+    except ReqError as ex:
+        err(str(ex)); return redirect(back_to)
+    flash("সতর্কবার্তা ইউজারকে পাঠানো হয়েছে (ইউজারের কোনো লেনদেন সীমাবদ্ধ করা হয়নি)।")
     return redirect(back_to)
 
 
@@ -5832,7 +6125,8 @@ def admin_referral_rewards():
 
 LK_LABEL = {"deposit": "ডিপোজিট", "request_deposit": "অনুরোধ-ডিপোজিট", "withdraw_hold": "উইথড্র (হোল্ড)", "withdraw_release": "উইথড্র ফেরত",
             "request_withdraw": "অনুরোধ-উইথড্র", "request_payment": "ক্লায়েন্ট পেমেন্ট", "commission": "কমিশন", "commission_reversal": "কমিশন ফেরত",
-            "referral_bonus": "রেফারেল বোনাস", "admin_adjust": "ব্যালেন্স সমন্বয়"}
+            "referral_bonus": "রেফারেল বোনাস", "admin_adjust": "ব্যালেন্স সমন্বয়",
+            "extra_commission": "এক্সট্রা কমিশন", "request_cancel_fee": "রিকোয়েস্ট বাতিল ফি"}
 REPORT_KINDS = {"deposits": "ডিপোজিট", "withdrawals": "উইথড্র", "commissions": "কমিশন", "referrals": "রেফারেল বোনাস",
                 "payments": "ক্লায়েন্ট পেমেন্ট", "pool": "পুল"}
 POOL_USE = {"request": "অ্যাডমিন-পাঠানো রিকোয়েস্টের কমিশন", "commission": "ম্যানুয়াল কমিশন", "referral": "রেফারেল বোনাস"}
