@@ -6865,8 +6865,9 @@ def vip_page():
     hist = qa("SELECT * FROM vip_applications WHERE user_id=? ORDER BY id DESC LIMIT 5", (u["id"],))
     start = [c["key"] for c in cards].index(cur)
     return page("""<style>
-.vp{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 2px 12px;margin:0 -4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}.vp::-webkit-scrollbar{display:none}
-.vc{flex:0 0 100%;max-width:100%;scroll-snap-align:center;box-sizing:border-box}
+.vp{display:flex;flex-direction:column;gap:14px;padding:4px 0 12px;overflow:visible}
+.vc{width:100%;max-width:100%;box-sizing:border-box}
+.vlock{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:linear-gradient(160deg,#1a1200d9,#3b2a00cc);backdrop-filter:blur(1.5px);color:#ffe9a3;text-align:center;border-radius:22px}.vlock svg{width:44px;height:44px;filter:drop-shadow(0 2px 8px #f3d36b88)}.vlock b{font-size:16px;letter-spacing:2px;color:#f6dc84}.vlock span{font-size:12.5px;opacity:.9;padding:0 16px}
 .vcard{position:relative;border-radius:22px;padding:20px 20px 18px;color:#3b2a00;overflow:hidden;min-height:196px;box-shadow:0 10px 26px #b8860b59,inset 0 1px 0 #fff9;background:radial-gradient(120% 90% at 100% 0%,#fff6c455 0,#fff6c400 55%),linear-gradient(135deg,#f7e08a 0%,#e0aa2c 38%,#fbe9a0 62%,#c8901a 100%)}
 .vcard.gold{background:radial-gradient(120% 90% at 100% 0%,#fff2b855 0,#fff2b800 55%),linear-gradient(135deg,#f3d36b 0%,#d49a1c 40%,#f6dc84 65%,#b97f10 100%)}
 .vcard.diamond{color:#2a1e00;background:radial-gradient(120% 90% at 100% 0%,#ffffffaa 0,#fff0 55%),linear-gradient(135deg,#fff1b0 0%,#f0c040 30%,#fff7cf 55%,#d9a21f 80%,#b8860b 100%)}
@@ -6882,11 +6883,10 @@ def vip_page():
 .vdots{display:flex;justify-content:center;gap:7px;margin:0 0 12px}.vdots i{width:7px;height:7px;border-radius:50%;background:var(--ln)}.vdots i.on{background:#d49a1c;width:20px;border-radius:6px}
 </style>
 <div class="cc-h">👑 VIP Membership</div><div class="cc-sub">Swipe to compare levels. Once approved, your VIP level and commission rate stay permanent.</div>
-<div class="vdots" id="vd">{% for c in cards %}<i></i>{% endfor %}</div>
 <div class="vp" id="vp">{% for c in cards %}<div class="vc"><div class="vcard {{c.key}}">
-<div class="vtop"><span class="vbd">{% if c.st=='current' %}{{'✓ CURRENT MEMBERSHIP' if c.key=='standard' else '✓ CURRENT'}}{% elif c.st=='pending' %}⏳ PENDING{% elif c.key=='standard' %}STANDARD{% else %}VIP{% endif %}</span><span class="vnet">{% if c.key!='standard' %}VIP{% endif %}</span></div>
+<div class="vtop"><span class="vbd">{% if c.st=='current' %}{{'✓ CURRENT MEMBERSHIP' if c.key=='standard' else '✓ CURRENT'}}{% elif c.st=='pending' %}⏳ PENDING{% elif c.key=='standard' %}AVAILABLE{% elif c.st=='done' %}🔓 UNLOCKED{% else %}VIP{% endif %}</span><span class="vnet">{% if c.key!='standard' %}VIP{% endif %}</span></div>
 <div class="vchip"></div><div class="vlv">{{c.L.name}}</div><div class="vrate">{{c.L.rate|pct}}% commission</div>
-<div class="vnum">{{u['member_id']}} · {{c.L.name|upper}}</div></div>
+<div class="vnum">{{u['member_id']}} · {{c.L.name|upper}}</div>{% if c.st in ('locked','eligible','pending') %}<div class="vlock"><svg viewBox="0 0 24 24" fill="none"><defs><linearGradient id="gl{{c.key}}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff2b8"/><stop offset=".5" stop-color="#e0a82e"/><stop offset="1" stop-color="#b97f10"/></linearGradient></defs><rect x="4" y="10.5" width="16" height="10.5" rx="2.5" fill="url(#gl{{c.key}})"/><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" stroke="url(#gl{{c.key}})" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="15.5" r="1.5" fill="#3b2a00"/></svg><b>Locked</b><span>{{'অ্যাপ্লিকেশন Admin রিভিউতে আছে।' if c.st=='pending' else 'আনলক করতে নিচের শর্ত পূরণ করুন।'}}</span></div>{% endif %}</div>
 <div class="card" style="margin-top:10px">{% if c.key=='standard' %}<div class="vreq"><div>সবার জন্য প্রযোজ্য।</div><div>কোনো শর্ত নেই।</div><div>কমিশন ৫%।</div></div>
 {% else %}<div class="vreq"><div class="{{'ok' if c.dep_ok else 'no'}}">{{'✓' if c.dep_ok else '○'}} {{'কমপক্ষে ১০,০০০ টাকা করে ৩টি সফল ডিপোজিট করতে হবে।' if c.key=='gold' else 'কমপক্ষে ২০,০০০ টাকা করে ৩টি সফল ডিপোজিট করতে হবে।'}}</div>
 <div class="{{'ok' if c.bal_ok else 'no'}}">{{'✓' if c.bal_ok else '○'}} {{'অ্যাকাউন্টে কমপক্ষে ৩০,০০০ টাকা ব্যালেন্স থাকতে হবে।' if c.key=='gold' else 'অ্যাকাউন্টে কমপক্ষে ৬০,০০০ টাকা ব্যালেন্স থাকতে হবে।'}}</div>
@@ -6897,8 +6897,7 @@ def vip_page():
 {% else %}<button disabled style="width:100%;margin-top:10px;opacity:.55">{{'Another application is pending' if pend else 'Requirements not met yet'}}</button>{% endif %}{% endif %}
 </div></div>{% endfor %}</div>
 {% if hist %}<div class="card"><h3>Your applications</h3>{% for h in hist %}<div class="row" style="margin-bottom:6px"><span>{{h['level']|title}} · {{h['created'][:10]}}</span><span class="pill {{'approved' if h['status']=='approved' else ('rejected' if h['status']=='rejected' else 'pending')}}">{{h['status']}}</span></div>{% endfor %}</div>{% endif %}
-<script>(function(){var p=document.getElementById('vp'),d=document.querySelectorAll('#vd i');if(!p)return;function m(){var i=Math.round(p.scrollLeft/(p.clientWidth||1));d.forEach(function(e,k){e.className=k===i?'on':''})}
-p.addEventListener('scroll',m,{passive:true});p.scrollLeft={{start}}*p.clientWidth;m()})()</script>""", active="/vip", cards=cards, hist=hist, pend=pend, start=start)
+""", active="/vip", cards=cards, hist=hist, pend=pend, start=start)
 
 
 @app.route("/vip/apply", methods=["POST"])
