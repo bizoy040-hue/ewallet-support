@@ -6867,16 +6867,22 @@ def vip_page():
     return page("""<style>
 .vp{display:flex;flex-direction:column;gap:14px;padding:4px 0 12px;overflow:visible}
 .vc{width:100%;max-width:100%;box-sizing:border-box}
-.vlock{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:linear-gradient(160deg,#1a1200d9,#3b2a00cc);backdrop-filter:blur(1.5px);color:#ffe9a3;text-align:center;border-radius:22px}.vlock svg{width:44px;height:44px;filter:drop-shadow(0 2px 8px #f3d36b88)}.vlock b{font-size:16px;letter-spacing:2px;color:#f6dc84}.vlock span{font-size:12.5px;opacity:.9;padding:0 16px}
-.vcard{position:relative;border-radius:22px;padding:20px 20px 18px;color:#3b2a00;overflow:hidden;min-height:196px;box-shadow:0 10px 26px #b8860b59,inset 0 1px 0 #fff9;background:radial-gradient(120% 90% at 100% 0%,#fff6c455 0,#fff6c400 55%),linear-gradient(135deg,#f7e08a 0%,#e0aa2c 38%,#fbe9a0 62%,#c8901a 100%)}
-.vcard.gold{background:radial-gradient(120% 90% at 100% 0%,#fff2b855 0,#fff2b800 55%),linear-gradient(135deg,#f3d36b 0%,#d49a1c 40%,#f6dc84 65%,#b97f10 100%)}
-.vcard.diamond{color:#2a1e00;background:radial-gradient(120% 90% at 100% 0%,#ffffffaa 0,#fff0 55%),linear-gradient(135deg,#fff1b0 0%,#f0c040 30%,#fff7cf 55%,#d9a21f 80%,#b8860b 100%)}
+.vlock{position:absolute;inset:0;z-index:2;pointer-events:none;border-radius:22px;background:linear-gradient(135deg,#2a1e0038 0%,#2a1e0066 100%);box-shadow:inset 0 0 0 1px #fff3b88c,inset 0 0 38px #7a540a55;overflow:hidden}
+.vlock::before{content:"";position:absolute;top:-20%;bottom:-20%;width:38%;left:-45%;background:linear-gradient(100deg,#fff0 0,#fff8d0aa 50%,#fff0 100%);transform:skewX(-18deg);animation:vshine 4.5s ease-in-out infinite}
+@keyframes vshine{0%,55%{left:-45%}100%{left:120%}}
+.vlkb{position:absolute;right:16px;bottom:14px;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 7px;border-radius:99px;background:linear-gradient(135deg,#2a1e00ee,#5a3f06ee);border:1px solid #f3d36bcc;box-shadow:0 4px 14px #0006,inset 0 1px 0 #ffe9a355;color:#ffe9a3}
+.vlkb svg{width:26px;height:26px;filter:drop-shadow(0 1px 4px #f3d36b99)}.vlkb b{font-size:12.5px;letter-spacing:2px;color:#f8e08a}
+.vlkh{position:absolute;left:18px;bottom:14px;font-size:11.5px;font-weight:700;color:#fff6cf;text-shadow:0 1px 4px #000a;max-width:48%;line-height:1.35}
+.vcard{position:relative;border-radius:22px;padding:20px 20px 18px;color:#3b2a00;overflow:hidden;min-height:196px;border:1px solid #fff3b8cc;box-shadow:0 12px 28px #b8860b55,0 2px 0 #fffbe0 inset,0 -18px 40px #8a620f33 inset;background:radial-gradient(120% 90% at 100% 0%,#fff6c4aa 0,#fff6c400 55%),linear-gradient(135deg,#f7e08a 0%,#e0aa2c 38%,#fbe9a0 62%,#c8901a 100%)}
+.vcard.standard{background:radial-gradient(120% 90% at 100% 0%,#ffffffaa 0,#fff0 55%),linear-gradient(135deg,#f2e3ad 0%,#d8b45a 40%,#f6e8b4 65%,#bd953a 100%)}
+.vcard.gold{background:radial-gradient(120% 90% at 100% 0%,#fff2b8aa 0,#fff2b800 55%),linear-gradient(135deg,#f3d36b 0%,#d49a1c 40%,#f6dc84 65%,#b97f10 100%)}
+.vcard.diamond{color:#2a1e00;background:radial-gradient(120% 90% at 100% 0%,#ffffffcc 0,#fff0 55%),linear-gradient(135deg,#fff1b0 0%,#f0c040 30%,#fff7cf 55%,#d9a21f 80%,#b8860b 100%)}
 .vcard::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,#ffffff14 0 2px,#fff0 2px 14px);pointer-events:none}
 .vtop{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1}
 .vnet{font-weight:800;font-style:italic;font-size:22px;letter-spacing:.5px;color:#4a3300}
 .vchip{width:42px;height:32px;border-radius:7px;background:linear-gradient(135deg,#fdf0b5,#b98a1f);border:1px solid #8a620f66;margin:14px 0 8px;position:relative;z-index:1}
-.vlv{font-size:26px;font-weight:800;position:relative;z-index:1;letter-spacing:.3px}
-.vrate{font-size:15px;font-weight:700;position:relative;z-index:1}
+.vlv{font-size:28px;font-weight:800;text-shadow:0 1px 0 #fff8;position:relative;z-index:1;letter-spacing:.3px}
+.vrate{font-size:16px;font-weight:800;position:relative;z-index:1}
 .vnum{font-family:ui-monospace,monospace;letter-spacing:3px;font-size:14px;margin-top:10px;position:relative;z-index:1;opacity:.85}
 .vbd{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:700;background:#3b2a00;color:#ffe9a3}
 .vreq{margin-top:10px;font-size:13.5px;line-height:1.6}.vreq .ok{color:#0B7A4B;font-weight:700}.vreq .no{color:#b45309;font-weight:700}
@@ -6886,16 +6892,15 @@ def vip_page():
 <div class="vp" id="vp">{% for c in cards %}<div class="vc"><div class="vcard {{c.key}}">
 <div class="vtop"><span class="vbd">{% if c.st=='current' %}{{'✓ CURRENT MEMBERSHIP' if c.key=='standard' else '✓ CURRENT'}}{% elif c.st=='pending' %}⏳ PENDING{% elif c.key=='standard' %}AVAILABLE{% elif c.st=='done' %}🔓 UNLOCKED{% else %}VIP{% endif %}</span><span class="vnet">{% if c.key!='standard' %}VIP{% endif %}</span></div>
 <div class="vchip"></div><div class="vlv">{{c.L.name}}</div><div class="vrate">{{c.L.rate|pct}}% commission</div>
-<div class="vnum">{{u['member_id']}} · {{c.L.name|upper}}</div>{% if c.st in ('locked','eligible','pending') %}<div class="vlock"><svg viewBox="0 0 24 24" fill="none"><defs><linearGradient id="gl{{c.key}}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff2b8"/><stop offset=".5" stop-color="#e0a82e"/><stop offset="1" stop-color="#b97f10"/></linearGradient></defs><rect x="4" y="10.5" width="16" height="10.5" rx="2.5" fill="url(#gl{{c.key}})"/><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" stroke="url(#gl{{c.key}})" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="15.5" r="1.5" fill="#3b2a00"/></svg><b>Locked</b><span>{{'অ্যাপ্লিকেশন Admin রিভিউতে আছে।' if c.st=='pending' else 'আনলক করতে নিচের শর্ত পূরণ করুন।'}}</span></div>{% endif %}</div>
-<div class="card" style="margin-top:10px">{% if c.key=='standard' %}<div class="vreq"><div>সবার জন্য প্রযোজ্য।</div><div>কোনো শর্ত নেই।</div><div>কমিশন ৫%।</div></div>
-{% else %}<div class="vreq"><div class="{{'ok' if c.dep_ok else 'no'}}">{{'✓' if c.dep_ok else '○'}} {{'কমপক্ষে ১০,০০০ টাকা করে ৩টি সফল ডিপোজিট করতে হবে।' if c.key=='gold' else 'কমপক্ষে ২০,০০০ টাকা করে ৩টি সফল ডিপোজিট করতে হবে।'}}</div>
+<div class="vnum">{{u['member_id']}} · {{c.L.name|upper}}</div>{% if c.st in ('locked','eligible','pending') %}<div class="vlock"><div class="vlkh">{{'অ্যাপ্লিকেশন Admin রিভিউতে আছে।' if c.st=='pending' else 'আনলক করতে নিচের শর্ত পূরণ করুন।'}}</div><div class="vlkb"><svg viewBox="0 0 24 24" fill="none"><defs><linearGradient id="gl{{c.key}}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff2b8"/><stop offset=".5" stop-color="#e0a82e"/><stop offset="1" stop-color="#b97f10"/></linearGradient></defs><rect x="4" y="10.5" width="16" height="10.5" rx="2.5" fill="url(#gl{{c.key}})"/><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" stroke="url(#gl{{c.key}})" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="15.5" r="1.5" fill="#3b2a00"/></svg><b>LOCKED</b></div></div>{% endif %}</div>
+{% if c.key!='standard' %}<div class="card" style="margin-top:10px"><div class="vreq"><div class="{{'ok' if c.dep_ok else 'no'}}">{{'✓' if c.dep_ok else '○'}} {{'কমপক্ষে ১০,০০০ টাকা করে ৩টি সফল ডিপোজিট করতে হবে।' if c.key=='gold' else 'কমপক্ষে ২০,০০০ টাকা করে ৩টি সফল ডিপোজিট করতে হবে।'}}</div>
 <div class="{{'ok' if c.bal_ok else 'no'}}">{{'✓' if c.bal_ok else '○'}} {{'অ্যাকাউন্টে কমপক্ষে ৩০,০০০ টাকা ব্যালেন্স থাকতে হবে।' if c.key=='gold' else 'অ্যাকাউন্টে কমপক্ষে ৬০,০০০ টাকা ব্যালেন্স থাকতে হবে।'}}</div>
 <div class="k" style="margin-top:4px">{{'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ৭.৫% কমিশন কার্যকর হবে।' if c.key=='gold' else 'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ১০% কমিশন কার্যকর হবে।'}}</div></div>
 {% if c.st=='eligible' %}<form method="post" action="/vip/apply" data-confirm="Apply for {{c.L.name}} VIP?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="{{c.key}}"><button style="width:100%;margin-top:10px">Apply for {{c.L.name}}</button></form>
 {% elif c.st=='pending' %}<div class="hl" style="margin-top:10px">⏳ Your application is waiting for Admin review.</div>
 {% elif c.st in ('current','done') %}<div class="hl" style="margin-top:10px">✓ {{'This is your permanent level.' if c.st=='current' else 'Included in your current level.'}}</div>
-{% else %}<button disabled style="width:100%;margin-top:10px;opacity:.55">{{'Another application is pending' if pend else 'Requirements not met yet'}}</button>{% endif %}{% endif %}
-</div></div>{% endfor %}</div>
+{% else %}<button disabled style="width:100%;margin-top:10px;opacity:.55">{{'Another application is pending' if pend else 'Requirements not met yet'}}</button>{% endif %}</div>{% endif %}
+</div>{% endfor %}</div>
 {% if hist %}<div class="card"><h3>Your applications</h3>{% for h in hist %}<div class="row" style="margin-bottom:6px"><span>{{h['level']|title}} · {{h['created'][:10]}}</span><span class="pill {{'approved' if h['status']=='approved' else ('rejected' if h['status']=='rejected' else 'pending')}}">{{h['status']}}</span></div>{% endfor %}</div>{% endif %}
 """, active="/vip", cards=cards, hist=hist, pend=pend, start=start)
 
