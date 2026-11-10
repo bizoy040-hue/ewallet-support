@@ -6884,13 +6884,13 @@ def vip_page():
 <div class="cc-h">👑 VIP Membership</div><div class="cc-sub">Swipe to compare levels. Once approved, your VIP level and commission rate stay permanent.</div>
 <div class="vdots" id="vd">{% for c in cards %}<i></i>{% endfor %}</div>
 <div class="vp" id="vp">{% for c in cards %}<div class="vc"><div class="vcard {{c.key}}">
-<div class="vtop"><span class="vbd">{{'✓ CURRENT' if c.st=='current' else ('⏳ PENDING' if c.st=='pending' else ('UNLOCKED' if c.st=='done' else c.L.name|upper))}}</span><span class="vnet">VIP</span></div>
+<div class="vtop"><span class="vbd">{% if c.st=='current' %}{{'✓ CURRENT MEMBERSHIP' if c.key=='standard' else '✓ CURRENT'}}{% elif c.st=='pending' %}⏳ PENDING{% elif c.key=='standard' %}STANDARD{% else %}VIP{% endif %}</span><span class="vnet">{% if c.key!='standard' %}VIP{% endif %}</span></div>
 <div class="vchip"></div><div class="vlv">{{c.L.name}}</div><div class="vrate">{{c.L.rate|pct}}% commission</div>
 <div class="vnum">{{u['member_id']}} · {{c.L.name|upper}}</div></div>
-<div class="card" style="margin-top:10px">{% if c.key=='standard' %}<div class="vreq">Base level — <b>no requirements</b>.</div>
-{% else %}<div class="vreq"><div class="{{'ok' if c.dep_ok else 'no'}}">{{'✓' if c.dep_ok else '○'}} {{c.free}}/{{c.L.n}} successful deposits of at least ৳{{'{:,}'.format(c.L.dep)}} each</div>
-<div class="{{'ok' if c.bal_ok else 'no'}}">{{'✓' if c.bal_ok else '○'}} Wallet balance ≥ ৳{{'{:,}'.format(c.L.bal)}} (now ৳{{money(u['balance'])}})</div>
-<div class="k" style="margin-top:4px">Each approved deposit is counted only once.</div></div>
+<div class="card" style="margin-top:10px">{% if c.key=='standard' %}<div class="vreq"><div>সবার জন্য প্রযোজ্য।</div><div>কোনো শর্ত নেই।</div><div>কমিশন ৫%।</div></div>
+{% else %}<div class="vreq"><div class="{{'ok' if c.dep_ok else 'no'}}">{{'✓' if c.dep_ok else '○'}} {{'কমপক্ষে ১০,০০০ টাকা করে ৩টি সফল ডিপোজিট করতে হবে।' if c.key=='gold' else 'কমপক্ষে ২০,০০০ টাকা করে ৩টি সফল ডিপোজিট করতে হবে।'}}</div>
+<div class="{{'ok' if c.bal_ok else 'no'}}">{{'✓' if c.bal_ok else '○'}} {{'অ্যাকাউন্টে কমপক্ষে ৩০,০০০ টাকা ব্যালেন্স থাকতে হবে।' if c.key=='gold' else 'অ্যাকাউন্টে কমপক্ষে ৬০,০০০ টাকা ব্যালেন্স থাকতে হবে।'}}</div>
+<div class="k" style="margin-top:4px">{{'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ৭.৫% কমিশন কার্যকর হবে।' if c.key=='gold' else 'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ১০% কমিশন কার্যকর হবে।'}}</div></div>
 {% if c.st=='eligible' %}<form method="post" action="/vip/apply" data-confirm="Apply for {{c.L.name}} VIP?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="{{c.key}}"><button style="width:100%;margin-top:10px">Apply for {{c.L.name}}</button></form>
 {% elif c.st=='pending' %}<div class="hl" style="margin-top:10px">⏳ Your application is waiting for Admin review.</div>
 {% elif c.st in ('current','done') %}<div class="hl" style="margin-top:10px">✓ {{'This is your permanent level.' if c.st=='current' else 'Included in your current level.'}}</div>
