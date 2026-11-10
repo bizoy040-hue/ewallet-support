@@ -34,9 +34,10 @@ PERM_LABELS = {
     "referrals": "রেফারেল অনুমোদন", "commissions": "কমিশন প্রদান", "tickets": "সাপোর্ট টিকিট",
     "notices": "নোটিশ প্রকাশ", "audit": "অডিট লগ দেখা"}
 PERM_LABELS.update({"requests": "ম্যানুয়াল রিকোয়েস্ট", "payment_numbers": "পেমেন্ট নম্বর দেখা", "pool_view": "কমিশন পুল দেখা",
-                    "reports": "আর্থিক রিপোর্ট দেখা", "rates": "ইউজার কমিশন রেট বদলানো", "kyc": "KYC যাচাই"})
+                    "reports": "আর্থিক রিপোর্ট দেখা", "rates": "ইউজার কমিশন রেট বদলানো", "kyc": "KYC যাচাই",
+                    "vip": "VIP অনুমোদন ও পরিবর্তন"})
 ADMIN_ASSIGNABLE = tuple(PERM_LABELS)                       # what a Super Admin can grant to an "admin"
-ADMIN_DEFAULT = tuple(p for p in ADMIN_ASSIGNABLE if p != "adjust")
+ADMIN_DEFAULT = tuple(p for p in ADMIN_ASSIGNABLE if p not in ("adjust", "vip"))
 ROLE_FIXED = {"finance": frozenset({"dashboard_fin", "deposits", "withdrawals", "users_view", "referrals", "commissions"}),
               "support": frozenset({"tickets", "users_view"})}
 ROLE_FIXED["finance"] = ROLE_FIXED["finance"] | frozenset({"requests", "payment_numbers", "pool_view", "reports"})
@@ -462,6 +463,7 @@ V5_COLUMNS = [
     ("requests", "flow", "TEXT", "TEXT"), ("requests", "commission", "REAL", "NUMERIC(14,2)"), ("requests", "commission_rate", "REAL", "NUMERIC(7,3)"),
     ("requests", "purpose", "TEXT", "TEXT"), ("requests", "purpose_en", "TEXT", "TEXT"), ("requests", "client_decided_at", "TEXT", "TEXT"),
     ("requests", "pay_type", "TEXT", "TEXT"), ("requests", "extra_commission", "REAL", "NUMERIC(14,2)"),
+    ("users", "vip_level", "TEXT", "TEXT"), ("users", "vip_rate", "REAL", "NUMERIC(7,3)"), ("tx", "account_type", "TEXT", "TEXT"),
     ("requests", "cancel_fee", "REAL", "NUMERIC(14,2)"), ("requests", "cancel_by", "TEXT", "TEXT"),
     # @@COLUMNS
 ]
@@ -495,6 +497,17 @@ V5_TABLES = [
      "CREATE TABLE IF NOT EXISTS user_warnings(id {ID}, user_id {BIG} NOT NULL REFERENCES users(id), request_id {BIG}, message TEXT NOT NULL, "
      "admin_id {BIG}, admin TEXT, created TEXT NOT NULL)",
      ["CREATE INDEX IF NOT EXISTS ix_warn_user ON user_warnings(user_id)", "CREATE INDEX IF NOT EXISTS ix_warn_req ON user_warnings(request_id)"], True),
+    ("vip_applications",
+     "CREATE TABLE IF NOT EXISTS vip_applications(id {ID}, user_id {BIG} NOT NULL REFERENCES users(id), level TEXT NOT NULL, rate {RATE} NOT NULL, "
+     "status TEXT NOT NULL DEFAULT 'pending', balance_at {NUM}, deposit_ids TEXT, note TEXT, admin TEXT, admin_id {BIG}, created TEXT NOT NULL, decided TEXT)",
+     ["CREATE UNIQUE INDEX IF NOT EXISTS ux_vip_pending ON vip_applications(user_id) WHERE status='pending'",
+      "CREATE INDEX IF NOT EXISTS ix_vip_status ON vip_applications(status)"], False),
+    ("vip_deposit_use",
+     "CREATE TABLE IF NOT EXISTS vip_deposit_use(id {ID}, tx_id {BIG} NOT NULL UNIQUE, app_id {BIG} NOT NULL, user_id {BIG} NOT NULL, created TEXT)",
+     ["CREATE INDEX IF NOT EXISTS ix_vipdu_user ON vip_deposit_use(user_id)"], False),
+    ("vip_log",
+     "CREATE TABLE IF NOT EXISTS vip_log(id {ID}, user_id {BIG} NOT NULL, action TEXT NOT NULL, old_level TEXT, new_level TEXT, rate {RATE}, "
+     "reason TEXT, actor TEXT, actor_id {BIG}, created TEXT NOT NULL)", [], True),
     # @@TABLES
 ]
 V5_INDEXES = [
@@ -1353,7 +1366,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
 <a class="{{'on' if active=='/'}}" href="/"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M4 10.6 12 4l8 6.6V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M9.5 20v-5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v5"/></svg></i>হোম</a><a class="{{'on' if active=='/history'}}" href="/history"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></i>হিস্ট্রি<span class="bd2" data-bd="/history"{% if not nb('/history') %} hidden{% endif %}>{{nb('/history')}}</span></a>
-<a class="{{'on' if active=='/requests'}}" href="/requests"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M5.6 5.6 3 13v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5l-2.6-7.4A2 2 0 0 0 16.5 4.3h-9a2 2 0 0 0-1.9 1.3z"/><path d="M3 13h5.2l1.3 2.5h5l1.3-2.5H21"/></svg></i>অনুরোধ<span class="bd2" data-bd="/requests"{% if not nb('/requests') %} hidden{% endif %}>{{nb('/requests')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="d" x="4" y="13" width="4" height="7" rx="1"/><rect class="d" x="10" y="9" width="4" height="11" rx="1"/><rect class="d" x="16" y="4" width="4" height="16" rx="1"/></svg></i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
+<a class="{{'on' if active=='/vip'}}" href="/vip"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg></i>VIP<span class="bd2" data-bd="/vip"{% if not nb('/vip') %} hidden{% endif %}>{{nb('/vip')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="d" x="4" y="13" width="4" height="7" rx="1"/><rect class="d" x="10" y="9" width="4" height="11" rx="1"/><rect class="d" x="16" y="4" width="4" height="16" rx="1"/></svg></i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
 <a class="{{'on' if active=='/account'}}" href="/account"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="8" r="4"/><path class="d" d="M4.5 20.5a7.5 7.5 0 0 1 15 0z"/></svg></i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
 <script src="/assets/app.js?v={{av}}"></script></body></html>"""
@@ -1461,7 +1474,7 @@ ADMIN_TABS = [("/admin", "ড্যাশবোর্ড", None), ("/admin/alert
               ("/admin/requests", "রিকোয়েস্ট", "requests"), ("/admin/deposits", "ডিপোজিট", "deposits"),
               ("/admin/withdrawals", "উইথড্র", "withdrawals"), ("/admin/users", "ইউজার", "users_view"), ("/admin/kyc", "KYC", "kyc"),
               ("/admin/payment-numbers", "পেমেন্ট নম্বর", "payment_numbers"),
-              ("/admin/referrals", "রেফারেল", "referrals"), ("/admin/commission", "কমিশন", "commissions"), ("/admin/pool", "কমিশন পুল", "pool_view"),
+              ("/admin/referrals", "রেফারেল", "referrals"), ("/admin/vip", "VIP", "vip"), ("/admin/commission", "কমিশন", "commissions"), ("/admin/pool", "কমিশন পুল", "pool_view"),
               ("/admin/reports", "রিপোর্ট", "reports"), ("/admin/reconcile", "মিলানো", "reports"),
               ("/admin/staff", "স্টাফ", "staff"), ("/admin/tickets", "টিকিট", "tickets"),
               ("/admin/notices", "নোটিশ", "notices"), ("/admin/content", "কনটেন্ট", "notices"), ("/admin/settings", "সেটিংস", "settings"),
@@ -2131,23 +2144,27 @@ def withdraw():
     if request.method == "POST":
         m, amt = request.form.get("method"), parse_amount(request.form.get("amount"))
         num = request.form.get("number", "").strip()
+        at = request.form.get("account_type", "").strip()
+        if at not in ACCT_TYPES:
+            err("পেমেন্ট অ্যাকাউন্ট টাইপ (Personal / Agent / Merchant) নির্বাচন করুন।"); return redirect("/withdraw")
         if m not in METHODS or amt < mn or not re.fullmatch(r"01\d{9}", num):
             err("মাধ্যম, ন্যূনতম ৳%s বা বেশি পরিমাণ ও সঠিক নম্বর দিন।" % int(mn)); return redirect("/withdraw")
         if rate_hit("wd:%d" % u["id"], 6, 3600):
             err("অনেক রিকোয়েস্ট হয়েছে।"); return redirect("/withdraw")
         try:
             with atomic():
-                cur = db().execute("INSERT INTO tx(user_id,kind,method,amount,number,status,created,updated) VALUES(?,?,?,?,?,?,?,?)",
-                                   (u["id"], "withdraw", m, amt, num, "pending", now(), now()))
+                cur = db().execute("INSERT INTO tx(user_id,kind,method,amount,number,status,created,updated,account_type) VALUES(?,?,?,?,?,?,?,?,?)",
+                                   (u["id"], "withdraw", m, amt, num, "pending", now(), now(), at))
                 tid = cur.lastrowid
                 post(u["id"], "withdraw_hold", -amt, "wd:%d:hold" % tid, "tx", tid, "Withdrawal reserved", u["member_id"])
-                alert_admins("নতুন উইথড্র রিকোয়েস্ট", "#%s %s — ৳%s (%s)" % (u["member_id"], u["name"], money(amt), m), "/admin/withdrawals", "withdrawals")
+                alert_admins("নতুন উইথড্র রিকোয়েস্ট", "#%s %s — ৳%s (%s, %s)" % (u["member_id"], u["name"], money(amt), m, at), "/admin/withdrawals", "withdrawals")
         except LedgerError:
             err("ব্যালেন্স অপর্যাপ্ত।"); return redirect("/withdraw")
         flash("উইথড্র রিকোয়েস্ট জমা হয়েছে, টাকা রিজার্ভ করা হয়েছে।"); return redirect("/history")
     return page("""<div class="card"><h2>উইথড্র</h2><p class="k">উপলব্ধ: ৳ {{money(u['balance'])}} · ন্যূনতম ৳{{mn|int}}</p>
 <form method="post" data-confirm="উইথড্র রিকোয়েস্ট জমা দেবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <label>মাধ্যম</label><select name="method"><option>bKash</option><option>Nagad</option><option>Rocket</option></select>
+<label>Payment Account Type</label><select name="account_type" required><option value="" disabled selected>নির্বাচন করুন</option><option value="Personal">Personal</option><option value="Agent">Agent</option><option value="Merchant">Merchant</option></select>
 <label>পরিমাণ</label><input name="amount" type="number" step="0.01" required><label>আপনার নম্বর</label><input name="number" inputmode="numeric" maxlength="11" required>
 <button style="width:100%">রিকোয়েস্ট করুন</button></form></div>""", active="/withdraw", mn=mn)
 
@@ -2637,6 +2654,7 @@ def _list_tx(kind, statuses, active, title):
 {% for t in rows %}<div class="card"><b>৳ {{money(t['amount'])}}</b> · {{t['method']}} <span class="pill {{t['status']}}">{{t['status']}}</span>
 <div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{t['created'][:16]}}</div>
 <div>{{'TrxID' if t['kind']=='deposit' else 'নম্বর'}}: <b>{{t['trx'] or t['number']}}</b></div>
+{% if t['kind']=='withdraw' %}<div>Payment Account Type: <b>{{t['account_type'] or '—'}}</b></div>{% endif %}
 {% if t['screenshot'] %}<a href="/shot/{{t['screenshot']}}" target="_blank"><b>🖼 স্ক্রিনশট</b></a>{% endif %}
 {% if t['note'] %}<div class="k">নোট: {{t['note']}}</div>{% endif %}
 {% if t['status'] in statuses %}<form method="post" action="/admin/tx/{{t['id']}}" style="margin-top:8px" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
@@ -3268,7 +3286,7 @@ def admin_comm_rate():
             abort(404)
         back_to = "/admin/users/%d" % x["id"] if back_to == "/admin/commission" else back_to
         old = None if x["comm_rate"] is None else float(x["comm_rate"])
-        base = effective_rate(x)
+        base = effective_rate({"comm_rate": x["comm_rate"]})  # manual-rate maths ignores VIP
     elif scope == "global":
         old, base = d, d
     else:
@@ -3292,7 +3310,7 @@ def admin_comm_rate():
                          (scope, x["id"] if x else None, old, new, reason, "rate:" + tok, a["member_id"], a["id"], now()))
             if scope == "user":
                 db().execute("UPDATE users SET comm_rate=? WHERE id=?", (new, x["id"]))
-                shown = effective_rate({"comm_rate": new}) if new is not None else d
+                shown = effective_rate({"comm_rate": new, "vip_rate": x["vip_rate"]})
                 notify(x["id"], "কমিশন রেট আপডেট", "আপনার কমিশন রেট এখন %g%%।" % shown, None,
                        "Commission rate updated", "Your commission rate is now %g%%." % shown)
             else:
@@ -4013,12 +4031,12 @@ def alert_admins(title, body="", link="", perm=None):
 
 # ---------------------------------------------------------------- per-feature unread badges + admin menu grid
 ADMIN_ICONS = {"/admin/alerts": "🔔", "/admin/requests": "📨", "/admin/deposits": "💰", "/admin/withdrawals": "🏧", "/admin/users": "👥", "/admin/kyc": "🪪",
-               "/admin/payment-numbers": "💳", "/admin/referrals": "🎁", "/admin/commission": "💸", "/admin/pool": "🏦",
+               "/admin/payment-numbers": "💳", "/admin/referrals": "🎁", "/admin/vip": "👑", "/admin/commission": "💸", "/admin/pool": "🏦",
                "/admin/reports": "📊", "/admin/reconcile": "🧮", "/admin/staff": "🛡️", "/admin/tickets": "🎫", "/admin/notices": "📢",
                "/admin/content": "📝", "/admin/settings": "⚙️", "/admin/audit": "📜", "/admin/profile": "👤"}
 # longest path first so "/admin/payment-numbers" etc. match before any shorter prefix
 _BADGE_PATHS = sorted((p for p, _, _ in ADMIN_TABS if p not in ("/admin", "/admin/alerts")), key=len, reverse=True)
-_USER_BADGE_PATHS = ("/requests", "/history", "/referral", "/support", "/payment-numbers", "/insight")
+_USER_BADGE_PATHS = ("/vip", "/requests", "/history", "/referral", "/support", "/payment-numbers", "/insight")
 
 
 def _admin_badge_key(link):
@@ -4154,7 +4172,7 @@ def admin_menu():
     if has_perm("requests", u):
         tiles["/admin/requests/new"] = ("/admin/requests/new", "রিকোয়েস্ট পাঠান", "➕", "")
     layout = [("", ["/admin/requests/new", "/admin/requests", "/admin/deposits", "/admin/withdrawals", "/admin/users", "/admin/alerts"]),
-              ("💰 আর্থিক ও কমিশন", ["/admin/commission", "/admin/pool", "/admin/referrals", "/admin/referral-rewards", "/admin/reports", "/admin/reconcile"]),
+              ("💰 আর্থিক ও কমিশন", ["/admin/commission", "/admin/vip", "/admin/pool", "/admin/referrals", "/admin/referral-rewards", "/admin/reports", "/admin/reconcile"]),
               ("🎫 সাপোর্ট ও কনটেন্ট", ["/admin/tickets", "/admin/kyc", "/admin/notices", "/admin/content", "/admin/payment-numbers"]),
               ("⚙️ সিস্টেম ও নিরাপত্তা", ["/admin/staff", "/admin/settings", "/admin/settings?open=security", "/admin/audit", "/admin/profile"])]
     groups, used = [], set()
@@ -4463,6 +4481,12 @@ def effective_rate(u):
     except (KeyError, IndexError):
         r = None
     r = d if r is None else float(r)
+    try:
+        vr = u["vip_rate"] if u is not None else None
+    except (KeyError, IndexError):
+        vr = None
+    if vr:  # approved VIP level: permanent rate, never lowers an existing higher rate
+        r = max(r, float(vr))
     return round(min(max(r, 0.0), m), 3)
 
 
@@ -5315,7 +5339,7 @@ def _find_clients(q, f, p, per=FIND_PER):
     if q:
         order, oargs = "(CASE WHEN u.member_id=? OR u.phone=? OR u.referral_code=? THEN 0 ELSE 1 END), u.id DESC", [q, q, q.upper()]
     p = min(max(p, 1), 500)
-    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.comm_rate,"
+    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.comm_rate,u.vip_rate,"
               "(SELECT COUNT(*) FROM requests r WHERE r.user_id=u.id AND r.status IN ('pending','submitted','review')) open_req "
               "FROM users u WHERE " + " AND ".join(where) + " ORDER BY " + order + " LIMIT ? OFFSET ?",
               args + oargs + [per + 1, (p - 1) * per])
@@ -6793,5 +6817,214 @@ def healthz():
 
 if not os.environ.get("EWALLET_SKIP_MIGRATE"):  # dbtool sets this to control the first import itself
     migrate()
+# ---------------------------------------------------------------- VIP levels (permanent once approved by an authorised admin)
+VIP_LEVELS = {"standard": dict(name="Standard", rate=5.0, n=0, dep=0, bal=0, rank=0),
+              "gold": dict(name="Gold", rate=7.5, n=3, dep=10000, bal=30000, rank=1),
+              "diamond": dict(name="Diamond", rate=10.0, n=3, dep=20000, bal=60000, rank=2)}
+
+
+def vip_level_of(u):
+    try:
+        l = u["vip_level"]
+    except (KeyError, IndexError):
+        l = None
+    return l if l in ("gold", "diamond") else "standard"
+
+
+def _vip_free_deposits(uid, level):
+    """Approved deposits that qualify for `level` and were never counted for another application (oldest first)."""
+    L = VIP_LEVELS[level]
+    return qa("SELECT id,amount FROM tx WHERE user_id=? AND kind='deposit' AND status='approved' AND amount>=? "
+              "AND id NOT IN (SELECT tx_id FROM vip_deposit_use) ORDER BY id", (uid, L["dep"]))
+
+
+def _vip_pending(uid):
+    return q1("SELECT * FROM vip_applications WHERE user_id=? AND status='pending'", (uid,))
+
+
+@app.route("/vip")
+@customer_required
+def vip_page():
+    u = me()
+    cur = vip_level_of(u)
+    pend = _vip_pending(u["id"])
+    bal = float(u["balance"] or 0)
+    cards = []
+    for key, L in VIP_LEVELS.items():
+        free = len(_vip_free_deposits(u["id"], key)) if L["n"] else 0
+        dep_ok, bal_ok = free >= L["n"], bal >= L["bal"]
+        if L["rank"] < VIP_LEVELS[cur]["rank"] or key == cur:
+            st = "current" if key == cur else "done"
+        elif pend and pend["level"] == key:
+            st = "pending"
+        elif pend:
+            st = "locked"
+        else:
+            st = "eligible" if (dep_ok and bal_ok) else "locked"
+        cards.append(dict(key=key, L=L, free=min(free, L["n"]), dep_ok=dep_ok, bal_ok=bal_ok, st=st))
+    hist = qa("SELECT * FROM vip_applications WHERE user_id=? ORDER BY id DESC LIMIT 5", (u["id"],))
+    start = [c["key"] for c in cards].index(cur)
+    return page("""<style>
+.vp{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 2px 12px;margin:0 -4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}.vp::-webkit-scrollbar{display:none}
+.vc{flex:0 0 100%;max-width:100%;scroll-snap-align:center;box-sizing:border-box}
+.vcard{position:relative;border-radius:22px;padding:20px 20px 18px;color:#3b2a00;overflow:hidden;min-height:196px;box-shadow:0 10px 26px #b8860b59,inset 0 1px 0 #fff9;background:radial-gradient(120% 90% at 100% 0%,#fff6c455 0,#fff6c400 55%),linear-gradient(135deg,#f7e08a 0%,#e0aa2c 38%,#fbe9a0 62%,#c8901a 100%)}
+.vcard.gold{background:radial-gradient(120% 90% at 100% 0%,#fff2b855 0,#fff2b800 55%),linear-gradient(135deg,#f3d36b 0%,#d49a1c 40%,#f6dc84 65%,#b97f10 100%)}
+.vcard.diamond{color:#2a1e00;background:radial-gradient(120% 90% at 100% 0%,#ffffffaa 0,#fff0 55%),linear-gradient(135deg,#fff1b0 0%,#f0c040 30%,#fff7cf 55%,#d9a21f 80%,#b8860b 100%)}
+.vcard::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,#ffffff14 0 2px,#fff0 2px 14px);pointer-events:none}
+.vtop{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1}
+.vnet{font-weight:800;font-style:italic;font-size:22px;letter-spacing:.5px;color:#4a3300}
+.vchip{width:42px;height:32px;border-radius:7px;background:linear-gradient(135deg,#fdf0b5,#b98a1f);border:1px solid #8a620f66;margin:14px 0 8px;position:relative;z-index:1}
+.vlv{font-size:26px;font-weight:800;position:relative;z-index:1;letter-spacing:.3px}
+.vrate{font-size:15px;font-weight:700;position:relative;z-index:1}
+.vnum{font-family:ui-monospace,monospace;letter-spacing:3px;font-size:14px;margin-top:10px;position:relative;z-index:1;opacity:.85}
+.vbd{display:inline-block;padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:700;background:#3b2a00;color:#ffe9a3}
+.vreq{margin-top:10px;font-size:13.5px;line-height:1.6}.vreq .ok{color:#0B7A4B;font-weight:700}.vreq .no{color:#b45309;font-weight:700}
+.vdots{display:flex;justify-content:center;gap:7px;margin:0 0 12px}.vdots i{width:7px;height:7px;border-radius:50%;background:var(--ln)}.vdots i.on{background:#d49a1c;width:20px;border-radius:6px}
+</style>
+<div class="cc-h">👑 VIP Membership</div><div class="cc-sub">Swipe to compare levels. Once approved, your VIP level and commission rate stay permanent.</div>
+<div class="vdots" id="vd">{% for c in cards %}<i></i>{% endfor %}</div>
+<div class="vp" id="vp">{% for c in cards %}<div class="vc"><div class="vcard {{c.key}}">
+<div class="vtop"><span class="vbd">{{'✓ CURRENT' if c.st=='current' else ('⏳ PENDING' if c.st=='pending' else ('UNLOCKED' if c.st=='done' else c.L.name|upper))}}</span><span class="vnet">VIP</span></div>
+<div class="vchip"></div><div class="vlv">{{c.L.name}}</div><div class="vrate">{{c.L.rate|pct}}% commission</div>
+<div class="vnum">{{u['member_id']}} · {{c.L.name|upper}}</div></div>
+<div class="card" style="margin-top:10px">{% if c.key=='standard' %}<div class="vreq">Base level — <b>no requirements</b>.</div>
+{% else %}<div class="vreq"><div class="{{'ok' if c.dep_ok else 'no'}}">{{'✓' if c.dep_ok else '○'}} {{c.free}}/{{c.L.n}} successful deposits of at least ৳{{'{:,}'.format(c.L.dep)}} each</div>
+<div class="{{'ok' if c.bal_ok else 'no'}}">{{'✓' if c.bal_ok else '○'}} Wallet balance ≥ ৳{{'{:,}'.format(c.L.bal)}} (now ৳{{money(u['balance'])}})</div>
+<div class="k" style="margin-top:4px">Each approved deposit is counted only once.</div></div>
+{% if c.st=='eligible' %}<form method="post" action="/vip/apply" data-confirm="Apply for {{c.L.name}} VIP?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="{{c.key}}"><button style="width:100%;margin-top:10px">Apply for {{c.L.name}}</button></form>
+{% elif c.st=='pending' %}<div class="hl" style="margin-top:10px">⏳ Your application is waiting for Admin review.</div>
+{% elif c.st in ('current','done') %}<div class="hl" style="margin-top:10px">✓ {{'This is your permanent level.' if c.st=='current' else 'Included in your current level.'}}</div>
+{% else %}<button disabled style="width:100%;margin-top:10px;opacity:.55">{{'Another application is pending' if pend else 'Requirements not met yet'}}</button>{% endif %}{% endif %}
+</div></div>{% endfor %}</div>
+{% if hist %}<div class="card"><h3>Your applications</h3>{% for h in hist %}<div class="row" style="margin-bottom:6px"><span>{{h['level']|title}} · {{h['created'][:10]}}</span><span class="pill {{'approved' if h['status']=='approved' else ('rejected' if h['status']=='rejected' else 'pending')}}">{{h['status']}}</span></div>{% endfor %}</div>{% endif %}
+<script>(function(){var p=document.getElementById('vp'),d=document.querySelectorAll('#vd i');if(!p)return;function m(){var i=Math.round(p.scrollLeft/(p.clientWidth||1));d.forEach(function(e,k){e.className=k===i?'on':''})}
+p.addEventListener('scroll',m,{passive:true});p.scrollLeft={{start}}*p.clientWidth;m()})()</script>""", active="/vip", cards=cards, hist=hist, pend=pend, start=start)
+
+
+@app.route("/vip/apply", methods=["POST"])
+@customer_required
+def vip_apply():
+    u = me()
+    level = request.form.get("level", "")
+    if level not in ("gold", "diamond"):
+        abort(400)
+    if rate_hit("vip:%d" % u["id"], 5, 3600):
+        err("Too many attempts. Please try later."); return redirect("/vip")
+    L = VIP_LEVELS[level]
+    try:
+        with atomic():
+            x = q1("SELECT * FROM users WHERE id=?", (u["id"],))
+            if VIP_LEVELS[vip_level_of(x)]["rank"] >= L["rank"]:
+                err("You already hold this VIP level or higher."); return redirect("/vip")
+            if _vip_pending(u["id"]):
+                err("You already have a VIP application pending."); return redirect("/vip")
+            free = _vip_free_deposits(u["id"], level)[:L["n"]]
+            if len(free) < L["n"] or float(x["balance"] or 0) < L["bal"]:
+                err("You do not meet the requirements for %s yet." % L["name"]); return redirect("/vip")
+            cur = db().execute("INSERT INTO vip_applications(user_id,level,rate,status,balance_at,deposit_ids,created) VALUES(?,?,?,?,?,?,?)",
+                               (u["id"], level, L["rate"], "pending", float(x["balance"] or 0), ",".join(str(r["id"]) for r in free), now()))
+            for r in free:  # each deposit can be counted for one application only (UNIQUE tx_id)
+                db().execute("INSERT INTO vip_deposit_use(tx_id,app_id,user_id,created) VALUES(?,?,?,?)", (r["id"], cur.lastrowid, u["id"], now()))
+            alert_admins("নতুন VIP আবেদন", "#%s %s — %s" % (u["member_id"], u["name"], L["name"]), "/admin/vip", "vip")
+    except INTEGRITY:
+        err("You already have a VIP application pending."); return redirect("/vip")
+    flash("VIP application submitted. Admin will review it."); return redirect("/vip")
+
+
+@app.route("/admin/vip")
+@staff_required("vip")
+def admin_vip():
+    pend = qa("SELECT a.*,u.name,u.phone,u.member_id,u.balance,u.vip_level FROM vip_applications a JOIN users u ON u.id=a.user_id "
+              "WHERE a.status='pending' ORDER BY a.id")
+    done = qa("SELECT a.*,u.name,u.member_id FROM vip_applications a JOIN users u ON u.id=a.user_id WHERE a.status<>'pending' ORDER BY a.id DESC LIMIT 15")
+    holders = qa("SELECT id,name,phone,member_id,balance,vip_level,vip_rate FROM users WHERE is_admin=0 AND vip_level IN ('gold','diamond') ORDER BY id DESC LIMIT 60")
+    q = _clean_q(request.args.get("q", ""))
+    found = qa("SELECT id,name,phone,member_id,vip_level FROM users WHERE is_admin=0 AND (name LIKE ? OR phone LIKE ? OR member_id LIKE ?) ORDER BY id DESC LIMIT 10",
+               ("%" + q + "%",) * 3) if q else []
+    return page("""<h2>👑 VIP আবেদন</h2>
+{% if not pend %}<div class="card empty">কোনো পেন্ডিং আবেদন নেই</div>{% endif %}
+{% for a in pend %}<div class="card"><b>{{a['level']|title}} VIP · {{a['rate']|pct}}%</b> <span class="pill pending">pending</span>
+<div class="k">#{{a['member_id']}} {{a['name']}} · {{a['phone']}} · {{a['created'][:16]}}</div>
+<div>আবেদনের সময় ব্যালেন্স: <b>৳ {{money(a['balance_at'])}}</b> · এখন: ৳ {{money(a['balance'])}}</div><div class="k">গণনাকৃত ডিপোজিট tx#: {{a['deposit_ids']}}</div>
+<form method="post" action="/admin/vip/{{a['id']}}" style="margin-top:8px" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><div class="row"><button name="act" value="approve" class="btn sm g">Approve</button><button name="act" value="reject" class="btn sm r">Reject</button></div></form></div>{% endfor %}
+<div class="card"><h3>VIP পরিবর্তন / বাতিল</h3><p class="k">শুধু অনুমোদিত অ্যাডমিন VIP লেভেল বদলাতে বা বাতিল করতে পারেন। ইউজার খুঁজুন:</p>
+<form method="get"><input name="q" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি" maxlength="40"><button class="s" style="width:100%">খুঁজুন</button></form>
+{% for f in found %}<form method="post" action="/admin/vip/user/{{f['id']}}" class="card" style="margin-top:8px" data-confirm="VIP পরিবর্তন করবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<b>#{{f['member_id']}} {{f['name']}}</b> <span class="k">({{(f['vip_level'] or 'standard')|title}})</span>
+<select name="level"><option value="standard">Standard (বাতিল)</option><option value="gold">Gold 7.5%</option><option value="diamond">Diamond 10%</option></select>
+<input name="reason" placeholder="কারণ" required minlength="3" maxlength="200"><button style="width:100%">আপডেট</button></form>{% endfor %}</div>
+{% if holders %}<div class="card"><h3>বর্তমান VIP সদস্য</h3>{% for h in holders %}<div class="row" style="margin-bottom:6px"><span>#{{h['member_id']}} {{h['name']}}</span><b>{{h['vip_level']|title}} · {{h['vip_rate']|pct}}%</b></div>{% endfor %}</div>{% endif %}
+{% if done %}<div class="card"><h3>সাম্প্রতিক সিদ্ধান্ত</h3>{% for d in done %}<div class="row" style="margin-bottom:6px"><span>#{{d['member_id']}} {{d['name']}} · {{d['level']|title}}</span><span class="pill {{d['status']}}">{{d['status']}}</span></div>{% endfor %}</div>{% endif %}""",
+                active="/admin/vip", pend=pend, done=done, holders=holders, q=q, found=found)
+
+
+def _vip_set(x, level, reason, a, kind):
+    """Single place that changes a user's VIP level + rate (inside an atomic block). Logged, audited, user notified."""
+    old = vip_level_of(x)
+    rate_old = effective_rate(x)
+    L = VIP_LEVELS[level]
+    db().execute("UPDATE users SET vip_level=?, vip_rate=? WHERE id=?", (level if level != "standard" else None, L["rate"] if level != "standard" else None, x["id"]))
+    new_rate = effective_rate({"comm_rate": x["comm_rate"], "vip_rate": L["rate"] if level != "standard" else None})
+    db().execute("INSERT INTO vip_log(user_id,action,old_level,new_level,rate,reason,actor,actor_id,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                 (x["id"], kind, old, level, L["rate"], reason, a["member_id"], a["id"], now()))
+    db().execute("INSERT INTO commission_rate_log(scope,user_id,old_rate,new_rate,reason,idem,actor,actor_id,created) VALUES(?,?,?,?,?,?,?,?,?)",
+                 ("vip", x["id"], rate_old, new_rate, "VIP %s → %s: %s" % (old, level, reason or kind), "vip:%s:%s" % (x["id"], secrets.token_hex(6)), a["member_id"], a["id"], now()))
+    audit("vip_" + kind, "user#%s %s -> %s (%s)" % (x["id"], old, level, reason))
+    return L
+
+
+@app.route("/admin/vip/<int:i>", methods=["POST"])
+@staff_required("vip")
+def admin_vip_decide(i):
+    act, note, a = request.form.get("act"), request.form.get("note", "").strip()[:200], me()
+    if act not in ("approve", "reject"):
+        abort(400)
+    with atomic():
+        ap = q1("SELECT * FROM vip_applications WHERE id=?", (i,))
+        if not ap:
+            abort(404)
+        if ap["status"] != "pending":  # no double decision
+            err("এই আবেদনের সিদ্ধান্ত আগেই হয়ে গেছে।"); return back("/admin/vip")
+        x = q1("SELECT * FROM users WHERE id=?", (ap["user_id"],))
+        L = VIP_LEVELS[ap["level"]]
+        if act == "approve":
+            if VIP_LEVELS[vip_level_of(x)]["rank"] >= L["rank"]:
+                err("ইউজার আগেই এই বা উচ্চতর লেভেলে আছে।"); return back("/admin/vip")
+            _vip_set(x, ap["level"], note or "application #%d approved" % i, a, "approve")
+            notify(x["id"], "VIP অনুমোদিত", "অভিনন্দন! আপনি এখন %s VIP — কমিশন %g%%। এটি স্থায়ী।" % (L["name"], L["rate"]), "/vip",
+                   "VIP approved", "Congratulations! You are now %s VIP — %g%% commission. This level is permanent." % (L["name"], L["rate"]))
+        else:
+            db().execute("DELETE FROM vip_deposit_use WHERE app_id=?", (i,))  # deposits become countable again
+            notify(x["id"], "VIP আবেদন বাতিল", "আপনার %s VIP আবেদন গৃহীত হয়নি।%s" % (L["name"], (" কারণ: " + note) if note else ""), "/vip",
+                   "VIP application rejected", "Your %s VIP application was not approved.%s" % (L["name"], (" Reason: " + note) if note else ""))
+            audit("vip_reject", "app#%d user#%s %s" % (i, x["id"], ap["level"]))
+        db().execute("UPDATE vip_applications SET status=?, note=?, admin=?, admin_id=?, decided=? WHERE id=?",
+                     ("approved" if act == "approve" else "rejected", note, a["member_id"], a["id"], now(), i))
+        if not q1("SELECT 1 FROM vip_applications WHERE status='pending'"):
+            alerts_done("/admin/vip")
+    flash("সম্পন্ন।"); return back("/admin/vip")
+
+
+@app.route("/admin/vip/user/<int:uid>", methods=["POST"])
+@staff_required("vip")
+def admin_vip_user(uid):
+    level, reason, a = request.form.get("level", ""), request.form.get("reason", "").strip()[:200], me()
+    if level not in VIP_LEVELS or len(reason) < 3:
+        err("সঠিক লেভেল ও কারণ (কমপক্ষে ৩ অক্ষর) দিন।"); return back("/admin/vip")
+    with atomic():
+        x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (uid,))
+        if not x:
+            abort(404)
+        if vip_level_of(x) == level:
+            err("ইউজার আগেই এই লেভেলে আছে।"); return back("/admin/vip")
+        L = _vip_set(x, level, reason, a, "revoke" if level == "standard" else "change")
+        notify(x["id"], "VIP আপডেট", "আপনার VIP লেভেল এখন %s (%g%%)।" % (L["name"], L["rate"]), "/vip",
+               "VIP updated", "Your VIP level is now %s (%g%%)." % (L["name"], L["rate"]))
+    flash("VIP আপডেট হয়েছে।"); return back("/admin/vip")
+
+
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
