@@ -1115,6 +1115,10 @@ canvas{width:100%;height:170px}
 [hidden]{display:none!important}
 .adm{display:flex;flex-wrap:wrap;gap:8px;overflow:visible;white-space:normal}.adm a.t{white-space:nowrap}.adm a.t{display:inline-flex;align-items:center;gap:6px;margin:0 0 8px}
 .mg{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-bottom:14px}
+.adm a.t.pri{background:#0EA371;border-color:#0EA371;color:#fff}.adm{position:sticky;top:0;z-index:5;background:var(--bg);padding-top:4px}
+.kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}.kp .card{margin:0;padding:12px}.kp .v{font-size:20px}
+.kp a.card{display:block;color:inherit}details.more{margin-bottom:12px}details.more>summary{cursor:pointer;font-weight:600;padding:2px 0}details.more[open]>summary{margin-bottom:10px}
+@media(max-width:480px){.kp{grid-template-columns:1fr 1fr}.kp .v{font-size:18px}.adm a.t{padding:7px 10px;font-size:13px}.tw{overflow-x:auto}}
 .mt{position:relative;aspect-ratio:1/1;background:var(--card);border:1px solid var(--ln);border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px;text-align:center;font-size:13px;font-weight:600;line-height:1.25;box-shadow:0 4px 14px #0A3D6614;-webkit-tap-highlight-color:transparent;transition:transform .12s ease,box-shadow .2s ease}
 .mt:active{transform:scale(.95)}.mt:hover{box-shadow:0 6px 18px #0A3D6624}
 .mt i{font-style:normal;font-size:28px;width:50px;height:50px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#E8F9F7,#CDEFEB)}
@@ -1361,7 +1365,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
 <main>{% for c,m in msgs %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
-{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active not in ('/admin','/admin/request-history')}}" href="/admin/menu">☰ কন্ট্রোল সেন্টার <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t" href="/admin/request-history" style="background:#1668D0;border-color:#1668D0;color:#fff{{';box-shadow:0 0 0 3px #1668D04d' if active=='/admin/request-history'}}">🧾 রিকোয়েস্ট হিস্ট্রি</a><a class="t" href="/admin/requests/new" style="background:#0EA371;border-color:#0EA371;color:#fff">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
+{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active!='/admin'}}" href="/admin/menu">☰ মেনু <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t pri" href="/admin/requests/new">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
@@ -2603,29 +2607,31 @@ def admin_home():
         pend = qa(REF_SQL + " WHERE r.status='pending' ORDER BY r.id LIMIT 5")
     if has_perm("users_view", u):
         acts = qa(ACTIVITY_SQL)
-    return page("""{% if fin %}<div class="g2"><div class="card"><div class="k">মোট ইউজার</div><div class="v">{{s.total}}</div></div>
-<div class="card"><div class="k">সক্রিয় ইউজার <span class="k">(৩০ দিনে লগইন)</span></div><div class="v">{{s.active30}}</div></div>
+    return page("""{% if fin %}<div class="kp">
+<a class="card" href="/admin/deposits"><div class="k">পেন্ডিং ডিপোজিট</div><div class="v">{{s.pend_dep}}</div></a>
+<a class="card" href="/admin/withdrawals"><div class="k">পেন্ডিং উইথড্র</div><div class="v">{{s.pend_wd}}</div></a>
+<a class="card" href="/admin/requests"><div class="k">পেন্ডিং রিকোয়েস্ট</div><div class="v">{{s.pend_req}}</div></a>
+<a class="card" href="/admin/tickets"><div class="k">খোলা টিকিট</div><div class="v">{{s.open_tickets}}</div></a>
+<div class="card"><div class="k">আজকের ডিপোজিট</div><div class="v">৳ {{money(s.today_dep)}}</div></div>
+<div class="card"><div class="k">আজকের কমিশন</div><div class="v">৳ {{money(s.comm_today)}}</div></div>
+<div class="card"><div class="k">মোট ওয়ালেট দায়</div><div class="v">৳ {{money(s.liability)}}</div></div>
+<div class="card"><div class="k">কমিশন পুল</div><div class="v">৳ {{money(s.pool)}}</div><div class="k">প্রতিশ্রুত ৳{{money(s.pool_res)}}</div></div></div>
+<details class="card more"><summary>📈 আরও পরিসংখ্যান</summary><div class="kp">
+<div class="card"><div class="k">মোট ইউজার</div><div class="v">{{s.total}}</div></div>
+<div class="card"><div class="k">সক্রিয় (৩০ দিন)</div><div class="v">{{s.active30}}</div></div>
 <div class="card"><div class="k">ব্লক নয় / ব্লকড</div><div class="v">{{s.active}} / {{s.blocked}}</div></div>
-<div class="card"><div class="k">পেন্ডিং রিকোয়েস্ট (ম্যানুয়াল)</div><div class="v">{{s.pend_req}}</div></div>
 <div class="card"><div class="k">মোট ডিপোজিট</div><div class="v">৳ {{money(s.dep_vol)}}</div></div>
 <div class="card"><div class="k">মোট উইথড্র</div><div class="v">৳ {{money(s.wd_vol)}}</div></div>
-<div class="card"><div class="k">আজকের কমিশন</div><div class="v">৳ {{money(s.comm_today)}}</div></div>
 <div class="card"><div class="k">মোট কমিশন</div><div class="v">৳ {{money(s.comm)}}</div></div>
-<div class="card"><div class="k">মোট ওয়ালেট দায়</div><div class="v">৳ {{money(s.liability)}}</div></div>
-<div class="card"><div class="k">আজকের ডিপোজিট</div><div class="v">৳ {{money(s.today_dep)}}</div></div>
-<div class="card"><div class="k">পেন্ডিং ডিপোজিট</div><div class="v">{{s.pend_dep}}</div></div>
-<div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">{{s.pend_wd}}</div></div>
 <div class="card"><div class="k">রেফারেল বোনাস (প্রদত্ত)</div><div class="v">৳ {{money(s.ref_paid)}}</div></div>
-<div class="card"><div class="k">পেন্ডিং রেফারেল</div><div class="v">{{s.ref_pend_n}} <span class="k">(৳{{money(s.ref_pend_amt)}})</span></div></div>
-<div class="card"><div class="k">খোলা টিকিট</div><div class="v">{{s.open_tickets}}</div></div>
-<div class="card"><div class="k">কমিশন পুল</div><div class="v">৳ {{money(s.pool)}}</div><div class="k">প্রতিশ্রুত ৳{{money(s.pool_res)}}</div></div></div>
+<div class="card"><div class="k">পেন্ডিং রেফারেল</div><div class="v">{{s.ref_pend_n}} <span class="k">(৳{{money(s.ref_pend_amt)}})</span></div></div></div></details>
 {% else %}<div class="g2"><div class="card"><div class="k">খোলা টিকিট</div><div class="v">{{s.open_tickets}}</div></div>
 <div class="card"><div class="k">মোট ইউজার</div><div class="v">{{s.total}}</div></div>
 {% if can('requests') %}<div class="card"><div class="k">পেন্ডিং রিকোয়েস্ট (ম্যানুয়াল)</div><div class="v">{{s.pend_req}}</div></div>{% endif %}</div>{% endif %}
-{% if acts %}<div class="card"><h3>সাম্প্রতিক ইউজার কার্যকলাপ</h3><div class="tw"><table>{% for a in acts %}<tr><td>{{(a['t'] or '')[:16]}}</td><td>{{a['d']}}</td></tr>{% endfor %}</table></div></div>{% endif %}
+{% if acts %}<details class="card more"><summary>🕘 সাম্প্রতিক ইউজার কার্যকলাপ</summary><div class="tw"><table>{% for a in acts %}<tr><td>{{(a['t'] or '')[:16]}}</td><td>{{a['d']}}</td></tr>{% endfor %}</table></div></details>{% endif %}
 {% if can('referrals') %}<h3>⏳ পেন্ডিং রেফারেল রিকোয়েস্ট</h3>""" + REF_LIST + """{% if rows %}<a class="btn s" style="width:100%;margin-bottom:14px" href="/admin/referrals">সব রেফারেল দেখুন</a>{% endif %}{% endif %}
 {% if fin %}<div id="integ"><div class="card k">⏳ লেজার যাচাই হচ্ছে…</div></div>
-<div class="card"><h3>গত ১৪ দিন</h3><canvas id="ch"></canvas></div>
+<div class="card"><b>গত ১৪ দিন</b><canvas id="ch"></canvas></div>
 <script>fetch('/admin/dash/integrity',{credentials:'same-origin'}).then(function(r){return r.ok?r.text():''}).then(function(h){var e=document.getElementById('integ');if(e&&h)e.innerHTML=h});fetch('/insight/data?days=14').then(r=>r.json()).then(j=>bars('ch',j.labels,[j.deposit,j.withdraw,j.commission],['#1E90FF','#EF4444','#2BC4A8']))</script>{% endif %}""",
                 active="/admin", s=s, bad=bad, rows=pend, fin=fin, acts=acts, rc=rc)
 
@@ -4171,17 +4177,20 @@ def admin_menu():
         tiles["/admin/referral-rewards"] = ("/admin/referral-rewards", "রিওয়ার্ড সেটিংস", "🎁", "")
     if has_perm("requests", u):
         tiles["/admin/requests/new"] = ("/admin/requests/new", "রিকোয়েস্ট পাঠান", "➕", "")
-    layout = [("", ["/admin/requests/new", "/admin/requests", "/admin/deposits", "/admin/withdrawals", "/admin/users", "/admin/alerts"]),
-              ("💰 আর্থিক ও কমিশন", ["/admin/commission", "/admin/vip", "/admin/pool", "/admin/referrals", "/admin/referral-rewards", "/admin/reports", "/admin/reconcile"]),
-              ("🎫 সাপোর্ট ও কনটেন্ট", ["/admin/tickets", "/admin/kyc", "/admin/notices", "/admin/content", "/admin/payment-numbers"]),
-              ("⚙️ সিস্টেম ও নিরাপত্তা", ["/admin/staff", "/admin/settings", "/admin/settings?open=security", "/admin/audit", "/admin/profile"])]
+    if has_perm("requests", u):
+        tiles["/admin/request-history"] = ("/admin/request-history", "রিকোয়েস্ট হিস্ট্রি", "🧾", "")
+    layout = [("", ["/admin/alerts", "/admin/deposits", "/admin/withdrawals", "/admin/requests", "/admin/request-history", "/admin/requests/new", "/admin/users", "/admin/tickets", "/admin/kyc"]),
+              ("💸 কমিশন, VIP ও রেফারেল", ["/admin/commission", "/admin/vip", "/admin/pool", "/admin/referrals", "/admin/referral-rewards"]),
+              ("📊 রিপোর্ট ও হিসাব", ["/admin/reports", "/admin/reconcile", "/admin/audit"]),
+              ("📝 কনটেন্ট ও পেমেন্ট নম্বর", ["/admin/payment-numbers", "/admin/notices", "/admin/content"]),
+              ("⚙️ সিস্টেম ও নিরাপত্তা", ["/admin/staff", "/admin/settings", "/admin/settings?open=security", "/admin/profile"])]
     groups, used = [], set()
     for title, keys in layout:
         items = [tiles[k] for k in keys if k in tiles]
         used.update(k for k in keys if k in tiles)
         groups.append([title, items])
     groups[-1][1].extend(v for k, v in tiles.items() if k not in used)  # safety net: no feature can ever go missing
-    return page("""<div class="cc-h">🎛 কন্ট্রোল সেন্টার</div><div class="cc-sub">যে ফিচারে নতুন নোটিফিকেশন আছে, তার বাটনে সংখ্যা দেখা যাবে।</div>
+    return page("""<div class="cc-h">🎛 কন্ট্রোল সেন্টার</div><div class="cc-sub">প্রতিদিনের কাজ উপরে। অন্যান্য অপশন নিচের গ্রুপ খুলে দেখুন।</div>
 <div class="mg">{% for p,t,ic,bk in groups[0][1] %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>{% if bk %}
 <span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div>
 {% for g in groups[1:] if g[1] %}<details class="card set cg"><summary>{{g[0]}} <span class="k">({{g[1]|length}})</span><span class="gdot"></span></summary>
