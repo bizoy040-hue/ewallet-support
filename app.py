@@ -1115,7 +1115,7 @@ canvas{width:100%;height:170px}
 [hidden]{display:none!important}
 .adm{display:flex;flex-wrap:wrap;gap:8px;overflow:visible;white-space:normal}.adm a.t{white-space:nowrap}.adm a.t{display:inline-flex;align-items:center;gap:6px;margin:0 0 8px}
 .mg{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px;margin-bottom:14px}
-.adm a.t.pri{background:#0EA371;border-color:#0EA371;color:#fff}.adm{position:sticky;top:0;z-index:5;background:var(--bg);padding-top:4px}
+.adm a.t.pri{background:#0EA371;border-color:#0EA371;color:#fff}
 .kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}.kp .card{margin:0;padding:12px}.kp .v{font-size:20px}
 .kp a.card{display:block;color:inherit}details.more{margin-bottom:12px}details.more>summary{cursor:pointer;font-weight:600;padding:2px 0}details.more[open]>summary{margin-bottom:10px}
 @media(max-width:480px){.kp{grid-template-columns:1fr 1fr}.kp .v{font-size:18px}.adm a.t{padding:7px 10px;font-size:13px}.tw{overflow-x:auto}}
@@ -1190,6 +1190,32 @@ img.shot{max-width:100%;border-radius:12px;margin:8px 0;border:1px solid var(--l
 .btn:focus-visible,button:focus-visible,.adm a.t:focus-visible{outline:2px solid var(--b);outline-offset:2px}
 :root[data-theme=dark] .top{background:linear-gradient(100deg,#1B7FE0,#1259B0)}:root[data-theme=dark] .hero{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0);box-shadow:0 16px 34px -16px #000a}:root[data-theme=dark] .hero2{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0)}:root[data-theme=dark] .nav a{--t:#1E90FF26}:root[data-theme=dark] .mt i,:root[data-theme=dark] .li .ic{background:linear-gradient(135deg,#123B4A,#0F2F44)}:root[data-theme=dark] .pill.approved,:root[data-theme=dark] .pill.paid{background:#0F3D31;color:#6EE7B7}:root[data-theme=dark] .pill.rejected{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .pill.pending,:root[data-theme=dark] .pill.review,:root[data-theme=dark] .pill.processing{background:#4A3512;color:#FCD34D}:root[data-theme=dark] .pill.submitted{background:#0F3555;color:#8CCBFF}:root[data-theme=dark] .pill.expired,:root[data-theme=dark] .pill.cancelled{background:#1A3449;color:#9DB4C4}:root[data-theme=dark] .hxc .pill.pending,:root[data-theme=dark] .hxc .pill.review,:root[data-theme=dark] .hxc .pill.processing,:root[data-theme=dark] .hxc .pill.submitted{background:#4A3512;color:#FCD34D}:root[data-theme=dark] .hxc.hy .hy-tt .pill{background:#1A3449;color:#9DB4C4}:root[data-theme=dark] .hxc.hy .hy-tt .pill.pending,:root[data-theme=dark] .hxc.hy .hy-tt .pill.review,:root[data-theme=dark] .hxc.hy .hy-tt .pill.processing,:root[data-theme=dark] .hxc.hy .hy-tt .pill.submitted{background:#4A3512;color:#FCD34D}:root[data-theme=dark] .hxc.hy .hy-tt .pill.approved,:root[data-theme=dark] .hxc.hy .hy-tt .pill.paid{background:#0F3D31;color:#6EE7B7}:root[data-theme=dark] .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .msg{background:#0F3A44;color:#A8EDE6}:root[data-theme=dark] .msg.error{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .au-msg{background:#0F3D31;color:#6EE7B7}:root[data-theme=dark] .au-msg.error{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .ur-b{background:#1A3449;color:#9DB4C4}:root[data-theme=dark] .ur-b.pending,:root[data-theme=dark] .ur-b.review{background:#4A3512;color:#FCD34D}:root[data-theme=dark] .ur-b.submitted{background:#0F3555;color:#8CCBFF}:root[data-theme=dark] .ur-b.approved{background:#0F3D31;color:#6EE7B7}:root[data-theme=dark] .ur-b.rejected{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .ur-b.expired,:root[data-theme=dark] .ur-b.cancelled{background:#1A3449;color:#9DB4C4}:root[data-theme=dark] body.auth{background:#0A2A4A}:root[data-theme=dark] body.auth::before{background:radial-gradient(90% 60% at 100% 0%,#DFF7F522,#DFF7F500 60%),linear-gradient(165deg,#0F5FB5,#082F57)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .top{background:linear-gradient(100deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .hero{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0);box-shadow:0 16px 34px -16px #000a}:root:not([data-theme=light]) .hero2{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .nav a{--t:#1E90FF26}:root:not([data-theme=light]) .mt i,:root:not([data-theme=light]) .li .ic{background:linear-gradient(135deg,#123B4A,#0F2F44)}:root:not([data-theme=light]) .pill.approved,:root:not([data-theme=light]) .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .pill.pending,:root:not([data-theme=light]) .pill.review,:root:not([data-theme=light]) .pill.processing{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .pill.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .pill.expired,:root:not([data-theme=light]) .pill.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc .pill.pending,:root:not([data-theme=light]) .hxc .pill.review,:root:not([data-theme=light]) .hxc .pill.processing,:root:not([data-theme=light]) .hxc .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.pending,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.review,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.processing,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.approved,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .msg{background:#0F3A44;color:#A8EDE6}:root:not([data-theme=light]) .msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .au-msg{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .au-msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .ur-b.pending,:root:not([data-theme=light]) .ur-b.review{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .ur-b.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .ur-b.approved{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .ur-b.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b.expired,:root:not([data-theme=light]) .ur-b.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) body.auth{background:#0A2A4A}:root:not([data-theme=light]) body.auth::before{background:radial-gradient(90% 60% at 100% 0%,#DFF7F522,#DFF7F500 60%),linear-gradient(165deg,#0F5FB5,#082F57)}}
+/* ===== admin simplification v2: consistent controls, compact menu, touch safety ===== */
+a,button,.btn,summary,select,label.pmc{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.btn,button.btn{min-height:40px}.btn.sm{min-height:34px}
+.adm{gap:6px;margin-bottom:8px}.adm a.t{min-height:38px;box-sizing:border-box;padding:0 14px;font-size:13.5px;font-weight:600;border-radius:12px;margin:0}
+.adm a.t.on{box-shadow:none}
+.mg{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;margin-bottom:10px}
+.mt{aspect-ratio:auto!important;flex-direction:row!important;justify-content:flex-start!important;gap:10px!important;padding:8px 12px!important;border-radius:14px!important;text-align:left;box-shadow:none!important;min-height:52px;font-size:13.5px!important}
+.mt i{width:34px!important;height:34px!important;font-size:19px!important;border-radius:10px!important;flex:none}
+.mt .lb{min-width:0;overflow-wrap:anywhere}.mt .bd2{top:6px!important;right:8px!important}
+details.cg{padding:12px 14px;margin-bottom:8px;box-shadow:none}details.cg summary{font-weight:600;font-size:14px;cursor:pointer;list-style:none}details.cg summary::-webkit-details-marker{display:none}details.cg[open] summary{margin-bottom:10px}
+/* request screens */
+.sg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 10px}
+.sg a{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:46px;padding:4px 4px;border-radius:12px;background:var(--card);border:1px solid var(--ln);color:var(--mut);font-size:12.5px;font-weight:600;line-height:1.25;text-align:center;text-decoration:none}
+.sg a.on{background:var(--b);border-color:var(--b);color:#fff}
+.sg a .n{position:absolute;top:-6px;right:-3px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ef4444;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.fb{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+.fb button{min-height:36px;padding:0 4px;border-radius:10px;border:1px solid var(--ln);background:var(--card);background-image:none;box-shadow:none;color:var(--mut);font-weight:600;font-size:12.5px;line-height:1.2;margin:0}
+.fb button.on{background:var(--b);border-color:var(--b);color:#fff}
+.fs{display:grid;grid-template-columns:1fr 1fr;gap:6px}.fs select{margin:0;min-height:40px;font-size:13px}
+.rc{display:block;background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:9px 12px;margin-bottom:6px;color:var(--tx);text-decoration:none}
+.rc .r1,.rc .r2{display:flex;justify-content:space-between;align-items:center;gap:8px}.rc .r2{margin-top:3px;font-size:12.5px;color:var(--mut)}
+.rc .id{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rc .am{font-weight:700;font-size:14px;color:var(--okt);white-space:nowrap}
+.rc .nm{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.rc .pill{flex:none;white-space:nowrap}
+.rw{margin-bottom:6px}.rw .rq-acts{margin:-2px 0 4px;padding:0 2px}.rw .rq-acts .btn{flex:1;min-width:0;justify-content:center}
+@media(max-width:380px){.mg{grid-template-columns:1fr!important}}
+
 """
 
 JS = """
@@ -1365,7 +1391,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
 <main>{% for c,m in msgs %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
-{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active!='/admin'}}" href="/admin/menu">☰ মেনু <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t pri" href="/admin/requests/new">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
+{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active=='/admin/menu'}}" href="/admin/menu">☰ মেনু <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t pri" href="/admin/requests/new">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
@@ -4175,11 +4201,7 @@ def admin_menu():
         tiles["/admin/settings?open=security"] = ("/admin/settings?open=security", "নিরাপত্তা", "🔒", "")
     if has_perm("referrals", u):
         tiles["/admin/referral-rewards"] = ("/admin/referral-rewards", "রিওয়ার্ড সেটিংস", "🎁", "")
-    if has_perm("requests", u):
-        tiles["/admin/requests/new"] = ("/admin/requests/new", "রিকোয়েস্ট পাঠান", "➕", "")
-    if has_perm("requests", u):
-        tiles["/admin/request-history"] = ("/admin/request-history", "রিকোয়েস্ট হিস্ট্রি", "🧾", "")
-    layout = [("", ["/admin/alerts", "/admin/deposits", "/admin/withdrawals", "/admin/requests", "/admin/request-history", "/admin/requests/new", "/admin/users", "/admin/tickets", "/admin/kyc"]),
+    layout = [("", ["/admin/alerts", "/admin/deposits", "/admin/withdrawals", "/admin/requests", "/admin/users", "/admin/tickets", "/admin/kyc"]),
               ("💸 কমিশন, VIP ও রেফারেল", ["/admin/commission", "/admin/vip", "/admin/pool", "/admin/referrals", "/admin/referral-rewards"]),
               ("📊 রিপোর্ট ও হিসাব", ["/admin/reports", "/admin/reconcile", "/admin/audit"]),
               ("📝 কনটেন্ট ও পেমেন্ট নম্বর", ["/admin/payment-numbers", "/admin/notices", "/admin/content"]),
@@ -4190,7 +4212,7 @@ def admin_menu():
         used.update(k for k in keys if k in tiles)
         groups.append([title, items])
     groups[-1][1].extend(v for k, v in tiles.items() if k not in used)  # safety net: no feature can ever go missing
-    return page("""<div class="cc-h">🎛 কন্ট্রোল সেন্টার</div><div class="cc-sub">প্রতিদিনের কাজ উপরে। অন্যান্য অপশন নিচের গ্রুপ খুলে দেখুন।</div>
+    return page("""<div class="cc-h">☰ মেনু</div>
 <div class="mg">{% for p,t,ic,bk in groups[0][1] %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>{% if bk %}
 <span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div>
 {% for g in groups[1:] if g[1] %}<details class="card set cg"><summary>{{g[0]}} <span class="k">({{g[1]|length}})</span><span class="gdot"></span></summary>
@@ -5430,38 +5452,27 @@ RQ_STATUS_CHIPS = {
 TX_GROUP = {"pending": ("pending",), "review": ("review", "processing"), "approved": ("approved", "paid"), "rejected": ("rejected",)}
 RQ_PER = 25
 
-RQ_HEAD = """<div class="rq-tabs">
-<a class="rq-tab {{'on' if tab=='admin'}}" href="/admin/requests?tab=admin"><span class="ic">📤</span><span class="tt">অ্যাডমিন → ইউজার<small>অ্যাডমিনের পাঠানো</small></span>{% if n_admin %}<b class="n">{{n_admin}}</b>{% endif %}</a>
-<a class="rq-tab {{'on' if tab=='user'}}" href="/admin/requests?tab=user"><span class="ic">📥</span><span class="tt">ইউজার → অ্যাডমিন<small>ইউজারের জমা দেওয়া</small></span>{% if n_user %}<b class="n">{{n_user}}</b>{% endif %}</a></div>
-<div class="sum">
-<a class="{{'on' if tab=='admin'}}" href="/admin/requests?tab=admin"><b>{{tot_a}}</b><span>মোট অ্যাডমিন → ইউজার</span></a>
-<a class="{{'on' if tab=='user'}}" href="/admin/requests?tab=user"><b>{{tot_u}}</b><span>মোট ইউজার → অ্যাডমিন</span></a>
-{% for k,l in cards %}<a class="s-{{k}} {{'on' if st==k}}" href="/admin/requests?tab={{tab}}&status={{k}}"><b>{{cnt[k]}}</b><span>{{l}}</span></a>{% endfor %}</div>
-<div class="k" style="margin:-4px 0 10px">স্ট্যাটাস কার্ডগুলো বর্তমান তালিকার ({{'অ্যাডমিন → ইউজার' if tab=='admin' else 'ইউজার → অ্যাডমিন'}}) জন্য — ট্যাপ করলে ফিল্টার হবে।</div>
-<div class="card" style="padding:12px 14px"><div class="row" style="align-items:center"><h2 style="margin:0">{{'📤 অ্যাডমিন → ইউজার রিকোয়েস্ট' if tab=='admin' else '📥 ইউজার → অ্যাডমিন রিকোয়েস্ট'}}</h2>
-{% if tab=='admin' %}<a class="btn sm g" href="/admin/requests/new" style="flex:0;white-space:nowrap">➕ নতুন</a>{% endif %}</div>
-<div class="sq" style="margin-top:10px"><input id="rq" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" value="{{q}}" placeholder="{{ph}}"></div>
-<div class="chips" id="rf2">{% for k,l in chips %}<button type="button" data-f="{{k}}" class="{{'on' if k==st}}">{{l}}</button>{% endfor %}</div>
-<div class="rq-sel"><select id="rty">{% if tab=='admin' %}<option value="">সব ধরন</option>{% for k,l in tyopts %}<option value="{{k}}" {{'selected' if ty==k}}>{{l}}</option>{% endfor %}
+RQ_TABS = """<div class="sg"><a class="{{'on' if tab=='admin'}}" href="/admin/requests?tab=admin">📤 অ্যাডমিন → ইউজার{% if n_admin %}<b class="n">{{n_admin}}</b>{% endif %}</a>
+<a class="{{'on' if tab=='user'}}" href="/admin/requests?tab=user">📥 ইউজার → অ্যাডমিন{% if n_user %}<b class="n">{{n_user}}</b>{% endif %}</a>
+<a class="{{'on' if tab=='history'}}" href="/admin/request-history">🧾 হিস্ট্রি</a></div>"""
+
+RQ_HEAD = RQ_TABS + """<div class="sq"><input id="rq" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" value="{{q}}" placeholder="{{ph}}"></div>
+<div class="fb" id="rf2">{% for k,l in prim %}<button type="button" data-f="{{k}}" class="{{'on' if k==st}}">{{l}}</button>{% endfor %}</div>
+<div class="fs"><select id="rmore" aria-label="আরও স্ট্যাটাস"><option value="">আরও স্ট্যাটাস…</option>{% for k,l in more %}<option value="{{k}}" {{'selected' if k==st}}>{{l}}</option>{% endfor %}</select>
+<select id="rty">{% if tab=='admin' %}<option value="">সব ধরন</option>{% for k,l in tyopts %}<option value="{{k}}" {{'selected' if ty==k}}>{{l}}</option>{% endfor %}
 {% else %}<option value="">ডিপোজিট + উইথড্র</option>{% for k,l in kopts %}<option value="{{k}}" {{'selected' if kd==k}}>{{l}}</option>{% endfor %}{% endif %}</select></div>
-<div class="sq-st" id="rst"></div></div>"""
+<div class="sq-st" id="rst"></div>"""
 
 RQ_ROWS_TPL = """{% if not rows and start==0 %}<div class="card empty">{{empty}}</div>{% endif %}
-{% for r in rows %}{% set sn = start + loop.index %}{% if tab=='admin' %}
-<div class="rq-card rq2" data-by="admin"><span class="rq-sn">{{sn}}</span><div class="rq-b">
-<a class="rq-main" href="/admin/requests/{{r['id']}}"><div class="rq-t"><b class="rq-id">{{r['order_id']}} <small class="k">#{{r['id']}}</small></b><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div>
-<div class="rq-u">{{r['name']}} · Member #{{r['member_id']}} · 📱 {{r['phone']}}</div>
-<div class="rq-m"><span class="rq-ty"><span class="rq-tag {{rtag(r)}}">{{rk(r)}}</span> {{r['method']}}</span><b class="rq-am">৳ {{money(r['amount'])}}</b></div>
-{% if r['commission'] %}<div class="rq-d">🎁 কমিশন ({{'%g'|format(r['commission_rate'] or 0)}}%): ৳{{money(r['commission'])}}</div>{% endif %}
-<div class="rq-d">📅 {{r['created'][:16]}} · {% if r['expires_at'] %}⏳ মেয়াদ: {{r['expires_at'][:16]}} UTC{% else %}⏳ মেয়াদ নেই{% endif %}{% if r['trx'] %} · TrxID: {{r['trx']}}{% endif %}{% if r['screenshot'] %} · 🖼{% endif %}</div></a>
-<div class="rq-acts"><a class="btn sm" href="/admin/requests/{{r['id']}}">⚙ দেখুন / ম্যানেজ</a>""" + REQ_BTNS + """</div></div></div>
-{% else %}
-<div class="rq-card rq2" data-by="user"><span class="rq-sn">{{sn}}</span><div class="rq-b">
-<a class="rq-main" href="/admin/requests/user/{{r['id']}}"><div class="rq-t"><b class="rq-id">{{'DEP' if r['kind']=='deposit' else 'WD'}}-{{'%05d'|format(r['id'])}} <small class="k">#{{r['id']}}</small></b><span class="pill {{r['status']}}">{{txl.get(r['status'], r['status'])}}</span></div>
-<div class="rq-u">{{r['name']}} · Member #{{r['member_id']}} · 📱 {{r['phone']}}</div>
-<div class="rq-m"><span class="rq-ty"><span class="rq-tag {{'dep' if r['kind']=='deposit' else 'wd'}}">{{kinds[r['kind']]}}</span> 💳 {{r['method']}}{% if r['number'] %} {{r['number']}}{% endif %}</span><b class="rq-am">৳ {{money(r['amount'])}}</b></div>
-<div class="rq-d">📅 {{r['created'][:16]}}{% if r['trx'] %} · TrxID: {{r['trx']}}{% endif %}{% if r['screenshot'] %} · 🖼{% endif %}</div></a>
-<div class="rq-acts"><a class="btn sm" href="/admin/requests/user/{{r['id']}}">⚙ দেখুন / ম্যানেজ</a>{% for a,l,c in acts[r['kind']] %}{% if r['status'] in a %}<button type="button" class="btn sm {{c}}" data-do="{{l[0]}}" data-u="/admin/tx/{{r['id']}}" data-c="{{c}}" data-t="{{l[1]}}" data-need="0" data-m="{{tnote(r,l[0])}}">{{l[1]}}</button>{% endif %}{% endfor %}</div></div></div>
+{% for r in rows %}{% if tab=='admin' %}<div class="rw"><a class="rc" href="/admin/requests/{{r['id']}}"><div class="r1"><b class="id">{{r['order_id']}}</b><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div>
+<div class="r1" style="margin-top:2px"><span class="nm">{{r['name']}} · #{{r['member_id']}}</span><b class="am">৳ {{money(r['amount'])}}</b></div>
+<div class="r2"><span><span class="rq-tag {{rtag(r)}}">{{rk(r)}}</span> {{r['method']}}</span><span>{{r['created'][5:16]}}</span></div></a>
+{% set ac = ra(r)|reject('equalto','edit')|list %}{% if ac %}<div class="rq-acts">""" + REQ_BTNS + """</div>{% endif %}</div>
+{% else %}<div class="rw"><a class="rc" href="/admin/requests/user/{{r['id']}}"><div class="r1"><b class="id">{{'DEP' if r['kind']=='deposit' else 'WD'}}-{{'%05d'|format(r['id'])}}</b><span class="pill {{r['status']}}">{{txl.get(r['status'], r['status'])}}</span></div>
+<div class="r1" style="margin-top:2px"><span class="nm">{{r['name']}} · #{{r['member_id']}}</span><b class="am">৳ {{money(r['amount'])}}</b></div>
+<div class="r2"><span><span class="rq-tag {{'dep' if r['kind']=='deposit' else 'wd'}}">{{kinds[r['kind']]}}</span> {{r['method']}}</span><span>{{r['created'][5:16]}}</span></div></a>
+{% set hasact = [] %}{% for a,l,c in acts[r['kind']] %}{% if r['status'] in a %}{% if hasact.append(1) %}{% endif %}{% endif %}{% endfor %}
+{% if hasact %}<div class="rq-acts">{% for a,l,c in acts[r['kind']] %}{% if r['status'] in a %}<button type="button" class="btn sm {{c}}" data-do="{{l[0]}}" data-u="/admin/tx/{{r['id']}}" data-c="{{c}}" data-t="{{l[1]}}" data-need="0" data-m="{{tnote(r,l[0])}}">{{l[1]}}</button>{% endif %}{% endfor %}</div>{% endif %}</div>
 {% endif %}{% endfor %}
 {% if more %}<button type="button" class="btn s rq-more" data-next="{{p+1}}" style="width:100%;margin-bottom:10px">আরও দেখান</button>{% endif %}"""
 
@@ -5592,22 +5603,26 @@ def admin_requests():
         every = len(rows) < RQ_PER
         alerts_seen(lambda link, ts: _admin_badge_key(link) == "/admin/requests" and ((every and ts < t0) or link in shown))
     chips = RQ_STATUS_CHIPS[tab]
-    if st not in {k for k, _ in chips}:
-        st = "all" if st != "open" else "open"
+    if st not in {k for k, _ in chips} | {"open"}:
+        st = "all"
+    PRIM = ("all", "open", "pending", "approved")
+    lab = dict(chips); lab.update({"open": "অ্যাকশন দরকার", "all": "সব", "approved": "সফল", "pending": "অপেক্ষমাণ"})
+    prim = [(k, lab[k]) for k in PRIM]
+    more = [(k, l) for k, l in chips if k not in PRIM]
     return page(RQ_STYLE + RQ2_STYLE + DESK_STYLE + RQ_HEAD + """<div id="rl">{{rl|safe}}</div>""" + ACT_MODAL + """
-<script>(function(){var box=document.getElementById('rl'),inp=document.getElementById('rq'),chips=document.getElementById('rf2'),sel=document.getElementById('rty'),stt=document.getElementById('rst');
-if(!box||!inp)return;var TAB={{tab|tojson}},f=(chips.querySelector('button.on')||{dataset:{f:{{st|tojson}}}}).dataset.f,tm=null,seq=0;
+<script>(function(){var box=document.getElementById('rl'),inp=document.getElementById('rq'),chips=document.getElementById('rf2'),sel=document.getElementById('rty'),mo=document.getElementById('rmore'),stt=document.getElementById('rst');
+if(!box||!inp)return;var TAB={{tab|tojson}},f={{st|tojson}},tm=null,seq=0;
 function qs(p){return 'tab='+TAB+'&status='+encodeURIComponent(f)+'&'+(TAB==='admin'?'ty':'kind')+'='+encodeURIComponent(sel.value)+'&q='+encodeURIComponent(inp.value.trim())+(p?'&p='+p:'')}
 function sync(){try{history.replaceState(null,'','/admin/requests?'+qs(0))}catch(e){}}
 function load(p,append,btn){var my=++seq;stt.textContent='খুঁজছে…';fetch('/admin/requests/list?'+qs(p),{credentials:'same-origin'}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(h){if(my!==seq)return;
  if(append){if(btn)btn.remove();box.insertAdjacentHTML('beforeend',h)}else box.innerHTML=h;stt.textContent=''}).catch(function(){if(my===seq){stt.textContent='লোড করা যায়নি — আবার চেষ্টা করুন';if(btn)btn.disabled=false}})}
 inp.addEventListener('input',function(){clearTimeout(tm);tm=setTimeout(function(){sync();load(1,false)},250)});
 inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();clearTimeout(tm);sync();load(1,false);inp.blur()}});
-chips.addEventListener('click',function(e){var b=e.target.closest('button[data-f]');if(!b)return;chips.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});f=b.dataset.f;sync();load(1,false)});
+chips.addEventListener('click',function(e){var b=e.target.closest('button[data-f]');if(!b)return;chips.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});mo.value='';f=b.dataset.f;sync();load(1,false)});
+mo.addEventListener('change',function(){if(!mo.value)return;chips.querySelectorAll('button').forEach(function(x){x.classList.remove('on')});f=mo.value;sync();load(1,false)});
 sel.addEventListener('change',function(){sync();load(1,false)});
 box.addEventListener('click',function(e){var b=e.target.closest('.rq-more');if(!b)return;b.disabled=true;load(+b.dataset.next,true,b)})})()</script>""",
-                active="/admin/requests", rl=html, tab=tab, st=st, q=q, ty=ty, kd=kd, n_admin=n_admin, n_user=n_user, tot_a=tot_a, tot_u=tot_u, cnt=cnt, chips=chips,
-                cards=[("pending", "অপেক্ষমাণ"), ("review", "যাচাইয়ে"), ("approved", "অনুমোদিত"), ("rejected", "রিজেক্ট"), ("cancelled", "বাতিল")],
+                active="/admin/requests", rl=html, tab=tab, st=st, q=q, ty=ty, kd=kd, n_admin=n_admin, n_user=n_user, prim=prim, more=more,
                 tyopts=[(k, TYPE_LABEL[k]) for k in ("client_confirm", "admin_review", "deposit", "withdraw")],
                 kopts=[(k, REQ_KIND[k]) for k in _rq_kinds()],
                 ph="Request ID / Member ID / নাম / ফোন / TrxID")
@@ -6009,23 +6024,16 @@ def admin_request_history():
     cnt = {"all": sum(by.values()), "pending": sum(by.get(s, 0) for s in OPEN_REQ), "success": by.get("approved", 0),
            "cancelled": by.get("cancelled", 0), "rejected": by.get("rejected", 0)}
     tabs = [("all", "সব"), ("pending", "অপেক্ষমাণ"), ("success", "সফল"), ("cancelled", "বাতিল"), ("rejected", "রিজেক্ট")]
-    return page("""<style>
-.rh-f{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 8px}
-.rh-f a{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--ln);background:var(--card);color:var(--mut);font-weight:600;font-size:12px;line-height:1;white-space:nowrap;text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.rh-f a i{font-style:normal;font-size:10.5px;min-width:16px;padding:1px 5px;border-radius:99px;background:var(--bg);text-align:center}
-.rh-f a.on{color:#fff;border-color:#1E90FF;background:#1E90FF}.rh-f a.on[data-f=pending]{border-color:#d97706;background:#d97706}.rh-f a.on[data-f=success]{border-color:#0EA371;background:#0EA371}.rh-f a.on[data-f=cancelled]{border-color:#64748b;background:#64748b}.rh-f a.on[data-f=rejected]{border-color:#dc2626;background:#dc2626}.rh-f a.on i{background:#ffffff33;color:#fff}
-.rh-c{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card);border:1px solid var(--ln);border-radius:9px;padding:7px 10px;margin-bottom:5px;color:var(--tx);text-decoration:none}
-.rh-l{min-width:0}.rh-id{display:block;font-weight:700;font-size:13px;line-height:1.3;overflow-wrap:anywhere}.rh-t{display:block;font-size:12px;color:var(--mut);line-height:1.3}
-.rh-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:0 0 auto}.rh-am{font-size:13px;font-weight:700;line-height:1.3}
-.rh-c .pill{flex:0;white-space:nowrap;font-size:11px;padding:1px 8px;line-height:1.5}
-.rh-pg{display:flex;gap:6px;margin:4px 0 8px}.rh-pg a{flex:1}
-</style>
-<div class="rh-f">{% for k,lb in tabs %}<a data-f="{{k}}" class="{{'on' if f==k}}" href="/admin/request-history{{'' if k=='all' else '?f='+k}}">{{lb}} <i>{{cnt[k]}}</i></a>{% endfor %}</div>
+    _, _, _, n_admin, n_user = _rq_summary("admin")
+    return page(RQ_TABS + """<div class="fb" style="grid-template-columns:repeat(3,1fr)">{% for k,lb in tabs[:3] %}<a class="btn s{{' on' if f==k}}" style="min-height:36px;margin:0;font-size:12.5px;padding:0 4px;{{'background:var(--b);border-color:var(--b);color:#fff' if f==k}}" href="/admin/request-history{{'' if k=='all' else '?f='+k}}">{{lb}} {{cnt[k]}}</a>{% endfor %}</div>
+<div class="fs" style="grid-template-columns:1fr"><select aria-label="আরও ফিল্টার" onchange="if(this.value)location.href=this.value"><option value="">{{('আরও: '+dict(tabs)[f]) if f in ('cancelled','rejected') else 'আরও ফিল্টার…'}}</option>{% for k,lb in tabs[3:] %}<option value="/admin/request-history?f={{k}}">{{lb}} ({{cnt[k]}})</option>{% endfor %}</select></div>
+<div style="height:8px"></div>
 {% if not rows %}<div class="card empty">কোনো রিকোয়েস্ট নেই</div>{% endif %}
-{% for r in rows %}<a class="rh-c" href="/admin/requests/{{r['id']}}"><div class="rh-l"><span class="rh-id">{{r['order_id']}}</span><span class="rh-t">{{kinds.get(rdt(r), '')}}</span></div>
-<div class="rh-r"><span class="rh-am">৳ {{money(r['amount'])}}</span><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div></a>{% endfor %}
-{% if p>1 or more %}<div class="rh-pg">{% if p>1 %}<a class="btn sm s" href="/admin/request-history?f={{f}}&p={{p-1}}">← আগের</a>{% endif %}{% if more %}<a class="btn sm s" href="/admin/request-history?f={{f}}&p={{p+1}}">পরের →</a>{% endif %}</div>{% endif %}""",
-                active="/admin/request-history", rows=rows[:RH_PER], more=len(rows) > RH_PER, p=p, f=f, cnt=cnt, tabs=tabs, labels=REQ_LABEL, kinds=REQ_KIND)
+{% for r in rows %}<a class="rc" href="/admin/requests/{{r['id']}}"><div class="r1"><b class="id">{{r['order_id']}}</b><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div>
+<div class="r1" style="margin-top:2px"><span class="nm">{{r['name']}} · #{{r['member_id']}}</span><b class="am">৳ {{money(r['amount'])}}</b></div>
+<div class="r2"><span>{{kinds.get(rdt(r), '')}}</span><span>{{r['created'][5:16]}}</span></div></a>{% endfor %}
+{% if p>1 or more %}<div class="fs" style="margin-top:6px">{% if p>1 %}<a class="btn sm s" href="/admin/request-history?f={{f}}&p={{p-1}}">← আগের</a>{% else %}<span></span>{% endif %}{% if more %}<a class="btn sm s" href="/admin/request-history?f={{f}}&p={{p+1}}">পরের →</a>{% endif %}</div>{% endif %}""",
+                active="/admin/request-history", tab="history", n_admin=n_admin, n_user=n_user, rows=rows[:RH_PER], more=len(rows) > RH_PER, p=p, f=f, cnt=cnt, tabs=tabs, labels=REQ_LABEL, kinds=REQ_KIND)
 
 
 @app.route("/admin/warnings/new", methods=["POST"])
