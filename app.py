@@ -465,9 +465,6 @@ V5_COLUMNS = [
     ("requests", "pay_type", "TEXT", "TEXT"), ("requests", "extra_commission", "REAL", "NUMERIC(14,2)"),
     ("users", "vip_level", "TEXT", "TEXT"), ("users", "vip_rate", "REAL", "NUMERIC(7,3)"), ("tx", "account_type", "TEXT", "TEXT"),
     ("requests", "cancel_fee", "REAL", "NUMERIC(14,2)"), ("requests", "cancel_by", "TEXT", "TEXT"),
-    ("users", "tx_pref", "TEXT", "TEXT"),  # legacy (unused)
-    ("users", "tx_active", "TEXT", "TEXT"), ("users", "tx_req", "TEXT", "TEXT"), ("users", "tx_req_status", "TEXT", "TEXT"), ("users", "tx_req_at", "TEXT", "TEXT"), ("users", "tx_hold", "TEXT", "TEXT"), ("users", "tx_hold_at", "TEXT", "TEXT"),  # tx_hold='1' -> admin HOLD overlay (tx_active is kept untouched, so Resume restores it)
-      # transaction preference: approved value / requested value / pending|approved (display-only, never changes permissions)
     # @@COLUMNS
 ]
 # (name, CREATE TABLE template, [index statements], immutable?)  {ID}=primary key, {BIG}=integer ref, {NUM}=money
@@ -514,14 +511,6 @@ V5_TABLES = [
     # @@TABLES
 ]
 V5_INDEXES = [
-    "CREATE INDEX IF NOT EXISTS ix_alert_reads_admin ON admin_alert_reads(admin_id)",
-    "CREATE INDEX IF NOT EXISTS ix_alert_perm_created ON admin_alerts(perm,created)",
-    "CREATE INDEX IF NOT EXISTS ix_req_status_exp ON requests(status,expires_at)",
-    "CREATE INDEX IF NOT EXISTS ix_ledger_user_id ON ledger(user_id,id)",
-    "CREATE INDEX IF NOT EXISTS ix_tx_user_id ON tx(user_id,id)",
-    "CREATE INDEX IF NOT EXISTS ix_req_user_id ON requests(user_id,id)",
-    "CREATE INDEX IF NOT EXISTS ix_tx_kind_status_upd ON tx(kind,status,updated)",
-    "CREATE INDEX IF NOT EXISTS ix_notif_user_id ON notifications(user_id,id)",
     "CREATE INDEX IF NOT EXISTS ix_users_member ON users(member_id)",
     "CREATE INDEX IF NOT EXISTS ix_ledger_created ON ledger(created)",
     "CREATE INDEX IF NOT EXISTS ix_ledger_kind ON ledger(kind)",
@@ -534,14 +523,6 @@ V5_INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_audit_actor ON audit(actor_id)",
     "CREATE INDEX IF NOT EXISTS ix_req_user_status ON requests(user_id,status)",
     "CREATE INDEX IF NOT EXISTS ix_tx_kind_status ON tx(kind,status)",
-    "CREATE INDEX IF NOT EXISTS ix_users_admin_blocked ON users(is_admin,blocked)",
-    "CREATE INDEX IF NOT EXISTS ix_users_created ON users(created)",
-    "CREATE INDEX IF NOT EXISTS ix_ledger_kind_created ON ledger(kind,created)",
-    "CREATE INDEX IF NOT EXISTS ix_alert_link ON admin_alerts(link)",
-    "CREATE INDEX IF NOT EXISTS ix_tickets_status ON tickets(status)",
-    "CREATE INDEX IF NOT EXISTS ix_req_kind_status ON requests(kind,status)",
-    "CREATE INDEX IF NOT EXISTS ix_req_submitted ON requests(submitted_at)",
-    "CREATE INDEX IF NOT EXISTS ix_login_created ON login_history(created)",
 ]
 V5_NEW_TABLES = [t[0] for t in V5_TABLES]
 ID_TABLES = ID_TABLES | frozenset(V5_NEW_TABLES)  # @@IDTABLES_FIX
@@ -660,10 +641,6 @@ def _seed_defaults(c):
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (k, v))
     c.execute("INSERT OR IGNORE INTO pool_account(id,balance,updated) VALUES(1,0,?)", (now(),))  # the single pool row; starts at 0
-    c.execute("UPDATE users SET tx_active='OFF' WHERE is_admin=0 AND tx_active IS NULL")  # transactions are OFF by default
-    c.execute("UPDATE users SET tx_active='OFF', tx_req=NULL, tx_req_status=NULL WHERE is_admin=0 AND tx_active='ON' AND NOT EXISTS ("
-              "SELECT 1 FROM audit a WHERE (a.action='tx_pref_approve' AND a.detail='user_id='||CAST(users.id AS TEXT)||' pref=ON') "
-              "OR (a.action='tx_admin_on' AND a.detail='user_id='||CAST(users.id AS TEXT)))")  # ON without a recorded admin approval -> OFF
     c.execute("INSERT OR IGNORE INTO meta VALUES('pool_since',?)", (now(),))  # commission/bonus credits before this moment are "pre-pool legacy"; after it, every one must be pool-backed
 
 
@@ -967,29 +944,6 @@ def _guard():
             abort(400, "Invalid CSRF token. Reload the page.")
 
 
-_WV = [0]   # bumped after every write request handled by this process
-_QC = {}
-
-
-def qcache(key, ttl, fn):
-    """Tiny read cache for heavy, display-only aggregates: reused for <= ttl seconds and dropped immediately after any write (POST/PUT/PATCH/DELETE) in this process."""
-    t, e = time.time(), _QC.get(key)
-    if e and e[0] == _WV[0] and t - e[1] < ttl:
-        return e[2]
-    v = fn()
-    if len(_QC) > 64:
-        _QC.clear()
-    _QC[key] = (_WV[0], t, v)
-    return v
-
-
-@app.after_request
-def _bump_wv(r):
-    if request.method != "GET" and request.method != "HEAD":
-        _WV[0] += 1
-    return r
-
-
 @app.after_request
 def _headers(r):
     r.headers["X-Content-Type-Options"] = "nosniff"
@@ -1003,7 +957,7 @@ def _headers(r):
                 and not r.headers.get("Content-Encoding") and r.mimetype in ("text/html", "text/css", "application/javascript", "application/json")):
             data = r.get_data()
             if len(data) > 800:
-                r.set_data(gzip.compress(data, 3))
+                r.set_data(gzip.compress(data, 5))
                 r.headers["Content-Encoding"] = "gzip"
                 r.headers.add("Vary", "Accept-Encoding")
     except Exception:
@@ -1238,7 +1192,6 @@ img.shot{max-width:100%;border-radius:12px;margin:8px 0;border:1px solid var(--l
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .top{background:linear-gradient(100deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .hero{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0);box-shadow:0 16px 34px -16px #000a}:root:not([data-theme=light]) .hero2{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .nav a{--t:#1E90FF26}:root:not([data-theme=light]) .mt i,:root:not([data-theme=light]) .li .ic{background:linear-gradient(135deg,#123B4A,#0F2F44)}:root:not([data-theme=light]) .pill.approved,:root:not([data-theme=light]) .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .pill.pending,:root:not([data-theme=light]) .pill.review,:root:not([data-theme=light]) .pill.processing{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .pill.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .pill.expired,:root:not([data-theme=light]) .pill.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc .pill.pending,:root:not([data-theme=light]) .hxc .pill.review,:root:not([data-theme=light]) .hxc .pill.processing,:root:not([data-theme=light]) .hxc .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.pending,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.review,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.processing,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.approved,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .msg{background:#0F3A44;color:#A8EDE6}:root:not([data-theme=light]) .msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .au-msg{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .au-msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .ur-b.pending,:root:not([data-theme=light]) .ur-b.review{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .ur-b.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .ur-b.approved{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .ur-b.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b.expired,:root:not([data-theme=light]) .ur-b.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) body.auth{background:#0A2A4A}:root:not([data-theme=light]) body.auth::before{background:radial-gradient(90% 60% at 100% 0%,#DFF7F522,#DFF7F500 60%),linear-gradient(165deg,#0F5FB5,#082F57)}}
 /* ===== admin simplification v2: consistent controls, compact menu, touch safety ===== */
 a,button,.btn,summary,select,label.pmc{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-a.tapping,button.tapping,a.tapped{opacity:.72;transition:none}.navbusy main{opacity:.88;transition:opacity .15s}
 .btn,button.btn{min-height:40px}.btn.sm{min-height:34px}
 .adm{gap:6px;margin-bottom:8px}.adm a.t{min-height:38px;box-sizing:border-box;padding:0 14px;font-size:13.5px;font-weight:600;border-radius:12px;margin:0}
 .adm a.t.on{box-shadow:none}
@@ -1272,11 +1225,9 @@ function ldShow(){var b=document.getElementById('ld');if(!b)return;clearTimeout(
 function ldHide(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.width='100%';setTimeout(function(){b.style.opacity='0';setTimeout(function(){b.style.width='0'},250)},180)}
 document.addEventListener('submit',function(e){var f=e.target,c=f.dataset.confirm;
  if(c&&!confirm(c)){e.preventDefault();return}
- if(window._navClear)window._navClear();
- if(f.dataset.sub==='1'){e.preventDefault();return}f.dataset.sub='1';
  ldShow();
  setTimeout(function(){f.querySelectorAll('button').forEach(function(b){b.style.minWidth=b.offsetWidth+'px';b.disabled=true;b.dataset.h=b.innerHTML;b.innerHTML='<span class="sp"></span>'})},0);});
-window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document.querySelectorAll('form[data-sub]').forEach(function(f){delete f.dataset.sub});document.querySelectorAll('button[data-h]').forEach(function(b){b.disabled=false;b.innerHTML=b.dataset.h;b.removeAttribute('data-h')})}});
+window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document.querySelectorAll('button[data-h]').forEach(function(b){b.disabled=false;b.innerHTML=b.dataset.h;b.removeAttribute('data-h')})}});
 (function(){var seq=0,SKIPS=['/login','/signup','/forgot','/static','/shot','/lang','/logout','/manifest.json','/service-worker.js','/assets','/healthz','/admin/backup'];
  function skip(p){return SKIPS.some(function(x){return p===x||p.indexOf(x+'/')===0})}
  function ok(a,e){if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return false;
@@ -1293,34 +1244,16 @@ window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document
    if(o&&n)o.replaceWith(document.importNode(n,true));else if(o&&!n)o.remove();else if(!o&&n){var m=cur.querySelector('main');if(sel==='.top')cur.insertBefore(document.importNode(n,true),cur.firstChild);else if(sel==='main'){}else m.after(document.importNode(n,true))}});
   document.querySelectorAll('main script').forEach(function(o){var n=document.createElement('script');n.textContent=o.textContent;o.replaceWith(n)});
   if(push)history.pushState({},'',url);window.scrollTo(0,0);paintToggles();
-  return true}
- var _ac=null,_busy='',CK={},CN=[],TTL=120000;
- function cOK(u){try{return new URL(u,location.href).pathname.indexOf('/admin')===0}catch(e){return false}}
- function cGet(u){var c=CK[u];return(c&&Date.now()-c.at<TTL)?c:null}
- function cSet(u,x){if(!cOK(u)||x.t.indexOf('class="msg ')>=0){delete CK[u];return}if(!CK[u])CN.push(u);CK[u]={t:x.t,u:x.u,at:Date.now()};while(CN.length>14){delete CK[CN.shift()]}}
- window._navClear=function(){CK={};CN=[]};
- function reval(url,my,old){fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'}}).then(function(r){var ct=r.headers.get('content-type')||'',rp=new URL(r.url).pathname;
-   if(ct.indexOf('text/html')<0||(r.redirected&&(rp==='/login'||rp==='/signup'))){if(my===seq)location.href=url;return null}
-   return r.text().then(function(t){return{t:t,u:r.url}})}).then(function(x){if(!x)return;cSet(url,x);if(my!==seq||x.t===old)return;
-   var a=document.activeElement;if(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&a.closest&&a.closest('main'))return;
-   var y=window.scrollY;if(swap(x.t,x.u||url,false))window.scrollTo(0,y)}).catch(function(){})}
- function go(url,push){var my=++seq;
-  if(_ac){try{_ac.abort()}catch(x){}}
-  var hit=cGet(url);
-  if(hit&&swap(hit.t,hit.u||url,push)){_busy='';document.documentElement.classList.remove('navbusy');reval(url,my,hit.t);return}
-  ldShow();
-  var ac=_ac=('AbortController' in window)?new AbortController():null;_busy=url;
-  fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'},signal:ac?ac.signal:undefined}).then(function(r){
+  if(typeof pollNotif==='function')pollNotif();return true}
+ function go(url,push){var my=++seq;ldShow();
+  fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'}}).then(function(r){
    var ct=r.headers.get('content-type')||'';
    var rp=new URL(r.url).pathname;if(ct.indexOf('text/html')<0||(r.redirected&&(rp==='/login'||rp==='/signup'))){location.href=url;return null}
    return r.text().then(function(t){return{t:t,u:r.url}})}).then(function(x){
    if(!x||my!==seq)return;
-   _busy='';document.documentElement.classList.remove('navbusy');
-   if(!swap(x.t,x.u||url,push)){location.href=url;return}cSet(url,x);ldHide()}).catch(function(e){if(e&&e.name==='AbortError')return;location.href=url})}
+   if(!swap(x.t,x.u||url,push)){location.href=url;return}ldHide()}).catch(function(){location.href=url})}
  document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a)return;var u=ok(a,e);if(!u)return;
-  e.preventDefault();if(_busy===u.href)return;a.classList.add('tapped');document.documentElement.classList.add('navbusy');go(u.href,true)});
- document.addEventListener('pointerdown',function(e){var a=e.target.closest&&e.target.closest('a[href],button');if(a)a.classList.add('tapping')},{passive:true});
- ['pointerup','pointercancel','pointerleave'].forEach(function(n){document.addEventListener(n,function(e){var a=e.target.closest&&e.target.closest('.tapping');if(a)a.classList.remove('tapping')},{passive:true})});
+  e.preventDefault();go(u.href,true)});
  window.addEventListener('popstate',function(){go(location.href,false)})})();
 function copyText(t,btn){var done=function(){if(btn){var o=btn.dataset.o||btn.textContent;btn.dataset.o=o;btn.textContent='✅ কপি হয়েছে';setTimeout(function(){btn.textContent=o},1800)}};
  if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(done,function(){fb()})}else{fb()}
@@ -1403,12 +1336,11 @@ function nfTest(){var site=(document.querySelector('.top b')||{}).textContent||'
  document.addEventListener('click',first,true);document.addEventListener('keydown',first,true);document.addEventListener('touchend',first,true);
  document.addEventListener('visibilitychange',function(){if(!document.hidden&&typeof pollNotif==='function')pollNotif()})})();
 var _last=null;
-var _pn=false;
-function pollNotif(){if(_pn||(document.hidden&&!nfActive()))return;  // background tabs keep polling only when browser notifications are on; never two polls at once
- _pn=true;fetch('/api/notif',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
+function pollNotif(){if(document.hidden&&!nfActive())return;  // background tabs keep polling only when browser notifications are on
+ fetch('/api/notif',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
   if(!j)return;var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
   if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}
-  nfCheck(j);_last=j.latest}).catch(function(){}).then(function(){_pn=false})}
+  nfCheck(j);_last=j.latest}).catch(function(){})}
 function applyBadges(j){var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
  if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}}
 var _rq=Promise.resolve();
@@ -1422,7 +1354,7 @@ function autoRead(){var box=document.getElementById('nlist');if(!box)return;var 
   else if(t[id]){clearTimeout(t[id]);delete t[id]}})},{threshold:[.5]});
  els.forEach(function(e){io.observe(e)})}
 paintToggles();
-if(document.body&&document.body.dataset.poll){pollNotif();setInterval(pollNotif,30000)}
+if(document.body&&document.body.dataset.poll){pollNotif();setInterval(pollNotif,20000)}
 function pwTog(b){var w=b.closest('.au-f'),i=w&&w.querySelector('input');if(!i)return;var show=i.type==='password';
  i.type=show?'text':'password';b.classList.toggle('on',show);b.setAttribute('aria-pressed',show?'true':'false')}
 document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-pwtoggle]');if(!b)return;e.preventDefault();pwTog(b)});
@@ -1450,7 +1382,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap"></noscript>
-<link rel="stylesheet" href="/assets/app.css?v={{av}}">{% if u and u['is_admin'] %}<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'"><link rel="stylesheet" href="/assets/admin.css?v={{adv}}">{% endif %}
+<link rel="stylesheet" href="/assets/app.css?v={{av}}">{% if u and u['is_admin'] %}<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"><link rel="stylesheet" href="/assets/admin.css?v={{adv}}">{% endif %}
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
 <body{% if authpage %} class="auth"{% elif u and u['is_admin'] %} class="A"{% endif %}{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
 <div id="ld"></div>
@@ -2300,7 +2232,7 @@ def signup():
                     if not referrer or referrer["blocked"] or referrer["phone"] == p:
                         err("রেফারেল কোডটি সঠিক নয়। কোড ঠিক করুন বা ফাঁকা রেখে সাইন আপ করুন।"); return redirect(back)
                 last = q1("SELECT COALESCE(MAX(CAST(member_id AS INTEGER)),1499) m FROM users WHERE member_id GLOB '[0-9]*'")["m"]
-                cur = db().execute("INSERT INTO users(name,phone,pw,member_id,created,role,referral_code,referred_by,signup_ip,tx_active) VALUES(?,?,?,?,?,?,?,?,?,'OFF')",
+                cur = db().execute("INSERT INTO users(name,phone,pw,member_id,created,role,referral_code,referred_by,signup_ip) VALUES(?,?,?,?,?,?,?,?,?)",
                                    (n, p, generate_password_hash(pw), str(last + 1), now(), "user", gen_code(db()),
                                     referrer["id"] if referrer else None, ip))
                 uid = cur.lastrowid
@@ -2445,18 +2377,6 @@ def home():
     req_open = q1("SELECT COUNT(*) c FROM requests WHERE user_id=? AND status='pending'", (u["id"],))["c"]
     return page("""{% if tk %}<div class="tkr" role="marquee"><span class="tkr-b">📢</span><div class="tkr-w"><div class="tkr-t" style="--d:{{tk.dur}}s">{{tk.text}}</div></div></div>{% endif %}<div class="card hero"><small>উপলব্ধ ব্যালেন্স</small><div class="bal">৳ {{money(u['balance'])}}</div>
 <div class="qa"><a class="qb q1" href="/deposit"><span class="qi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span class="ql">Add Money</span></a><a class="qb q2" href="/withdraw"><span class="qi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg></span><span class="ql">উইথড্র</span></a><a class="qb q3" href="/requests"><span class="qi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h5.2l1.3 2.5h5l1.3-2.5H21"/><path d="M5.6 5.6 3 13v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5l-2.6-7.4A2 2 0 0 0 16.5 4.3h-9a2 2 0 0 0-1.9 1.3z"/></svg></span><span class="ql">অনুরোধ</span>{% if req_open %}<span class="qn">{{req_open}}</span>{% endif %}</a><a class="qb q4" href="/payment-numbers"><span class="qi"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h3"/></svg></span><span class="ql">Payment Methods</span></a></div></div>
-<style>.txp{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}.txp button{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;min-height:32px;padding:5px 8px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;background-image:none;box-shadow:0 1px 3px #0b254014;transition:background .25s ease,color .25s ease,border-color .25s ease,box-shadow .25s ease,transform .15s ease}.txp button:active{transform:scale(.97)}.txp button:disabled{opacity:.75;cursor:default}.txp .t-on{background:#F0FBF6;color:#0B7A50;border:1px solid #BDEBD6}.txp .t-off{background:#FFF4F3;color:#C93B3B;border:1px solid #F7CFCB}.txp .t-on.sel{background:linear-gradient(135deg,#34D399,#059669);color:#fff;border-color:transparent;box-shadow:0 5px 12px -5px #059669}.txp .t-off.sel{background:linear-gradient(135deg,#FB7185,#EF4444);color:#fff;border-color:transparent;box-shadow:0 5px 12px -5px #EF4444}.txp .t-on.sel.pending{background:#FEF3C7;color:#92400E;border:1px solid #F59E0B;box-shadow:0 4px 10px -5px #F59E0B}.txp .ck{font-weight:800}:root[data-theme=dark] .txp .t-on:not(.sel){background:#10B9811c;color:#6EE7B7;border-color:#10B98155}:root[data-theme=dark] .txp .t-off:not(.sel){background:#EF44441c;color:#FCA5A5;border-color:#EF444455}:root[data-theme=dark] .txp .t-on.sel.pending{background:#4A3512;color:#FCD34D;border-color:#F59E0B88}@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .txp .t-on:not(.sel){background:#10B9811c;color:#6EE7B7;border-color:#10B98155}:root:not([data-theme=light]) .txp .t-off:not(.sel){background:#EF44441c;color:#FCA5A5;border-color:#EF444455}:root:not([data-theme=light]) .txp .t-on.sel.pending{background:#4A3512;color:#FCD34D;border-color:#F59E0B88}}</style>
-{% set act='OFF' if u['tx_active']!='ON' else ('HOLD' if u['tx_hold']=='1' else 'ON') %}<div class="k" style="margin:0 0 6px">{{'Transaction status' if lang=='en' else 'লেনদেন স্ট্যাটাস'}}: <span id="txs" class="pill {{'pending' if act=='HOLD' else ('rejected' if act=='OFF' else 'approved')}}" data-hold="{{'⏸ Transactions on HOLD' if lang=='en' else '⏸ লেনদেন হোল্ডে'}}" data-on="{{'🟢 Transactions ON' if lang=='en' else '🟢 লেনদেন চালু'}}" data-off="{{'🔴 Transactions OFF' if lang=='en' else '🔴 লেনদেন বন্ধ'}}">{{('⏸ Transactions on HOLD' if lang=='en' else '⏸ লেনদেন হোল্ডে') if act=='HOLD' else (('🔴 Transactions OFF' if lang=='en' else '🔴 লেনদেন বন্ধ') if act=='OFF' else ('🟢 Transactions ON' if lang=='en' else '🟢 লেনদেন চালু'))}}</span></div>
-{% set tq=u['tx_req'] or '' %}{% set ts=u['tx_req_status'] or '' %}{% set sent='Request Sent' if lang=='en' else 'রিকোয়েস্ট পাঠানো হয়েছে' %}<form id="txp" class="txp" method="post" action="/account/tx-pref" data-req="{{tq}}" data-st="{{ts}}" data-sent="{{sent}}"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<button name="pref" value="ON" class="t-on{{' sel '+ts if tq=='ON' and ts}}" aria-pressed="{{'true' if tq=='ON' and ts else 'false'}}">{% if tq=='ON' and ts=='pending' %}<span class="ck">✓</span>{{sent}}{% elif tq=='ON' and ts=='approved' %}<span class="ck">✓</span>Transactions Started{% else %}🟢 লেনদেন চালু রাখতে চাই{% endif %}</button>
-<button name="pref" value="OFF" class="t-off{{' sel '+ts if tq=='OFF' and ts}}" aria-pressed="{{'true' if tq=='OFF' and ts else 'false'}}">{% if tq=='OFF' and ts=='pending' %}<span class="ck">✓</span>{{sent}}{% elif tq=='OFF' and ts=='approved' %}<span class="ck">✓</span>Transactions Stopped{% else %}🔴 লেনদেন বন্ধ রাখতে চাই{% endif %}</button></form>
-<script>(function(){var f=document.getElementById('txp');if(!f)return;var T={ON:'🟢 লেনদেন চালু রাখতে চাই',OFF:'🔴 লেনদেন বন্ধ রাখতে চাই'},A={ON:'Transactions Started',OFF:'Transactions Stopped'},S=f.dataset.sent,bs=f.querySelectorAll('button'),busy=false,tm=null;
-function paint(r,st){bs.forEach(function(b){var p=b.value,on=(r===p&&st);b.className=(p==='ON'?'t-on':'t-off')+(on?' sel '+st:'');b.setAttribute('aria-pressed',on?'true':'false');b.disabled=false;b.style.minWidth='';b.removeAttribute('data-h');b.innerHTML=on?'<span class="ck">\u2713</span>'+(st==='pending'?S:A[p]):T[p]});f.dataset.req=r||'';f.dataset.st=st||'';delete f.dataset.sub;poll()}
-function badge(a){var e=document.getElementById('txs');if(!e||!a)return;e.className='pill '+(a==='HOLD'?'pending':a==='OFF'?'rejected':'approved');e.textContent=a==='HOLD'?e.dataset.hold:a==='OFF'?e.dataset.off:e.dataset.on}
-function apply(j){if(!j||typeof j.req!=='string')return;badge(j.active);if(j.req!==(f.dataset.req||'')||j.status!==(f.dataset.st||''))paint(j.req,j.status);else poll()}
-function poll(){clearTimeout(tm);tm=setTimeout(function(){if(document.hidden||busy){poll();return}fetch('/account/tx-pref/state',{credentials:'same-origin',headers:{Accept:'application/json'}}).then(function(r){return r.ok?r.json():null}).then(apply).catch(function(){poll()})},15000)}
-f.addEventListener('submit',function(e){e.preventDefault();e.stopPropagation();var p=e.submitter&&e.submitter.value;if(!p||busy)return;if(f.dataset.req===p&&f.dataset.st)return;busy=true;var d=new URLSearchParams(new FormData(f));d.set('pref',p);bs.forEach(function(b){b.disabled=true});
-fetch('/account/tx-pref',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:d.toString()}).then(function(r){return r.ok?r.json():null}).then(function(j){busy=false;bs.forEach(function(b){b.disabled=false});if(j)apply(j);else location.reload()}).catch(function(){busy=false;bs.forEach(function(b){b.disabled=false});location.reload()})});poll()})()</script>
 <div class="g2"><div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">৳ {{money(s.pending)}}</div></div>
 <div class="card"><div class="k">মোট ডিপোজিট</div><div class="v">৳ {{money(s.deposit)}}</div></div>
 <div class="card"><div class="k">মোট উইথড্র</div><div class="v">৳ {{money(s.withdraw)}}</div></div>
@@ -2492,8 +2412,6 @@ def deposit():
     u = me()
     mn = float(setting("min_deposit", "50") or 50)
     if request.method == "POST":
-        if tx_off(u):
-            return tx_off_redirect("/deposit")
         m, amt = request.form.get("method"), parse_amount(request.form.get("amount"))
         trx = request.form.get("trx", "").strip()[:40]
         nt = norm_trx(trx)
@@ -2531,8 +2449,6 @@ def withdraw():
     u = me()
     mn = float(setting("min_withdraw", "100") or 100)
     if request.method == "POST":
-        if tx_off(u):
-            return tx_off_redirect("/withdraw")
         m, amt = request.form.get("method"), parse_amount(request.form.get("amount"))
         num = request.form.get("number", "").strip()
         at = request.form.get("account_type", "").strip()
@@ -2828,7 +2744,7 @@ def support():
     return page("""<div class="card"><h2>সাপোর্ট</h2>{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
 <form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>বিষয়</label><input name="subject" required maxlength="100">
 <label>বার্তা</label><textarea name="message" rows="3" required maxlength="1000"></textarea><button style="width:100%">টিকিট জমা দিন</button></form></div>
-{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{'open' if t['status']=='passed' else t['status']}}</span>
+{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
 <div>{{t['message']}}</div>{% if t['reply'] %}<div class="k" style="margin-top:8px">↳ সাপোর্ট: {{t['reply']}}</div>{% endif %}</div>{% endfor %}""", active="/account", rows=rows)
 
 
@@ -2867,114 +2783,6 @@ def account():
 <a class="li" href="/about"><span class="ic">ℹ️</span><span class="lt">আমাদের সম্পর্কে</span><span class="ch">›</span></a>
 <form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="li out"><span class="ic">🚪</span><span class="lt">লগআউট</span></button></form>
 </div>""", active="/account")
-
-
-def tx_off(u):
-    """True when this user's transactions are switched OFF (server-side gate for deposit / withdraw / request actions)."""
-    return (u["tx_active"] or "") != "ON" or (u["tx_hold"] or "") == "1"  # not approved ON -> blocked; admin HOLD blocks regardless of tx_active; Resume only clears the hold
-
-
-def tx_off_redirect(back):
-    u = me()
-    if u and (u["tx_hold"] or "") == "1":
-        err("আপনার লেনদেন সাময়িকভাবে হোল্ডে আছে। অ্যাডমিন রিজিউম করলে আবার করতে পারবেন।")
-        return redirect(back)
-    err("আপনার লেনদেন বর্তমানে বন্ধ আছে। চালু করতে হোম পেজ থেকে অনুরোধ পাঠান এবং অ্যাডমিনের অনুমোদনের অপেক্ষা করুন।")
-    return redirect(back)
-
-
-def _tx_state(uid):
-    r = q1("SELECT tx_active, tx_hold, tx_req, tx_req_status FROM users WHERE id=?", (uid,))
-    return {"req": (r["tx_req"] or "") if r else "", "status": (r["tx_req_status"] or "") if r else "",
-            "active": "OFF" if not (r and (r["tx_active"] or "") == "ON") else ("HOLD" if (r["tx_hold"] or "") == "1" else "ON")}  # active = the real permission (what tx_off() enforces)
-
-
-@app.route("/account/tx-pref", methods=["POST"])
-@customer_required
-def account_tx_pref():
-    """OFF = applied immediately (users.tx_active='OFF', enforced server-side by tx_off()). ON = request that stays 'pending' until an admin approves;
-    until then tx_active stays OFF. Every UPDATE is guarded by the current state, so repeated taps / refreshes never duplicate a request or an alert."""
-    u = me()
-    pref = (request.form.get("pref") or "").strip().upper()
-    c = db()
-    who = "User %s (#%s)" % (u["name"], u["member_id"])
-    link = "/admin/users/%d" % u["id"]
-    if pref == "OFF":
-        cur = c.execute("UPDATE users SET tx_active='OFF', tx_req='OFF', tx_req_status='approved', tx_req_at=? WHERE id=? AND is_admin=0 "
-                        "AND COALESCE(tx_active,'')<>'OFF'", (now(), u["id"]))
-        if cur.rowcount:
-            audit("tx_pref_off", "user_id=%d" % u["id"], u)
-            alert_admins("লেনদেন বন্ধ করেছেন", "%s turned transactions OFF." % who, link, "users_view")
-        else:  # already OFF: just withdraw a pending ON request, if any
-            c.execute("UPDATE users SET tx_req='OFF', tx_req_status='approved', tx_req_at=? WHERE id=? AND is_admin=0 AND COALESCE(tx_active,'OFF')='OFF' "
-                      "AND NOT(COALESCE(tx_req,'')='OFF' AND COALESCE(tx_req_status,'')='approved')", (now(), u["id"]))
-    elif pref == "ON":
-        cur = c.execute("UPDATE users SET tx_req='ON', tx_req_status='pending', tx_req_at=? WHERE id=? AND is_admin=0 AND COALESCE(tx_active,'OFF')<>'ON' "
-                        "AND NOT(COALESCE(tx_req,'')='ON' AND COALESCE(tx_req_status,'')='pending')", (now(), u["id"]))
-        if cur.rowcount:
-            alert_admins("লেনদেন চালুর অনুরোধ", "%s requests to turn transactions ON (approval needed)." % who, link, "users_view")
-    st = _tx_state(u["id"])
-    if "application/json" in (request.headers.get("Accept") or ""):
-        return jsonify(st)
-    return redirect("/")
-
-
-@app.route("/account/tx-pref/state")
-@customer_required
-def account_tx_pref_state():
-    r = jsonify(_tx_state(me()["id"]))
-    r.headers["Cache-Control"] = "no-store"
-    return r
-
-
-@app.route("/admin/users/<int:i>/tx-pref", methods=["POST"])
-@staff_required("users_manage")
-def admin_user_tx_pref(i):
-    """Admin decision on a user's transaction-preference request. Display/communication only: no balances, ledger or permissions are touched."""
-    back_u = "/admin/users/%d" % i
-    pref = (request.form.get("pref") or "").strip().upper()
-    if request.form.get("action") == "approve" and pref == "ON":
-        # atomic + guarded by the value the admin saw: double clicks / a user changing their mind meanwhile cannot approve twice or approve the wrong value
-        cur = db().execute("UPDATE users SET tx_active='ON', tx_req_status='approved' WHERE id=? AND is_admin=0 "
-                           "AND tx_req_status='pending' AND tx_req=?", (i, pref))
-        if cur.rowcount:
-            audit("tx_pref_approve", "user_id=%d pref=%s" % (i, pref))
-            notify(i, "লেনদেন পছন্দ অনুমোদিত", "অ্যাডমিন আপনার অনুরোধ অনুমোদন করেছেন: লেনদেন এখন %s।" % ("চালু" if pref == "ON" else "বন্ধ"), "/",
-                   "Transaction preference approved", "Your request to keep transactions %s was approved." % pref)
-            flash("অনুমোদিত: লেনদেন %s।" % pref)
-        else:
-            err("অনুরোধটি ইতিমধ্যে প্রসেস হয়েছে বা ইউজার বদলে ফেলেছেন। পেজ রিফ্রেশ করুন।")
-    else:
-        flash("অনুরোধটি Pending-এ রাখা হয়েছে।")
-    return redirect(back_u)
-
-
-@app.route("/admin/users/<int:i>/tx-hold", methods=["POST"])
-@staff_required("users_manage")
-def admin_user_tx_hold(i):
-    """Temporary admin HOLD / RESUME of a user's transactions. Only users.tx_hold is touched (tx_active and the user's approved status stay as they were),
-    so Resume brings back exactly the previous status. Enforced server-side by tx_off(). One guarded UPDATE -> no double notifications. No financial logic is touched."""
-    back_u = "/admin/users/%d" % i
-    act = (request.form.get("action") or "").strip().lower()
-    if act not in ("hold", "resume"):
-        abort(400)
-    if act == "hold":
-        cur = db().execute("UPDATE users SET tx_hold='1', tx_hold_at=? WHERE id=? AND is_admin=0 AND tx_active='ON' AND COALESCE(tx_hold,'')<>'1'", (now(), i))
-    else:
-        cur = db().execute("UPDATE users SET tx_hold=NULL, tx_hold_at=? WHERE id=? AND is_admin=0 AND COALESCE(tx_hold,'')='1'", (now(), i))
-    if cur.rowcount:
-        audit("tx_admin_" + act, "user_id=%d" % i)
-        if act == "hold":
-            notify(i, "লেনদেন সাময়িকভাবে বন্ধ রাখা হয়েছে", "এডমিন সিরিয়াল মেইনটেইন করে আপনার লেনদেন আপাতত OFF রেখেছেন। সিরিয়াল অনুযায়ী আপনার লেনদেন আবার অতি শীঘ্রই চালু হবে।", "/",
-                   "লেনদেন সাময়িকভাবে বন্ধ রাখা হয়েছে", "এডমিন সিরিয়াল মেইনটেইন করে আপনার লেনদেন আপাতত OFF রেখেছেন। সিরিয়াল অনুযায়ী আপনার লেনদেন আবার অতি শীঘ্রই চালু হবে।")
-            flash("লেনদেন এখন হোল্ডে।")
-        else:
-            notify(i, "লেনদেন রিজিউম হয়েছে", "অ্যাডমিন আপনার লেনদেন রিজিউম করেছেন। আগের স্ট্যাটাস আবার কার্যকর।", "/",
-                   "Transactions resumed", "Admin has resumed your transactions. Your previous status is active again.")
-            flash("লেনদেন রিজিউম হয়েছে।")
-    else:
-        flash("লেনদেন আগে থেকেই %s আছে।" % ("হোল্ডে" if act == "hold" else "সক্রিয়"))
-    return redirect(back_u)
 
 
 @app.route("/account/settings", methods=["GET", "POST"])
@@ -3043,15 +2851,14 @@ def back(default="/admin"):
 
 
 # ---------------------------------------------------------------- admin: dashboard
-ACTIVITY_SQL = """SELECT t, d FROM (
-SELECT * FROM (SELECT created t, 'নতুন ইউজার: #'||COALESCE(member_id,'')||' '||COALESCE(name,'') d FROM users WHERE is_admin=0 ORDER BY created DESC LIMIT 10) a
-UNION ALL SELECT * FROM (SELECT l.created t, 'লগইন: '||COALESCE(u.name,l.phone,'') d FROM login_history l LEFT JOIN users u ON u.id=l.user_id
-          WHERE l.ok=1 AND COALESCE(u.is_admin,0)=0 ORDER BY l.created DESC LIMIT 10) b
-UNION ALL SELECT * FROM (SELECT t.created t, (CASE t.kind WHEN 'deposit' THEN 'ডিপোজিট' ELSE 'উইথড্র' END)||' ৳'||t.amount||' — '||u.name d
-          FROM tx t JOIN users u ON u.id=t.user_id ORDER BY t.created DESC LIMIT 10) c
-UNION ALL SELECT * FROM (SELECT r.submitted_at t, 'রিকোয়েস্ট জমা '||r.order_id||' — '||u.name d FROM requests r JOIN users u ON u.id=r.user_id
-          WHERE r.submitted_at IS NOT NULL ORDER BY r.submitted_at DESC LIMIT 10) e
-) x ORDER BY t DESC LIMIT 10"""
+ACTIVITY_SQL = """SELECT created t, 'নতুন ইউজার: #'||COALESCE(member_id,'')||' '||COALESCE(name,'') d FROM users WHERE is_admin=0
+UNION ALL SELECT l.created, 'লগইন: '||COALESCE(u.name,l.phone,'') FROM login_history l LEFT JOIN users u ON u.id=l.user_id
+          WHERE l.ok=1 AND COALESCE(u.is_admin,0)=0
+UNION ALL SELECT t.created, (CASE t.kind WHEN 'deposit' THEN 'ডিপোজিট' ELSE 'উইথড্র' END)||' ৳'||t.amount||' — '||u.name
+          FROM tx t JOIN users u ON u.id=t.user_id
+UNION ALL SELECT r.submitted_at, 'রিকোয়েস্ট জমা '||r.order_id||' — '||u.name FROM requests r JOIN users u ON u.id=r.user_id
+          WHERE r.submitted_at IS NOT NULL
+ORDER BY t DESC LIMIT 10"""
 
 
 INTEG_TPL = """<div class="card"><b>লেজার রিকনসিলিয়েশন:</b>
@@ -3064,8 +2871,8 @@ INTEG_TPL = """<div class="card"><b>লেজার রিকনসিলিয�
 @staff_required("dashboard_fin")
 def admin_dash_integrity():
     """Heavy ledger reconciliation, computed after the dashboard is already on screen (same data and permissions as before)."""
-    rep_ok = has_perm("reports")
-    return qcache(("integ", rep_ok), 30, lambda: render_str(INTEG_TPL, bad=reconcile(), rc=(recon_overall(recon_checks()) if rep_ok else None)))
+    rc = recon_overall(recon_checks()) if has_perm("reports") else None
+    return render_str(INTEG_TPL, bad=reconcile(), rc=rc)
 
 
 @app.route("/admin")
@@ -3073,38 +2880,34 @@ def admin_dash_integrity():
 def admin_home():
     u = me()
     expire_requests()
+    one = lambda sql: q1(sql)["s"]
     fin = has_perm("dashboard_fin", u)
-
-    def _stats():
-        c = q1("SELECT (SELECT COUNT(*) FROM tickets WHERE status='open') open_tickets,"
-               "(SELECT COUNT(*) FROM tx WHERE kind='deposit' AND status IN('pending','review')) pend_dep,"
-               "(SELECT COUNT(*) FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')) pend_wd,"
-               "(SELECT COUNT(*) FROM requests WHERE status IN('submitted','review')) pend_req")
-        c2 = q1("SELECT COUNT(*) total, COALESCE(SUM(CASE WHEN blocked=0 THEN 1 ELSE 0 END),0) active,"
-                "COALESCE(SUM(CASE WHEN blocked=1 THEN 1 ELSE 0 END),0) blocked,"
-                "COALESCE(SUM(CASE WHEN blocked=0 AND last_login>=datetime('now','-30 days') THEN 1 ELSE 0 END),0) active30 FROM users WHERE is_admin=0")
-        d = dict(open_tickets=c["open_tickets"], pend_dep=c["pend_dep"], pend_wd=c["pend_wd"], pend_req=c["pend_req"],
-                 total=c2["total"], active=c2["active"], blocked=c2["blocked"], active30=c2["active30"])
-        if fin:
-            f = q1("SELECT (SELECT COALESCE(SUM(balance),0) FROM users WHERE is_admin=0) liability,"
-                   "((SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved')"
-                   "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved')) dep_vol,"
-                   "((SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='withdraw' AND status IN('approved','paid'))"
-                   "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved')) wd_vol,"
-                   "(SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='commission') comm,"
-                   "(SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='commission' AND created>=date('now')) comm_today,"
-                   "(SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='referral_bonus') ref_paid,"
-                   "(SELECT COUNT(*) FROM referrals WHERE status='pending') ref_pend_n,"
-                   "(SELECT COALESCE(SUM(amount),0) FROM referrals WHERE status='pending') ref_pend_amt,"
-                   "((SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved' AND date(updated)=date('now'))"
-                   "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved' AND date(decided_at)=date('now'))) today_dep")
-            for k in ("liability", "dep_vol", "wd_vol", "comm", "comm_today", "ref_paid", "ref_pend_n", "ref_pend_amt", "today_dep"):
-                d[k] = f[k]
-            d.update(pool=pool_balance(), pool_res=pool_reserved())  # ledger reconciliation scans load separately (see /admin/dash/integrity)
-        return d
-
-    s = dict(qcache(("dash", fin), 10, _stats))  # <= 10 s old, and dropped right after any write
+    s = dict(open_tickets=one("SELECT COUNT(*) s FROM tickets WHERE status='open'"),
+             pend_dep=one("SELECT COUNT(*) s FROM tx WHERE kind='deposit' AND status IN('pending','review')"),
+             pend_wd=one("SELECT COUNT(*) s FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')"),
+             total=one("SELECT COUNT(*) s FROM users WHERE is_admin=0"),
+             active=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=0"),
+             blocked=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=1"),
+             active30=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=0 AND last_login>=datetime('now','-30 days')"),
+             pend_req=one("SELECT COUNT(*) s FROM requests WHERE status IN('submitted','review')"))
     bad, pend, acts, rc = [], [], [], None
+    if fin:
+        s.update(
+            liability=one("SELECT COALESCE(SUM(balance),0) s FROM users WHERE is_admin=0"),
+            pend_dep=one("SELECT COUNT(*) s FROM tx WHERE kind='deposit' AND status IN('pending','review')"),
+            pend_wd=one("SELECT COUNT(*) s FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')"),
+            dep_vol=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved')"
+                        "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved') s"),
+            wd_vol=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='withdraw' AND status IN('approved','paid'))"
+                       "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved') s"),
+            comm=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission'"),
+            comm_today=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission' AND date(created)=date('now')"),
+            ref_paid=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='referral_bonus'"),
+            ref_pend_n=one("SELECT COUNT(*) s FROM referrals WHERE status='pending'"),
+            ref_pend_amt=one("SELECT COALESCE(SUM(amount),0) s FROM referrals WHERE status='pending'"),
+            today_dep=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved' AND date(updated)=date('now'))"
+                          "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved' AND date(decided_at)=date('now')) s"))
+        s.update(pool=pool_balance(), pool_res=pool_reserved())  # ledger reconciliation scans load separately (see /admin/dash/integrity)
     if has_perm("referrals", u):
         pend = qa(REF_SQL + " WHERE r.status='pending' ORDER BY r.id LIMIT 5")
     if has_perm("users_view", u):
@@ -3318,8 +3121,8 @@ details.dt .inn{padding-bottom:12px}
 
 USER_ROWS_TPL = """{% if not rows and p==1 %}<div class="card empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}
 {% for x in rows %}<div class="x-row uc{{' blocked' if x['blocked']}}"><a class="x-link" href="/admin/users/{{x['id']}}"><span class="x-av">{{(x['name'] or '?')[:1]|upper}}</span>
-<span class="x-main"><b>{{x['name']}}{% if x['tx_active']=='ON' and x['tx_hold']!='1' %} <span style="font-size:9px;vertical-align:middle">🟢</span>{% endif %}</b><small>#{{x['member_id']}} · {{x['phone']}}</small>{% if can('requests') and x['open_req'] %}<small class="x-open">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</small>{% endif %}</span>
-<span class="x-end"><b>৳ {{money(x['balance'])}}</b>{% if x['blocked'] %}<span class="pill rejected">ব্লকড</span>{% endif %}</span></a>
+<span class="x-main"><b>{{x['name']}}</b><small>#{{x['member_id']}} · {{x['phone']}}</small>{% if can('requests') and x['open_req'] %}<small class="x-open">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</small>{% endif %}</span>
+<span class="x-end"><b>৳ {{money(x['balance'])}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span></span></a>
 {% if can('requests') and not x['blocked'] %}<a class="x-go" href="/admin/requests/new?uid={{x['id']}}" title="রিকোয়েস্ট পাঠান" aria-label="রিকোয়েস্ট পাঠান">＋</a>{% endif %}</div>{% endfor %}
 {% if more %}<button type="button" class="btn s uc-more" data-next="{{p+1}}" style="width:100%;margin-bottom:10px">আরও দেখান</button>{% endif %}"""
 
@@ -3370,7 +3173,7 @@ def _user_search(q, f, p, per=SEARCH_PER):
     if q:
         order, oargs = "(CASE WHEN u.member_id=? OR u.phone=? OR u.referral_code=? THEN 0 ELSE 1 END), u.id DESC", [q, q, q.upper()]
     p = min(max(p, 1), 500)
-    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.commission,u.blocked,u.created,u.tx_active,u.tx_hold,u.tx_req,u.tx_req_status,"
+    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.commission,u.blocked,u.created,"
               "(SELECT COUNT(*) FROM requests r WHERE r.user_id=u.id AND r.status IN ('pending','submitted','review')) open_req "
               "FROM users u WHERE " + " AND ".join(where) + " ORDER BY " + order + " LIMIT ? OFFSET ?",
               args + oargs + [per + 1, (p - 1) * per])
@@ -3508,10 +3311,6 @@ def admin_user(i):
 <div class="k">ওয়ালেট ব্যালেন্স</div><div class="pf-bal">৳ {{money(x['balance'])}}</div>
 <div class="k">যোগদান: {{(x['created'] or '-')[:16]}} · সর্বশেষ লগইন: {{x['last_login'] or '-'}} · রেফারেল কোড: {{x['referral_code']}}</div>
 {% if x['blocked'] and x['blocked_reason'] %}<div class="msg error" style="margin:8px 0 0">ব্লকের কারণ: {{x['blocked_reason']}} ({{(x['blocked_at'] or '')[:16]}})</div>{% endif %}
-{% set ts_='OFF' if x['tx_active']!='ON' else ('HOLD' if x['tx_hold']=='1' else 'ON') %}{% set pend=(x['tx_req_status']=='pending' and x['tx_req']=='ON') %}
-<style>#uprof .txa{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}#uprof .txa form{margin:0}#uprof .txa .btn{width:auto;min-height:30px;padding:5px 14px;border-radius:999px;font-size:12px;font-weight:600;box-shadow:none}</style>
-<div class="k" style="margin-top:10px">💳 Transactions: <span class="pill {{'approved' if ts_=='ON' else ('pending' if ts_=='HOLD' else 'rejected')}}">{{ts_}}</span>{% if pend %} <span class="pill pending">ON request pending</span>{% if x['tx_req_at'] %} <small>({{x['tx_req_at'][:16]}})</small>{% endif %}{% endif %}{% if ts_=='HOLD' and x['tx_hold_at'] %} <small>(since {{x['tx_hold_at'][:16]}})</small>{% endif %}</div>
-{% if can('users_manage') %}<div class="txa">{% if pend %}<form method="post" action="/admin/users/{{x['id']}}/tx-pref"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="pref" value="ON"><button name="action" value="approve" class="btn sm">Approve ON Request</button></form>{% elif ts_=='ON' %}<form method="post" action="/admin/users/{{x['id']}}/tx-hold"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button name="action" value="hold" class="btn sm s">Hold Transactions</button></form>{% elif ts_=='HOLD' %}<form method="post" action="/admin/users/{{x['id']}}/tx-hold"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button name="action" value="resume" class="btn sm">Resume Transactions</button></form>{% endif %}</div>{% endif %}
 <div class="k" style="margin-top:8px">🪪 KYC: {% set ks=kycs(x['id']) %}<span class="pill {{ks if ks in ('pending','approved','rejected') else ''}}">{{kycl[ks]}}</span>{% if can('kyc') and ks!='none' %} <a href="/admin/kyc/{{x['id']}}"><b>দেখুন</b></a>{% endif %}</div></div>
 <div class="qa" style="grid-template-columns:1fr 1fr">
 {% if can('requests') %}{% if x['blocked'] %}<span class="btn dis">📨<br>ডিপোজিট রিকোয়েস্ট পাঠান</span><span class="btn dis">🏧<br>উইথড্র রিকোয়েস্ট পাঠান</span>
@@ -4070,8 +3869,6 @@ def admin_pool_attest():
 @customer_required
 def request_decide(i):
     u = me()
-    if tx_off(u):
-        return tx_off_redirect("/requests/%d" % i)
     act = request.form.get("act", "")
     if act not in ("approve", "reject"):
         abort(400)
@@ -4309,13 +4106,7 @@ def admin_tickets():
         a = me()
         with atomic():
             t = q1("SELECT * FROM tickets WHERE id=?", (tid,)) if tid else None
-            if t and request.form.get("act") == "pass" and t["status"] == "open":
-                # Pass: no reply and no notification to the user; the ticket and its message stay saved, only the status leaves 'open'
-                db().execute("UPDATE tickets SET status='passed' WHERE id=? AND status='open'", (tid,))
-                audit("ticket_pass", "ticket#%s" % tid); flash("টিকিট পাস করা হয়েছে।")
-                if not q1("SELECT 1 FROM tickets WHERE status='open'"):
-                    alerts_done("/admin/tickets")
-            elif t and rep and t["status"] == "open":
+            if t and rep and t["status"] == "open":
                 db().execute("UPDATE tickets SET reply=?, status='closed', replied_by=?, replied_at=? WHERE id=?",
                              (rep, "%s (%s)" % (a["name"], a["member_id"]), now(), tid))
                 notify(t["user_id"], "সাপোর্ট উত্তর", rep); audit("ticket_reply", "ticket#%s" % tid); flash("উত্তর পাঠানো হয়েছে।")
@@ -4323,12 +4114,12 @@ def admin_tickets():
                     alerts_done("/admin/tickets")
         return redirect("/admin/tickets")
     t0 = now()
-    rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status<>'passed' ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
+    rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
     _seen_list("/admin/tickets", rows, 50, {"p": 1}, t0)
     return page("""{% if not rows %}<div class="card empty">কোনো টিকিট নেই</div>{% endif %}{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
 <div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{t['created'][:16]}}</div><div>{{t['message']}}</div>
 {% if t['reply'] %}<div class="k">↳ {{t['reply']}}{% if t['replied_by'] %} — {{t['replied_by']}}{% endif %}</div>{% else %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="id" value="{{t['id']}}">
-<input name="reply" placeholder="উত্তর লিখুন" required maxlength="500"><button class="btn sm">পাঠান</button><button class="btn sm s" name="act" value="pass" formnovalidate>Pass</button></form>{% endif %}
+<input name="reply" placeholder="উত্তর লিখুন" required maxlength="500"><button class="btn sm">পাঠান</button></form>{% endif %}
 {% if can('users_view') %}<a class="k" href="/admin/users/{{t['user_id']}}">👤 ইউজার দেখুন</a>{% endif %}</div>{% endfor %}""", active="/admin/tickets", rows=rows)
 
 
@@ -5234,15 +5025,8 @@ def warnings_for(uid, rid=None, limit=5):
 WARN_TPL = """{% if warns %}<div class="card" style="border-left:4px solid #d97706"><h3 style="margin:0 0 8px">⚠ অ্যাডমিনের সতর্কবার্তা</h3>{% for w in warns %}<div style="white-space:pre-line;overflow-wrap:anywhere;margin-bottom:8px">{{w['message']}}<div class="k">{{w['created'][:16]}}</div></div>{% endfor %}</div>{% endif %}"""
 
 
-_EXP_LAST = 0.0
-
-
 def expire_requests():
     """Lazily moves overdue, not-yet-submitted requests to 'expired' (no balance effect). Call outside atomic()."""
-    global _EXP_LAST
-    if time.time() - _EXP_LAST < 15:  # overdue requests are swept at most every 15 s per process, not on every page / list call
-        return
-    _EXP_LAST = time.time()
     t = now()
     rows = qa("SELECT id,user_id,order_id FROM requests WHERE status='pending' AND expires_at IS NOT NULL AND expires_at<=?", (t,))
     if not rows:
@@ -5327,8 +5111,6 @@ def request_view(i):
         return _confirm_view(r, u)
     if request.method == "POST":
         back_to = "/requests/%d" % i
-        if tx_off(u):
-            return tx_off_redirect(back_to)
         if r["status"] != "pending":
             err("এই অনুরোধে এখন আর জমা দেওয়া যাবে না।"); return redirect(back_to)
         trx = request.form.get("trx", "").strip()[:40]
@@ -5417,8 +5199,6 @@ def request_cancel(i):
     if not user_can_cancel(r):
         err("এই অনুরোধটি এখন আর বাতিল করা যাবে না।"); return redirect(back_to)
     if request.method == "POST":
-        if tx_off(u):
-            return tx_off_redirect(back_to)
         if rate_hit("rqx:%d" % u["id"], 10, 3600):
             err("অনেকবার চেষ্টা হয়েছে, পরে চেষ্টা করুন।"); return redirect(back_to)
         alert = None
