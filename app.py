@@ -523,6 +523,14 @@ V5_INDEXES = [
     "CREATE INDEX IF NOT EXISTS ix_audit_actor ON audit(actor_id)",
     "CREATE INDEX IF NOT EXISTS ix_req_user_status ON requests(user_id,status)",
     "CREATE INDEX IF NOT EXISTS ix_tx_kind_status ON tx(kind,status)",
+    "CREATE INDEX IF NOT EXISTS ix_users_admin_blocked ON users(is_admin,blocked)",
+    "CREATE INDEX IF NOT EXISTS ix_users_created ON users(created)",
+    "CREATE INDEX IF NOT EXISTS ix_ledger_kind_created ON ledger(kind,created)",
+    "CREATE INDEX IF NOT EXISTS ix_alert_link ON admin_alerts(link)",
+    "CREATE INDEX IF NOT EXISTS ix_tickets_status ON tickets(status)",
+    "CREATE INDEX IF NOT EXISTS ix_req_kind_status ON requests(kind,status)",
+    "CREATE INDEX IF NOT EXISTS ix_req_submitted ON requests(submitted_at)",
+    "CREATE INDEX IF NOT EXISTS ix_login_created ON login_history(created)",
 ]
 V5_NEW_TABLES = [t[0] for t in V5_TABLES]
 ID_TABLES = ID_TABLES | frozenset(V5_NEW_TABLES)  # @@IDTABLES_FIX
@@ -957,7 +965,7 @@ def _headers(r):
                 and not r.headers.get("Content-Encoding") and r.mimetype in ("text/html", "text/css", "application/javascript", "application/json")):
             data = r.get_data()
             if len(data) > 800:
-                r.set_data(gzip.compress(data, 5))
+                r.set_data(gzip.compress(data, 3))
                 r.headers["Content-Encoding"] = "gzip"
                 r.headers.add("Vary", "Accept-Encoding")
     except Exception:
@@ -1192,6 +1200,7 @@ img.shot{max-width:100%;border-radius:12px;margin:8px 0;border:1px solid var(--l
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .top{background:linear-gradient(100deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .hero{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0);box-shadow:0 16px 34px -16px #000a}:root:not([data-theme=light]) .hero2{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .nav a{--t:#1E90FF26}:root:not([data-theme=light]) .mt i,:root:not([data-theme=light]) .li .ic{background:linear-gradient(135deg,#123B4A,#0F2F44)}:root:not([data-theme=light]) .pill.approved,:root:not([data-theme=light]) .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .pill.pending,:root:not([data-theme=light]) .pill.review,:root:not([data-theme=light]) .pill.processing{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .pill.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .pill.expired,:root:not([data-theme=light]) .pill.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc .pill.pending,:root:not([data-theme=light]) .hxc .pill.review,:root:not([data-theme=light]) .hxc .pill.processing,:root:not([data-theme=light]) .hxc .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.pending,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.review,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.processing,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.approved,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .msg{background:#0F3A44;color:#A8EDE6}:root:not([data-theme=light]) .msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .au-msg{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .au-msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .ur-b.pending,:root:not([data-theme=light]) .ur-b.review{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .ur-b.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .ur-b.approved{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .ur-b.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b.expired,:root:not([data-theme=light]) .ur-b.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) body.auth{background:#0A2A4A}:root:not([data-theme=light]) body.auth::before{background:radial-gradient(90% 60% at 100% 0%,#DFF7F522,#DFF7F500 60%),linear-gradient(165deg,#0F5FB5,#082F57)}}
 /* ===== admin simplification v2: consistent controls, compact menu, touch safety ===== */
 a,button,.btn,summary,select,label.pmc{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+a.tapping,button.tapping,a.tapped{opacity:.72;transition:none}.navbusy main{pointer-events:none}.navbusy main{opacity:.88;transition:opacity .15s}
 .btn,button.btn{min-height:40px}.btn.sm{min-height:34px}
 .adm{gap:6px;margin-bottom:8px}.adm a.t{min-height:38px;box-sizing:border-box;padding:0 14px;font-size:13.5px;font-weight:600;border-radius:12px;margin:0}
 .adm a.t.on{box-shadow:none}
@@ -1225,9 +1234,10 @@ function ldShow(){var b=document.getElementById('ld');if(!b)return;clearTimeout(
 function ldHide(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.width='100%';setTimeout(function(){b.style.opacity='0';setTimeout(function(){b.style.width='0'},250)},180)}
 document.addEventListener('submit',function(e){var f=e.target,c=f.dataset.confirm;
  if(c&&!confirm(c)){e.preventDefault();return}
+ if(f.dataset.sub==='1'){e.preventDefault();return}f.dataset.sub='1';
  ldShow();
  setTimeout(function(){f.querySelectorAll('button').forEach(function(b){b.style.minWidth=b.offsetWidth+'px';b.disabled=true;b.dataset.h=b.innerHTML;b.innerHTML='<span class="sp"></span>'})},0);});
-window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document.querySelectorAll('button[data-h]').forEach(function(b){b.disabled=false;b.innerHTML=b.dataset.h;b.removeAttribute('data-h')})}});
+window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document.querySelectorAll('form[data-sub]').forEach(function(f){delete f.dataset.sub});document.querySelectorAll('button[data-h]').forEach(function(b){b.disabled=false;b.innerHTML=b.dataset.h;b.removeAttribute('data-h')})}});
 (function(){var seq=0,SKIPS=['/login','/signup','/forgot','/static','/shot','/lang','/logout','/manifest.json','/service-worker.js','/assets','/healthz','/admin/backup'];
  function skip(p){return SKIPS.some(function(x){return p===x||p.indexOf(x+'/')===0})}
  function ok(a,e){if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return false;
@@ -1244,16 +1254,22 @@ window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document
    if(o&&n)o.replaceWith(document.importNode(n,true));else if(o&&!n)o.remove();else if(!o&&n){var m=cur.querySelector('main');if(sel==='.top')cur.insertBefore(document.importNode(n,true),cur.firstChild);else if(sel==='main'){}else m.after(document.importNode(n,true))}});
   document.querySelectorAll('main script').forEach(function(o){var n=document.createElement('script');n.textContent=o.textContent;o.replaceWith(n)});
   if(push)history.pushState({},'',url);window.scrollTo(0,0);paintToggles();
-  if(typeof pollNotif==='function')pollNotif();return true}
+  return true}
+ var _ac=null,_busy='';
  function go(url,push){var my=++seq;ldShow();
-  fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'}}).then(function(r){
+  if(_ac){try{_ac.abort()}catch(x){}}
+  var ac=_ac=('AbortController' in window)?new AbortController():null;_busy=url;
+  fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'},signal:ac?ac.signal:undefined}).then(function(r){
    var ct=r.headers.get('content-type')||'';
    var rp=new URL(r.url).pathname;if(ct.indexOf('text/html')<0||(r.redirected&&(rp==='/login'||rp==='/signup'))){location.href=url;return null}
    return r.text().then(function(t){return{t:t,u:r.url}})}).then(function(x){
    if(!x||my!==seq)return;
-   if(!swap(x.t,x.u||url,push)){location.href=url;return}ldHide()}).catch(function(){location.href=url})}
+   _busy='';document.documentElement.classList.remove('navbusy');
+   if(!swap(x.t,x.u||url,push)){location.href=url;return}ldHide()}).catch(function(e){if(e&&e.name==='AbortError')return;location.href=url})}
  document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a)return;var u=ok(a,e);if(!u)return;
-  e.preventDefault();go(u.href,true)});
+  e.preventDefault();if(_busy===u.href)return;a.classList.add('tapped');document.documentElement.classList.add('navbusy');go(u.href,true)});
+ document.addEventListener('pointerdown',function(e){var a=e.target.closest&&e.target.closest('a[href],button');if(a)a.classList.add('tapping')},{passive:true});
+ ['pointerup','pointercancel','pointerleave'].forEach(function(n){document.addEventListener(n,function(e){var a=e.target.closest&&e.target.closest('.tapping');if(a)a.classList.remove('tapping')},{passive:true})});
  window.addEventListener('popstate',function(){go(location.href,false)})})();
 function copyText(t,btn){var done=function(){if(btn){var o=btn.dataset.o||btn.textContent;btn.dataset.o=o;btn.textContent='✅ কপি হয়েছে';setTimeout(function(){btn.textContent=o},1800)}};
  if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t).then(done,function(){fb()})}else{fb()}
@@ -1336,11 +1352,12 @@ function nfTest(){var site=(document.querySelector('.top b')||{}).textContent||'
  document.addEventListener('click',first,true);document.addEventListener('keydown',first,true);document.addEventListener('touchend',first,true);
  document.addEventListener('visibilitychange',function(){if(!document.hidden&&typeof pollNotif==='function')pollNotif()})})();
 var _last=null;
-function pollNotif(){if(document.hidden&&!nfActive())return;  // background tabs keep polling only when browser notifications are on
- fetch('/api/notif',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
+var _pn=false;
+function pollNotif(){if(_pn||(document.hidden&&!nfActive()))return;  // background tabs keep polling only when browser notifications are on; never two polls at once
+ _pn=true;fetch('/api/notif',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
   if(!j)return;var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
   if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}
-  nfCheck(j);_last=j.latest}).catch(function(){})}
+  nfCheck(j);_last=j.latest}).catch(function(){}).then(function(){_pn=false})}
 function applyBadges(j){var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
  if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}}
 var _rq=Promise.resolve();
@@ -1354,7 +1371,7 @@ function autoRead(){var box=document.getElementById('nlist');if(!box)return;var 
   else if(t[id]){clearTimeout(t[id]);delete t[id]}})},{threshold:[.5]});
  els.forEach(function(e){io.observe(e)})}
 paintToggles();
-if(document.body&&document.body.dataset.poll){pollNotif();setInterval(pollNotif,20000)}
+if(document.body&&document.body.dataset.poll){pollNotif();setInterval(pollNotif,30000)}
 function pwTog(b){var w=b.closest('.au-f'),i=w&&w.querySelector('input');if(!i)return;var show=i.type==='password';
  i.type=show?'text':'password';b.classList.toggle('on',show);b.setAttribute('aria-pressed',show?'true':'false')}
 document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-pwtoggle]');if(!b)return;e.preventDefault();pwTog(b)});
@@ -1382,7 +1399,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap"></noscript>
-<link rel="stylesheet" href="/assets/app.css?v={{av}}">{% if u and u['is_admin'] %}<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"><link rel="stylesheet" href="/assets/admin.css?v={{adv}}">{% endif %}
+<link rel="stylesheet" href="/assets/app.css?v={{av}}">{% if u and u['is_admin'] %}<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'"><link rel="stylesheet" href="/assets/admin.css?v={{adv}}">{% endif %}
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
 <body{% if authpage %} class="auth"{% elif u and u['is_admin'] %} class="A"{% endif %}{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
 <div id="ld"></div>
@@ -2851,14 +2868,15 @@ def back(default="/admin"):
 
 
 # ---------------------------------------------------------------- admin: dashboard
-ACTIVITY_SQL = """SELECT created t, 'নতুন ইউজার: #'||COALESCE(member_id,'')||' '||COALESCE(name,'') d FROM users WHERE is_admin=0
-UNION ALL SELECT l.created, 'লগইন: '||COALESCE(u.name,l.phone,'') FROM login_history l LEFT JOIN users u ON u.id=l.user_id
-          WHERE l.ok=1 AND COALESCE(u.is_admin,0)=0
-UNION ALL SELECT t.created, (CASE t.kind WHEN 'deposit' THEN 'ডিপোজিট' ELSE 'উইথড্র' END)||' ৳'||t.amount||' — '||u.name
-          FROM tx t JOIN users u ON u.id=t.user_id
-UNION ALL SELECT r.submitted_at, 'রিকোয়েস্ট জমা '||r.order_id||' — '||u.name FROM requests r JOIN users u ON u.id=r.user_id
-          WHERE r.submitted_at IS NOT NULL
-ORDER BY t DESC LIMIT 10"""
+ACTIVITY_SQL = """SELECT t, d FROM (
+SELECT * FROM (SELECT created t, 'নতুন ইউজার: #'||COALESCE(member_id,'')||' '||COALESCE(name,'') d FROM users WHERE is_admin=0 ORDER BY created DESC LIMIT 10) a
+UNION ALL SELECT * FROM (SELECT l.created t, 'লগইন: '||COALESCE(u.name,l.phone,'') d FROM login_history l LEFT JOIN users u ON u.id=l.user_id
+          WHERE l.ok=1 AND COALESCE(u.is_admin,0)=0 ORDER BY l.created DESC LIMIT 10) b
+UNION ALL SELECT * FROM (SELECT t.created t, (CASE t.kind WHEN 'deposit' THEN 'ডিপোজিট' ELSE 'উইথড্র' END)||' ৳'||t.amount||' — '||u.name d
+          FROM tx t JOIN users u ON u.id=t.user_id ORDER BY t.created DESC LIMIT 10) c
+UNION ALL SELECT * FROM (SELECT r.submitted_at t, 'রিকোয়েস্ট জমা '||r.order_id||' — '||u.name d FROM requests r JOIN users u ON u.id=r.user_id
+          WHERE r.submitted_at IS NOT NULL ORDER BY r.submitted_at DESC LIMIT 10) e
+) x ORDER BY t DESC LIMIT 10"""
 
 
 INTEG_TPL = """<div class="card"><b>লেজার রিকনসিলিয়েশন:</b>
@@ -2882,26 +2900,25 @@ def admin_home():
     expire_requests()
     one = lambda sql: q1(sql)["s"]
     fin = has_perm("dashboard_fin", u)
-    s = dict(open_tickets=one("SELECT COUNT(*) s FROM tickets WHERE status='open'"),
-             pend_dep=one("SELECT COUNT(*) s FROM tx WHERE kind='deposit' AND status IN('pending','review')"),
-             pend_wd=one("SELECT COUNT(*) s FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')"),
-             total=one("SELECT COUNT(*) s FROM users WHERE is_admin=0"),
-             active=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=0"),
-             blocked=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=1"),
-             active30=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=0 AND last_login>=datetime('now','-30 days')"),
-             pend_req=one("SELECT COUNT(*) s FROM requests WHERE status IN('submitted','review')"))
+    c = q1("SELECT (SELECT COUNT(*) FROM tickets WHERE status='open') open_tickets,"
+           "(SELECT COUNT(*) FROM tx WHERE kind='deposit' AND status IN('pending','review')) pend_dep,"
+           "(SELECT COUNT(*) FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')) pend_wd,"
+           "(SELECT COUNT(*) FROM requests WHERE status IN('submitted','review')) pend_req")
+    c2 = q1("SELECT COUNT(*) total, COALESCE(SUM(CASE WHEN blocked=0 THEN 1 ELSE 0 END),0) active,"
+            "COALESCE(SUM(CASE WHEN blocked=1 THEN 1 ELSE 0 END),0) blocked,"
+            "COALESCE(SUM(CASE WHEN blocked=0 AND last_login>=datetime('now','-30 days') THEN 1 ELSE 0 END),0) active30 FROM users WHERE is_admin=0")
+    s = dict(open_tickets=c["open_tickets"], pend_dep=c["pend_dep"], pend_wd=c["pend_wd"], pend_req=c["pend_req"],
+             total=c2["total"], active=c2["active"], blocked=c2["blocked"], active30=c2["active30"])
     bad, pend, acts, rc = [], [], [], None
     if fin:
         s.update(
             liability=one("SELECT COALESCE(SUM(balance),0) s FROM users WHERE is_admin=0"),
-            pend_dep=one("SELECT COUNT(*) s FROM tx WHERE kind='deposit' AND status IN('pending','review')"),
-            pend_wd=one("SELECT COUNT(*) s FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')"),
             dep_vol=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved')"
                         "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved') s"),
             wd_vol=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='withdraw' AND status IN('approved','paid'))"
                        "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved') s"),
             comm=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission'"),
-            comm_today=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission' AND date(created)=date('now')"),
+            comm_today=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission' AND created>=date('now')"),
             ref_paid=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='referral_bonus'"),
             ref_pend_n=one("SELECT COUNT(*) s FROM referrals WHERE status='pending'"),
             ref_pend_amt=one("SELECT COALESCE(SUM(amount),0) s FROM referrals WHERE status='pending'"),
@@ -5025,8 +5042,15 @@ def warnings_for(uid, rid=None, limit=5):
 WARN_TPL = """{% if warns %}<div class="card" style="border-left:4px solid #d97706"><h3 style="margin:0 0 8px">⚠ অ্যাডমিনের সতর্কবার্তা</h3>{% for w in warns %}<div style="white-space:pre-line;overflow-wrap:anywhere;margin-bottom:8px">{{w['message']}}<div class="k">{{w['created'][:16]}}</div></div>{% endfor %}</div>{% endif %}"""
 
 
+_EXP_LAST = 0.0
+
+
 def expire_requests():
     """Lazily moves overdue, not-yet-submitted requests to 'expired' (no balance effect). Call outside atomic()."""
+    global _EXP_LAST
+    if time.time() - _EXP_LAST < 15:  # overdue requests are swept at most every 15 s per process, not on every page / list call
+        return
+    _EXP_LAST = time.time()
     t = now()
     rows = qa("SELECT id,user_id,order_id FROM requests WHERE status='pending' AND expires_at IS NOT NULL AND expires_at<=?", (t,))
     if not rows:
