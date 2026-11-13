@@ -3318,8 +3318,8 @@ details.dt .inn{padding-bottom:12px}
 
 USER_ROWS_TPL = """{% if not rows and p==1 %}<div class="card empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}
 {% for x in rows %}<div class="x-row uc{{' blocked' if x['blocked']}}"><a class="x-link" href="/admin/users/{{x['id']}}"><span class="x-av">{{(x['name'] or '?')[:1]|upper}}</span>
-<span class="x-main"><b>{{x['name']}}</b><small>#{{x['member_id']}} · {{x['phone']}}</small>{% if can('requests') and x['open_req'] %}<small class="x-open">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</small>{% endif %}</span>
-<span class="x-end"><b>৳ {{money(x['balance'])}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span>{% set ts_='OFF' if x['tx_active']!='ON' else ('HOLD' if x['tx_hold']=='1' else 'ON') %}<span class="pill {{'approved' if ts_=='ON' else ('pending' if ts_=='HOLD' else 'rejected')}}">{{ts_}}</span>{% if x['tx_req_status']=='pending' and x['tx_req']=='ON' %}<span class="pill pending">ON request</span>{% endif %}</span></a>
+<span class="x-main"><b>{{x['name']}}{% if x['tx_active']=='ON' and x['tx_hold']!='1' %} <span style="font-size:9px;vertical-align:middle">🟢</span>{% endif %}</b><small>#{{x['member_id']}} · {{x['phone']}}</small>{% if can('requests') and x['open_req'] %}<small class="x-open">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</small>{% endif %}</span>
+<span class="x-end"><b>৳ {{money(x['balance'])}}</b>{% if x['blocked'] %}<span class="pill rejected">ব্লকড</span>{% endif %}</span></a>
 {% if can('requests') and not x['blocked'] %}<a class="x-go" href="/admin/requests/new?uid={{x['id']}}" title="রিকোয়েস্ট পাঠান" aria-label="রিকোয়েস্ট পাঠান">＋</a>{% endif %}</div>{% endfor %}
 {% if more %}<button type="button" class="btn s uc-more" data-next="{{p+1}}" style="width:100%;margin-bottom:10px">আরও দেখান</button>{% endif %}"""
 
