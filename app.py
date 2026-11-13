@@ -466,7 +466,8 @@ V5_COLUMNS = [
     ("users", "vip_level", "TEXT", "TEXT"), ("users", "vip_rate", "REAL", "NUMERIC(7,3)"), ("tx", "account_type", "TEXT", "TEXT"),
     ("requests", "cancel_fee", "REAL", "NUMERIC(14,2)"), ("requests", "cancel_by", "TEXT", "TEXT"),
     ("users", "tx_pref", "TEXT", "TEXT"),  # legacy (unused)
-    ("users", "tx_active", "TEXT", "TEXT"), ("users", "tx_req", "TEXT", "TEXT"), ("users", "tx_req_status", "TEXT", "TEXT"), ("users", "tx_req_at", "TEXT", "TEXT"),  # transaction preference: approved value / requested value / pending|approved (display-only, never changes permissions)
+    ("users", "tx_active", "TEXT", "TEXT"), ("users", "tx_req", "TEXT", "TEXT"), ("users", "tx_req_status", "TEXT", "TEXT"), ("users", "tx_req_at", "TEXT", "TEXT"), ("users", "tx_hold", "TEXT", "TEXT"), ("users", "tx_hold_at", "TEXT", "TEXT"),  # tx_hold='1' -> admin HOLD overlay (tx_active is kept untouched, so Resume restores it)
+      # transaction preference: approved value / requested value / pending|approved (display-only, never changes permissions)
     # @@COLUMNS
 ]
 # (name, CREATE TABLE template, [index statements], immutable?)  {ID}=primary key, {BIG}=integer ref, {NUM}=money
@@ -2441,13 +2442,15 @@ def home():
     return page("""{% if tk %}<div class="tkr" role="marquee"><span class="tkr-b">📢</span><div class="tkr-w"><div class="tkr-t" style="--d:{{tk.dur}}s">{{tk.text}}</div></div></div>{% endif %}<div class="card hero"><small>উপলব্ধ ব্যালেন্স</small><div class="bal">৳ {{money(u['balance'])}}</div>
 <div class="qa"><a class="qb q1" href="/deposit"><span class="qi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span><span class="ql">Add Money</span></a><a class="qb q2" href="/withdraw"><span class="qi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg></span><span class="ql">উইথড্র</span></a><a class="qb q3" href="/requests"><span class="qi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h5.2l1.3 2.5h5l1.3-2.5H21"/><path d="M5.6 5.6 3 13v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5l-2.6-7.4A2 2 0 0 0 16.5 4.3h-9a2 2 0 0 0-1.9 1.3z"/></svg></span><span class="ql">অনুরোধ</span>{% if req_open %}<span class="qn">{{req_open}}</span>{% endif %}</a><a class="qb q4" href="/payment-numbers"><span class="qi"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h3"/></svg></span><span class="ql">Payment Methods</span></a></div></div>
 <style>.txp{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 12px}.txp button{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;min-height:32px;padding:5px 8px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer;background-image:none;box-shadow:0 1px 3px #0b254014;transition:background .25s ease,color .25s ease,border-color .25s ease,box-shadow .25s ease,transform .15s ease}.txp button:active{transform:scale(.97)}.txp button:disabled{opacity:.75;cursor:default}.txp .t-on{background:#F0FBF6;color:#0B7A50;border:1px solid #BDEBD6}.txp .t-off{background:#FFF4F3;color:#C93B3B;border:1px solid #F7CFCB}.txp .t-on.sel{background:linear-gradient(135deg,#34D399,#059669);color:#fff;border-color:transparent;box-shadow:0 5px 12px -5px #059669}.txp .t-off.sel{background:linear-gradient(135deg,#FB7185,#EF4444);color:#fff;border-color:transparent;box-shadow:0 5px 12px -5px #EF4444}.txp .t-on.sel.pending{background:#FEF3C7;color:#92400E;border:1px solid #F59E0B;box-shadow:0 4px 10px -5px #F59E0B}.txp .ck{font-weight:800}:root[data-theme=dark] .txp .t-on:not(.sel){background:#10B9811c;color:#6EE7B7;border-color:#10B98155}:root[data-theme=dark] .txp .t-off:not(.sel){background:#EF44441c;color:#FCA5A5;border-color:#EF444455}:root[data-theme=dark] .txp .t-on.sel.pending{background:#4A3512;color:#FCD34D;border-color:#F59E0B88}@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .txp .t-on:not(.sel){background:#10B9811c;color:#6EE7B7;border-color:#10B98155}:root:not([data-theme=light]) .txp .t-off:not(.sel){background:#EF44441c;color:#FCA5A5;border-color:#EF444455}:root:not([data-theme=light]) .txp .t-on.sel.pending{background:#4A3512;color:#FCD34D;border-color:#F59E0B88}}</style>
+{% set act='HOLD' if u['tx_hold']=='1' else ('OFF' if u['tx_active']=='OFF' else 'ON') %}<div class="k" style="margin:0 0 6px">{{'Transaction status' if lang=='en' else 'লেনদেন স্ট্যাটাস'}}: <span id="txs" class="pill {{'pending' if act=='HOLD' else ('rejected' if act=='OFF' else 'approved')}}" data-hold="{{'⏸ Transactions on HOLD' if lang=='en' else '⏸ লেনদেন হোল্ডে'}}" data-on="{{'🟢 Transactions ON' if lang=='en' else '🟢 লেনদেন চালু'}}" data-off="{{'🔴 Transactions OFF' if lang=='en' else '🔴 লেনদেন বন্ধ'}}">{{('⏸ Transactions on HOLD' if lang=='en' else '⏸ লেনদেন হোল্ডে') if act=='HOLD' else (('🔴 Transactions OFF' if lang=='en' else '🔴 লেনদেন বন্ধ') if act=='OFF' else ('🟢 Transactions ON' if lang=='en' else '🟢 লেনদেন চালু'))}}</span></div>
 {% set tq=u['tx_req'] or '' %}{% set ts=u['tx_req_status'] or '' %}{% set sent='Request Sent' if lang=='en' else 'রিকোয়েস্ট পাঠানো হয়েছে' %}<form id="txp" class="txp" method="post" action="/account/tx-pref" data-req="{{tq}}" data-st="{{ts}}" data-sent="{{sent}}"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <button name="pref" value="ON" class="t-on{{' sel '+ts if tq=='ON' and ts}}" aria-pressed="{{'true' if tq=='ON' and ts else 'false'}}">{% if tq=='ON' and ts=='pending' %}<span class="ck">✓</span>{{sent}}{% elif tq=='ON' and ts=='approved' %}<span class="ck">✓</span>Transactions Started{% else %}🟢 লেনদেন চালু রাখতে চাই{% endif %}</button>
 <button name="pref" value="OFF" class="t-off{{' sel '+ts if tq=='OFF' and ts}}" aria-pressed="{{'true' if tq=='OFF' and ts else 'false'}}">{% if tq=='OFF' and ts=='pending' %}<span class="ck">✓</span>{{sent}}{% elif tq=='OFF' and ts=='approved' %}<span class="ck">✓</span>Transactions Stopped{% else %}🔴 লেনদেন বন্ধ রাখতে চাই{% endif %}</button></form>
 <script>(function(){var f=document.getElementById('txp');if(!f)return;var T={ON:'🟢 লেনদেন চালু রাখতে চাই',OFF:'🔴 লেনদেন বন্ধ রাখতে চাই'},A={ON:'Transactions Started',OFF:'Transactions Stopped'},S=f.dataset.sent,bs=f.querySelectorAll('button'),busy=false,tm=null;
 function paint(r,st){bs.forEach(function(b){var p=b.value,on=(r===p&&st);b.className=(p==='ON'?'t-on':'t-off')+(on?' sel '+st:'');b.setAttribute('aria-pressed',on?'true':'false');b.disabled=false;b.style.minWidth='';b.removeAttribute('data-h');b.innerHTML=on?'<span class="ck">\u2713</span>'+(st==='pending'?S:A[p]):T[p]});f.dataset.req=r||'';f.dataset.st=st||'';delete f.dataset.sub;poll()}
-function apply(j){if(j&&typeof j.req==='string')paint(j.req,j.status)}
-function poll(){clearTimeout(tm);if(f.dataset.st==='pending')tm=setTimeout(function(){if(document.hidden){poll();return}fetch('/account/tx-pref/state',{credentials:'same-origin',headers:{Accept:'application/json'}}).then(function(r){return r.ok?r.json():null}).then(apply).catch(function(){poll()})},15000)}
+function badge(a){var e=document.getElementById('txs');if(!e||!a)return;e.className='pill '+(a==='HOLD'?'pending':a==='OFF'?'rejected':'approved');e.textContent=a==='HOLD'?e.dataset.hold:a==='OFF'?e.dataset.off:e.dataset.on}
+function apply(j){if(!j||typeof j.req!=='string')return;badge(j.active);if(j.req!==(f.dataset.req||'')||j.status!==(f.dataset.st||''))paint(j.req,j.status);else poll()}
+function poll(){clearTimeout(tm);tm=setTimeout(function(){if(document.hidden||busy){poll();return}fetch('/account/tx-pref/state',{credentials:'same-origin',headers:{Accept:'application/json'}}).then(function(r){return r.ok?r.json():null}).then(apply).catch(function(){poll()})},15000)}
 f.addEventListener('submit',function(e){e.preventDefault();e.stopPropagation();var p=e.submitter&&e.submitter.value;if(!p||busy)return;if(f.dataset.req===p&&f.dataset.st)return;busy=true;var d=new URLSearchParams(new FormData(f));d.set('pref',p);bs.forEach(function(b){b.disabled=true});
 fetch('/account/tx-pref',{method:'POST',credentials:'same-origin',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:d.toString()}).then(function(r){return r.ok?r.json():null}).then(function(j){busy=false;bs.forEach(function(b){b.disabled=false});if(j)apply(j);else location.reload()}).catch(function(){busy=false;bs.forEach(function(b){b.disabled=false});location.reload()})});poll()})()</script>
 <div class="g2"><div class="card"><div class="k">পেন্ডিং উইথড্র</div><div class="v">৳ {{money(s.pending)}}</div></div>
@@ -2821,7 +2824,7 @@ def support():
     return page("""<div class="card"><h2>সাপোর্ট</h2>{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
 <form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>বিষয়</label><input name="subject" required maxlength="100">
 <label>বার্তা</label><textarea name="message" rows="3" required maxlength="1000"></textarea><button style="width:100%">টিকিট জমা দিন</button></form></div>
-{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
+{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{'open' if t['status']=='passed' else t['status']}}</span>
 <div>{{t['message']}}</div>{% if t['reply'] %}<div class="k" style="margin-top:8px">↳ সাপোর্ট: {{t['reply']}}</div>{% endif %}</div>{% endfor %}""", active="/account", rows=rows)
 
 
@@ -2864,17 +2867,22 @@ def account():
 
 def tx_off(u):
     """True when this user's transactions are switched OFF (server-side gate for deposit / withdraw / request actions)."""
-    return (u["tx_active"] or "") == "OFF"
+    return (u["tx_active"] or "") == "OFF" or (u["tx_hold"] or "") == "1"  # admin HOLD blocks regardless of tx_active; Resume only clears the hold
 
 
 def tx_off_redirect(back):
+    u = me()
+    if u and (u["tx_hold"] or "") == "1":
+        err("আপনার লেনদেন সাময়িকভাবে হোল্ডে আছে। অ্যাডমিন রিজিউম করলে আবার করতে পারবেন।")
+        return redirect(back)
     err("আপনার লেনদেন বর্তমানে বন্ধ আছে। চালু করতে হোম পেজ থেকে অনুরোধ পাঠান এবং অ্যাডমিনের অনুমোদনের অপেক্ষা করুন।")
     return redirect(back)
 
 
 def _tx_state(uid):
-    r = q1("SELECT tx_req, tx_req_status FROM users WHERE id=?", (uid,))
-    return {"req": (r["tx_req"] or "") if r else "", "status": (r["tx_req_status"] or "") if r else ""}
+    r = q1("SELECT tx_active, tx_hold, tx_req, tx_req_status FROM users WHERE id=?", (uid,))
+    return {"req": (r["tx_req"] or "") if r else "", "status": (r["tx_req_status"] or "") if r else "",
+            "active": "HOLD" if (r and (r["tx_hold"] or "") == "1") else ("OFF" if (r and (r["tx_active"] or "") == "OFF") else "ON")}  # active = the real permission (what tx_off() enforces)
 
 
 @app.route("/account/tx-pref", methods=["POST"])
@@ -2938,6 +2946,58 @@ def admin_user_tx_pref(i):
             err("অনুরোধটি ইতিমধ্যে প্রসেস হয়েছে বা ইউজার বদলে ফেলেছেন। পেজ রিফ্রেশ করুন।")
     else:
         flash("অনুরোধটি Pending-এ রাখা হয়েছে।")
+    return redirect(back_u)
+
+
+@app.route("/admin/users/<int:i>/tx-status", methods=["POST"])
+@staff_required("users_manage")
+def admin_user_tx_status(i):
+    """Admin's direct ON/OFF switch for a user's real transaction permission (users.tx_active, enforced by tx_off()).
+    Works with or without a user request and always wins over it: any pending request is closed with the admin's value.
+    One guarded UPDATE -> double clicks cannot notify twice. Balances, ledger, commission and VIP logic are not touched."""
+    back_u = "/admin/users/%d" % i
+    val = (request.form.get("status") or "").strip().upper()
+    if val not in ("ON", "OFF"):
+        abort(400)
+    cur = db().execute("UPDATE users SET tx_active=?, tx_req=?, tx_req_status='approved', tx_req_at=? WHERE id=? AND is_admin=0 "
+                       "AND (COALESCE(tx_active,'ON')<>? OR COALESCE(tx_req_status,'')='pending')", (val, val, now(), i, val))
+    if cur.rowcount:
+        audit("tx_admin_" + val.lower(), "user_id=%d" % i)
+        notify(i, "লেনদেন চালু করা হয়েছে" if val == "ON" else "লেনদেন বন্ধ করা হয়েছে",
+               "অ্যাডমিন আপনার লেনদেন %s করেছেন।" % ("চালু" if val == "ON" else "বন্ধ"), "/",
+               "Transactions enabled" if val == "ON" else "Transactions disabled",
+               "Admin has turned your transactions %s." % val)
+        flash("লেনদেন এখন %s।" % ("চালু" if val == "ON" else "বন্ধ"))
+    else:
+        flash("লেনদেন আগে থেকেই %s আছে।" % ("চালু" if val == "ON" else "বন্ধ"))
+    return redirect(back_u)
+
+
+@app.route("/admin/users/<int:i>/tx-hold", methods=["POST"])
+@staff_required("users_manage")
+def admin_user_tx_hold(i):
+    """Temporary admin HOLD / RESUME of a user's transactions. Only users.tx_hold is touched (tx_active and the user's approved status stay as they were),
+    so Resume brings back exactly the previous status. Enforced server-side by tx_off(). One guarded UPDATE -> no double notifications. No financial logic is touched."""
+    back_u = "/admin/users/%d" % i
+    act = (request.form.get("action") or "").strip().lower()
+    if act not in ("hold", "resume"):
+        abort(400)
+    if act == "hold":
+        cur = db().execute("UPDATE users SET tx_hold='1', tx_hold_at=? WHERE id=? AND is_admin=0 AND COALESCE(tx_hold,'')<>'1'", (now(), i))
+    else:
+        cur = db().execute("UPDATE users SET tx_hold=NULL, tx_hold_at=? WHERE id=? AND is_admin=0 AND COALESCE(tx_hold,'')='1'", (now(), i))
+    if cur.rowcount:
+        audit("tx_admin_" + act, "user_id=%d" % i)
+        if act == "hold":
+            notify(i, "লেনদেন হোল্ডে রাখা হয়েছে", "অ্যাডমিন আপনার লেনদেন সাময়িকভাবে হোল্ড করেছেন। এখন ডিপোজিট/উইথড্র করা যাবে না।", "/",
+                   "Transactions on hold", "Admin has put your transactions on hold. Deposits and withdrawals are paused.")
+            flash("লেনদেন এখন হোল্ডে।")
+        else:
+            notify(i, "লেনদেন রিজিউম হয়েছে", "অ্যাডমিন আপনার লেনদেন রিজিউম করেছেন। আগের স্ট্যাটাস আবার কার্যকর।", "/",
+                   "Transactions resumed", "Admin has resumed your transactions. Your previous status is active again.")
+            flash("লেনদেন রিজিউম হয়েছে।")
+    else:
+        flash("লেনদেন আগে থেকেই %s আছে।" % ("হোল্ডে" if act == "hold" else "সক্রিয়"))
     return redirect(back_u)
 
 
@@ -3283,7 +3343,7 @@ details.dt .inn{padding-bottom:12px}
 USER_ROWS_TPL = """{% if not rows and p==1 %}<div class="card empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}
 {% for x in rows %}<div class="x-row uc{{' blocked' if x['blocked']}}"><a class="x-link" href="/admin/users/{{x['id']}}"><span class="x-av">{{(x['name'] or '?')[:1]|upper}}</span>
 <span class="x-main"><b>{{x['name']}}</b><small>#{{x['member_id']}} · {{x['phone']}}</small>{% if can('requests') and x['open_req'] %}<small class="x-open">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</small>{% endif %}</span>
-<span class="x-end"><b>৳ {{money(x['balance'])}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span>{% if x['tx_req_status']=='pending' %}<span class="pill pending" title="অনুমোদনের অপেক্ষায়">⏳ {{x['tx_req']}} অনুরোধ</span>{% elif x['tx_active']=='ON' %}<span class="pill approved" title="অনুমোদিত লেনদেন পছন্দ">🟢 লেনদেন ON</span>{% elif x['tx_active']=='OFF' %}<span class="pill rejected" title="অনুমোদিত লেনদেন পছন্দ">🔴 লেনদেন OFF</span>{% endif %}</span></a>
+<span class="x-end"><b>৳ {{money(x['balance'])}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span>{% if x['tx_req_status']=='pending' %}<span class="pill pending" title="অনুমোদনের অপেক্ষায়">⏳ {{x['tx_req']}} অনুরোধ</span>{% endif %}{% if x['tx_hold']=='1' %}<span class="pill pending" title="অ্যাডমিন হোল্ড">⏸ HOLD</span>{% endif %}{% if x['tx_active']=='OFF' %}<span class="pill rejected" title="বর্তমান লেনদেন স্ট্যাটাস">🔴 লেনদেন OFF</span>{% else %}<span class="pill approved" title="বর্তমান লেনদেন স্ট্যাটাস">🟢 লেনদেন ON</span>{% endif %}</span></a>
 {% if can('requests') and not x['blocked'] %}<a class="x-go" href="/admin/requests/new?uid={{x['id']}}" title="রিকোয়েস্ট পাঠান" aria-label="রিকোয়েস্ট পাঠান">＋</a>{% endif %}</div>{% endfor %}
 {% if more %}<button type="button" class="btn s uc-more" data-next="{{p+1}}" style="width:100%;margin-bottom:10px">আরও দেখান</button>{% endif %}"""
 
@@ -3334,7 +3394,7 @@ def _user_search(q, f, p, per=SEARCH_PER):
     if q:
         order, oargs = "(CASE WHEN u.member_id=? OR u.phone=? OR u.referral_code=? THEN 0 ELSE 1 END), u.id DESC", [q, q, q.upper()]
     p = min(max(p, 1), 500)
-    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.commission,u.blocked,u.created,u.tx_active,u.tx_req,u.tx_req_status,"
+    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.commission,u.blocked,u.created,u.tx_active,u.tx_hold,u.tx_req,u.tx_req_status,"
               "(SELECT COUNT(*) FROM requests r WHERE r.user_id=u.id AND r.status IN ('pending','submitted','review')) open_req "
               "FROM users u WHERE " + " AND ".join(where) + " ORDER BY " + order + " LIMIT ? OFFSET ?",
               args + oargs + [per + 1, (p - 1) * per])
@@ -3472,7 +3532,11 @@ def admin_user(i):
 <div class="k">ওয়ালেট ব্যালেন্স</div><div class="pf-bal">৳ {{money(x['balance'])}}</div>
 <div class="k">যোগদান: {{(x['created'] or '-')[:16]}} · সর্বশেষ লগইন: {{x['last_login'] or '-'}} · রেফারেল কোড: {{x['referral_code']}}</div>
 {% if x['blocked'] and x['blocked_reason'] %}<div class="msg error" style="margin:8px 0 0">ব্লকের কারণ: {{x['blocked_reason']}} ({{(x['blocked_at'] or '')[:16]}})</div>{% endif %}
-<div class="k" style="margin-top:8px">🔁 লেনদেন পছন্দ — অনুমোদিত: {% if x['tx_active']=='ON' %}<span class="pill approved">🟢 ON</span>{% elif x['tx_active']=='OFF' %}<span class="pill rejected">🔴 OFF (লেনদেন বন্ধ)</span>{% else %}<span class="pill">নেই (চালু)</span>{% endif %} · ইউজারের অনুরোধ: {% if x['tx_req'] %}<span class="pill {{'pending' if x['tx_req_status']=='pending' else 'approved'}}">{{x['tx_req']}} · {{'Processing' if x['tx_req_status']=='pending' else 'Approved'}}</span>{% else %}<span class="pill">নেই</span>{% endif %}{% if x['tx_req_at'] %} <small>({{x['tx_req_at'][:16]}})</small>{% endif %}
+<div class="k" style="margin-top:8px">💳 বর্তমান লেনদেন স্ট্যাটাস: {% if x['tx_active']=='OFF' %}<span class="pill rejected">🔴 বন্ধ (OFF)</span>{% else %}<span class="pill approved">🟢 চালু (ON)</span>{% endif %}</div>
+<div class="k" style="margin-top:6px">⏯ হোল্ড স্ট্যাটাস: {% if x['tx_hold']=='1' %}<span class="pill pending">⏸ HOLD</span>{% if x['tx_hold_at'] %} <small>({{x['tx_hold_at'][:16]}})</small>{% endif %}{% else %}<span class="pill approved">▶ ACTIVE</span>{% endif %}</div>
+{% if can('users_manage') %}<form method="post" action="/admin/users/{{x['id']}}/tx-hold" style="display:flex;gap:8px;margin:6px 0"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button name="action" value="hold" class="btn sm s"{% if x['tx_hold']=='1' %} disabled{% endif %}>⏸ Hold Transactions</button><button name="action" value="resume" class="btn sm"{% if x['tx_hold']!='1' %} disabled{% endif %}>▶ Resume Transactions</button></form>{% endif %}
+{% if can('users_manage') %}<form method="post" action="/admin/users/{{x['id']}}/tx-status" style="display:flex;gap:8px;margin:6px 0"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button name="status" value="ON" class="btn sm"{% if x['tx_active']!='OFF' %} disabled{% endif %}>🟢 Enable Transactions</button><button name="status" value="OFF" class="btn sm s"{% if x['tx_active']=='OFF' %} disabled{% endif %}>🔴 Disable Transactions</button></form>{% endif %}
+<div class="k" style="margin-top:8px">🔁 লেনদেন পছন্দ — ইউজারের অনুরোধ: {% if x['tx_req'] %}<span class="pill {{'pending' if x['tx_req_status']=='pending' else 'approved'}}">{{x['tx_req']}} · {{'Processing' if x['tx_req_status']=='pending' else 'Approved'}}</span>{% else %}<span class="pill">নেই</span>{% endif %}{% if x['tx_req_at'] %} <small>({{x['tx_req_at'][:16]}})</small>{% endif %}
 {% if x['tx_req_status']=='pending' and can('users_manage') %}<form method="post" action="/admin/users/{{x['id']}}/tx-pref" style="display:flex;gap:8px;margin-top:6px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="pref" value="{{x['tx_req']}}"><button name="action" value="approve" class="btn sm">✅ Approve {{x['tx_req']}}{% if x['tx_req']=='ON' %} (চালু করুন){% endif %}</button><button name="action" value="pending" class="btn sm s">⏳ Keep Pending</button></form>{% endif %}<div><small>(OFF হলে ইউজার ডিপোজিট/উইথড্র/রিকোয়েস্ট করতে পারেন না। ON অ্যাপ্রুভ করলে আবার চালু হয়)</small></div></div>
 <div class="k" style="margin-top:8px">🪪 KYC: {% set ks=kycs(x['id']) %}<span class="pill {{ks if ks in ('pending','approved','rejected') else ''}}">{{kycl[ks]}}</span>{% if can('kyc') and ks!='none' %} <a href="/admin/kyc/{{x['id']}}"><b>দেখুন</b></a>{% endif %}</div></div>
 <div class="qa" style="grid-template-columns:1fr 1fr">
@@ -4271,7 +4335,13 @@ def admin_tickets():
         a = me()
         with atomic():
             t = q1("SELECT * FROM tickets WHERE id=?", (tid,)) if tid else None
-            if t and rep and t["status"] == "open":
+            if t and request.form.get("act") == "pass" and t["status"] == "open":
+                # Pass: no reply and no notification to the user; the ticket and its message stay saved, only the status leaves 'open'
+                db().execute("UPDATE tickets SET status='passed' WHERE id=? AND status='open'", (tid,))
+                audit("ticket_pass", "ticket#%s" % tid); flash("টিকিট পাস করা হয়েছে।")
+                if not q1("SELECT 1 FROM tickets WHERE status='open'"):
+                    alerts_done("/admin/tickets")
+            elif t and rep and t["status"] == "open":
                 db().execute("UPDATE tickets SET reply=?, status='closed', replied_by=?, replied_at=? WHERE id=?",
                              (rep, "%s (%s)" % (a["name"], a["member_id"]), now(), tid))
                 notify(t["user_id"], "সাপোর্ট উত্তর", rep); audit("ticket_reply", "ticket#%s" % tid); flash("উত্তর পাঠানো হয়েছে।")
@@ -4279,12 +4349,12 @@ def admin_tickets():
                     alerts_done("/admin/tickets")
         return redirect("/admin/tickets")
     t0 = now()
-    rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
+    rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status<>'passed' ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
     _seen_list("/admin/tickets", rows, 50, {"p": 1}, t0)
     return page("""{% if not rows %}<div class="card empty">কোনো টিকিট নেই</div>{% endif %}{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
 <div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{t['created'][:16]}}</div><div>{{t['message']}}</div>
 {% if t['reply'] %}<div class="k">↳ {{t['reply']}}{% if t['replied_by'] %} — {{t['replied_by']}}{% endif %}</div>{% else %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="id" value="{{t['id']}}">
-<input name="reply" placeholder="উত্তর লিখুন" required maxlength="500"><button class="btn sm">পাঠান</button></form>{% endif %}
+<input name="reply" placeholder="উত্তর লিখুন" required maxlength="500"><button class="btn sm">পাঠান</button><button class="btn sm s" name="act" value="pass" formnovalidate>Pass</button></form>{% endif %}
 {% if can('users_view') %}<a class="k" href="/admin/users/{{t['user_id']}}">👤 ইউজার দেখুন</a>{% endif %}</div>{% endfor %}""", active="/admin/tickets", rows=rows)
 
 
