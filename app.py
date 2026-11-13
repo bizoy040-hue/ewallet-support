@@ -513,6 +513,14 @@ V5_TABLES = [
     # @@TABLES
 ]
 V5_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS ix_alert_reads_admin ON admin_alert_reads(admin_id)",
+    "CREATE INDEX IF NOT EXISTS ix_alert_perm_created ON admin_alerts(perm,created)",
+    "CREATE INDEX IF NOT EXISTS ix_req_status_exp ON requests(status,expires_at)",
+    "CREATE INDEX IF NOT EXISTS ix_ledger_user_id ON ledger(user_id,id)",
+    "CREATE INDEX IF NOT EXISTS ix_tx_user_id ON tx(user_id,id)",
+    "CREATE INDEX IF NOT EXISTS ix_req_user_id ON requests(user_id,id)",
+    "CREATE INDEX IF NOT EXISTS ix_tx_kind_status_upd ON tx(kind,status,updated)",
+    "CREATE INDEX IF NOT EXISTS ix_notif_user_id ON notifications(user_id,id)",
     "CREATE INDEX IF NOT EXISTS ix_users_member ON users(member_id)",
     "CREATE INDEX IF NOT EXISTS ix_ledger_created ON ledger(created)",
     "CREATE INDEX IF NOT EXISTS ix_ledger_kind ON ledger(kind)",
@@ -954,6 +962,29 @@ def _guard():
             abort(400, "Invalid CSRF token. Reload the page.")
 
 
+_WV = [0]   # bumped after every write request handled by this process
+_QC = {}
+
+
+def qcache(key, ttl, fn):
+    """Tiny read cache for heavy, display-only aggregates: reused for <= ttl seconds and dropped immediately after any write (POST/PUT/PATCH/DELETE) in this process."""
+    t, e = time.time(), _QC.get(key)
+    if e and e[0] == _WV[0] and t - e[1] < ttl:
+        return e[2]
+    v = fn()
+    if len(_QC) > 64:
+        _QC.clear()
+    _QC[key] = (_WV[0], t, v)
+    return v
+
+
+@app.after_request
+def _bump_wv(r):
+    if request.method != "GET" and request.method != "HEAD":
+        _WV[0] += 1
+    return r
+
+
 @app.after_request
 def _headers(r):
     r.headers["X-Content-Type-Options"] = "nosniff"
@@ -1202,7 +1233,7 @@ img.shot{max-width:100%;border-radius:12px;margin:8px 0;border:1px solid var(--l
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .top{background:linear-gradient(100deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .hero{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0);box-shadow:0 16px 34px -16px #000a}:root:not([data-theme=light]) .hero2{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .nav a{--t:#1E90FF26}:root:not([data-theme=light]) .mt i,:root:not([data-theme=light]) .li .ic{background:linear-gradient(135deg,#123B4A,#0F2F44)}:root:not([data-theme=light]) .pill.approved,:root:not([data-theme=light]) .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .pill.pending,:root:not([data-theme=light]) .pill.review,:root:not([data-theme=light]) .pill.processing{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .pill.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .pill.expired,:root:not([data-theme=light]) .pill.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc .pill.pending,:root:not([data-theme=light]) .hxc .pill.review,:root:not([data-theme=light]) .hxc .pill.processing,:root:not([data-theme=light]) .hxc .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.pending,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.review,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.processing,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.approved,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .msg{background:#0F3A44;color:#A8EDE6}:root:not([data-theme=light]) .msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .au-msg{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .au-msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .ur-b.pending,:root:not([data-theme=light]) .ur-b.review{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .ur-b.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .ur-b.approved{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .ur-b.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b.expired,:root:not([data-theme=light]) .ur-b.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) body.auth{background:#0A2A4A}:root:not([data-theme=light]) body.auth::before{background:radial-gradient(90% 60% at 100% 0%,#DFF7F522,#DFF7F500 60%),linear-gradient(165deg,#0F5FB5,#082F57)}}
 /* ===== admin simplification v2: consistent controls, compact menu, touch safety ===== */
 a,button,.btn,summary,select,label.pmc{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-a.tapping,button.tapping,a.tapped{opacity:.72;transition:none}.navbusy main{pointer-events:none}.navbusy main{opacity:.88;transition:opacity .15s}
+a.tapping,button.tapping,a.tapped{opacity:.72;transition:none}.navbusy main{opacity:.88;transition:opacity .15s}
 .btn,button.btn{min-height:40px}.btn.sm{min-height:34px}
 .adm{gap:6px;margin-bottom:8px}.adm a.t{min-height:38px;box-sizing:border-box;padding:0 14px;font-size:13.5px;font-weight:600;border-radius:12px;margin:0}
 .adm a.t.on{box-shadow:none}
@@ -1236,6 +1267,7 @@ function ldShow(){var b=document.getElementById('ld');if(!b)return;clearTimeout(
 function ldHide(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.width='100%';setTimeout(function(){b.style.opacity='0';setTimeout(function(){b.style.width='0'},250)},180)}
 document.addEventListener('submit',function(e){var f=e.target,c=f.dataset.confirm;
  if(c&&!confirm(c)){e.preventDefault();return}
+ if(window._navClear)window._navClear();
  if(f.dataset.sub==='1'){e.preventDefault();return}f.dataset.sub='1';
  ldShow();
  setTimeout(function(){f.querySelectorAll('button').forEach(function(b){b.style.minWidth=b.offsetWidth+'px';b.disabled=true;b.dataset.h=b.innerHTML;b.innerHTML='<span class="sp"></span>'})},0);});
@@ -1257,9 +1289,21 @@ window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document
   document.querySelectorAll('main script').forEach(function(o){var n=document.createElement('script');n.textContent=o.textContent;o.replaceWith(n)});
   if(push)history.pushState({},'',url);window.scrollTo(0,0);paintToggles();
   return true}
- var _ac=null,_busy='';
- function go(url,push){var my=++seq;ldShow();
+ var _ac=null,_busy='',CK={},CN=[],TTL=120000;
+ function cOK(u){try{return new URL(u,location.href).pathname.indexOf('/admin')===0}catch(e){return false}}
+ function cGet(u){var c=CK[u];return(c&&Date.now()-c.at<TTL)?c:null}
+ function cSet(u,x){if(!cOK(u)||x.t.indexOf('class="msg ')>=0){delete CK[u];return}if(!CK[u])CN.push(u);CK[u]={t:x.t,u:x.u,at:Date.now()};while(CN.length>14){delete CK[CN.shift()]}}
+ window._navClear=function(){CK={};CN=[]};
+ function reval(url,my,old){fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'}}).then(function(r){var ct=r.headers.get('content-type')||'',rp=new URL(r.url).pathname;
+   if(ct.indexOf('text/html')<0||(r.redirected&&(rp==='/login'||rp==='/signup'))){if(my===seq)location.href=url;return null}
+   return r.text().then(function(t){return{t:t,u:r.url}})}).then(function(x){if(!x)return;cSet(url,x);if(my!==seq||x.t===old)return;
+   var a=document.activeElement;if(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&a.closest&&a.closest('main'))return;
+   var y=window.scrollY;if(swap(x.t,x.u||url,false))window.scrollTo(0,y)}).catch(function(){})}
+ function go(url,push){var my=++seq;
   if(_ac){try{_ac.abort()}catch(x){}}
+  var hit=cGet(url);
+  if(hit&&swap(hit.t,hit.u||url,push)){_busy='';document.documentElement.classList.remove('navbusy');reval(url,my,hit.t);return}
+  ldShow();
   var ac=_ac=('AbortController' in window)?new AbortController():null;_busy=url;
   fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'},signal:ac?ac.signal:undefined}).then(function(r){
    var ct=r.headers.get('content-type')||'';
@@ -1267,7 +1311,7 @@ window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document
    return r.text().then(function(t){return{t:t,u:r.url}})}).then(function(x){
    if(!x||my!==seq)return;
    _busy='';document.documentElement.classList.remove('navbusy');
-   if(!swap(x.t,x.u||url,push)){location.href=url;return}ldHide()}).catch(function(e){if(e&&e.name==='AbortError')return;location.href=url})}
+   if(!swap(x.t,x.u||url,push)){location.href=url;return}cSet(url,x);ldHide()}).catch(function(e){if(e&&e.name==='AbortError')return;location.href=url})}
  document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a)return;var u=ok(a,e);if(!u)return;
   e.preventDefault();if(_busy===u.href)return;a.classList.add('tapped');document.documentElement.classList.add('navbusy');go(u.href,true)});
  document.addEventListener('pointerdown',function(e){var a=e.target.closest&&e.target.closest('a[href],button');if(a)a.classList.add('tapping')},{passive:true});
@@ -2984,8 +3028,8 @@ INTEG_TPL = """<div class="card"><b>লেজার রিকনসিলিয�
 @staff_required("dashboard_fin")
 def admin_dash_integrity():
     """Heavy ledger reconciliation, computed after the dashboard is already on screen (same data and permissions as before)."""
-    rc = recon_overall(recon_checks()) if has_perm("reports") else None
-    return render_str(INTEG_TPL, bad=reconcile(), rc=rc)
+    rep_ok = has_perm("reports")
+    return qcache(("integ", rep_ok), 30, lambda: render_str(INTEG_TPL, bad=reconcile(), rc=(recon_overall(recon_checks()) if rep_ok else None)))
 
 
 @app.route("/admin")
@@ -2993,33 +3037,38 @@ def admin_dash_integrity():
 def admin_home():
     u = me()
     expire_requests()
-    one = lambda sql: q1(sql)["s"]
     fin = has_perm("dashboard_fin", u)
-    c = q1("SELECT (SELECT COUNT(*) FROM tickets WHERE status='open') open_tickets,"
-           "(SELECT COUNT(*) FROM tx WHERE kind='deposit' AND status IN('pending','review')) pend_dep,"
-           "(SELECT COUNT(*) FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')) pend_wd,"
-           "(SELECT COUNT(*) FROM requests WHERE status IN('submitted','review')) pend_req")
-    c2 = q1("SELECT COUNT(*) total, COALESCE(SUM(CASE WHEN blocked=0 THEN 1 ELSE 0 END),0) active,"
-            "COALESCE(SUM(CASE WHEN blocked=1 THEN 1 ELSE 0 END),0) blocked,"
-            "COALESCE(SUM(CASE WHEN blocked=0 AND last_login>=datetime('now','-30 days') THEN 1 ELSE 0 END),0) active30 FROM users WHERE is_admin=0")
-    s = dict(open_tickets=c["open_tickets"], pend_dep=c["pend_dep"], pend_wd=c["pend_wd"], pend_req=c["pend_req"],
-             total=c2["total"], active=c2["active"], blocked=c2["blocked"], active30=c2["active30"])
+
+    def _stats():
+        c = q1("SELECT (SELECT COUNT(*) FROM tickets WHERE status='open') open_tickets,"
+               "(SELECT COUNT(*) FROM tx WHERE kind='deposit' AND status IN('pending','review')) pend_dep,"
+               "(SELECT COUNT(*) FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')) pend_wd,"
+               "(SELECT COUNT(*) FROM requests WHERE status IN('submitted','review')) pend_req")
+        c2 = q1("SELECT COUNT(*) total, COALESCE(SUM(CASE WHEN blocked=0 THEN 1 ELSE 0 END),0) active,"
+                "COALESCE(SUM(CASE WHEN blocked=1 THEN 1 ELSE 0 END),0) blocked,"
+                "COALESCE(SUM(CASE WHEN blocked=0 AND last_login>=datetime('now','-30 days') THEN 1 ELSE 0 END),0) active30 FROM users WHERE is_admin=0")
+        d = dict(open_tickets=c["open_tickets"], pend_dep=c["pend_dep"], pend_wd=c["pend_wd"], pend_req=c["pend_req"],
+                 total=c2["total"], active=c2["active"], blocked=c2["blocked"], active30=c2["active30"])
+        if fin:
+            f = q1("SELECT (SELECT COALESCE(SUM(balance),0) FROM users WHERE is_admin=0) liability,"
+                   "((SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved')"
+                   "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved')) dep_vol,"
+                   "((SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='withdraw' AND status IN('approved','paid'))"
+                   "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved')) wd_vol,"
+                   "(SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='commission') comm,"
+                   "(SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='commission' AND created>=date('now')) comm_today,"
+                   "(SELECT COALESCE(SUM(amount),0) FROM ledger WHERE kind='referral_bonus') ref_paid,"
+                   "(SELECT COUNT(*) FROM referrals WHERE status='pending') ref_pend_n,"
+                   "(SELECT COALESCE(SUM(amount),0) FROM referrals WHERE status='pending') ref_pend_amt,"
+                   "((SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved' AND date(updated)=date('now'))"
+                   "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved' AND date(decided_at)=date('now'))) today_dep")
+            for k in ("liability", "dep_vol", "wd_vol", "comm", "comm_today", "ref_paid", "ref_pend_n", "ref_pend_amt", "today_dep"):
+                d[k] = f[k]
+            d.update(pool=pool_balance(), pool_res=pool_reserved())  # ledger reconciliation scans load separately (see /admin/dash/integrity)
+        return d
+
+    s = dict(qcache(("dash", fin), 10, _stats))  # <= 10 s old, and dropped right after any write
     bad, pend, acts, rc = [], [], [], None
-    if fin:
-        s.update(
-            liability=one("SELECT COALESCE(SUM(balance),0) s FROM users WHERE is_admin=0"),
-            dep_vol=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved')"
-                        "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved') s"),
-            wd_vol=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='withdraw' AND status IN('approved','paid'))"
-                       "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='withdraw' AND COALESCE(flow,'')<>'client_confirm' AND status='approved') s"),
-            comm=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission'"),
-            comm_today=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='commission' AND created>=date('now')"),
-            ref_paid=one("SELECT COALESCE(SUM(amount),0) s FROM ledger WHERE kind='referral_bonus'"),
-            ref_pend_n=one("SELECT COUNT(*) s FROM referrals WHERE status='pending'"),
-            ref_pend_amt=one("SELECT COALESCE(SUM(amount),0) s FROM referrals WHERE status='pending'"),
-            today_dep=one("SELECT (SELECT COALESCE(SUM(amount),0) FROM tx WHERE kind='deposit' AND status='approved' AND date(updated)=date('now'))"
-                          "+(SELECT COALESCE(SUM(amount),0) FROM requests WHERE kind='deposit' AND status='approved' AND date(decided_at)=date('now')) s"))
-        s.update(pool=pool_balance(), pool_res=pool_reserved())  # ledger reconciliation scans load separately (see /admin/dash/integrity)
     if has_perm("referrals", u):
         pend = qa(REF_SQL + " WHERE r.status='pending' ORDER BY r.id LIMIT 5")
     if has_perm("users_view", u):
