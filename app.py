@@ -1382,22 +1382,27 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap"></noscript>
-<link rel="stylesheet" href="/assets/app.css?v={{av}}">
+<link rel="stylesheet" href="/assets/app.css?v={{av}}">{% if u and u['is_admin'] %}<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"><link rel="stylesheet" href="/assets/admin.css?v={{adv}}">{% endif %}
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
-<body{% if authpage %} class="auth"{% endif %}{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
+<body{% if authpage %} class="auth"{% elif u and u['is_admin'] %} class="A"{% endif %}{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
 <div id="ld"></div>
-<div class="top"><b>{{site}}</b><button type="button" id="pwa-install" class="pwa-dl" aria-label="Download App" title="Download App">📲</button><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
+{% if u and u['is_admin'] %}<div class="top"><a class="brand" href="/admin"><i>{{(site or 'E')[:1]|upper}}</i><b>{{site}}</b><small>{{role_name}}</small></a><div class="tr"><button type="button" id="pwa-install" class="pwa-dl" aria-label="Download App" title="Download App">📲</button><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a><a class="bell" href="/admin/alerts" aria-label="Notifications">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></div></div>{% else %}<div class="top"><b>{{site}}</b><button type="button" id="pwa-install" class="pwa-dl" aria-label="Download App" title="Download App">📲</button><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
 {% if u and not u['is_admin'] %}<span><a class="bell" href="/notifications">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
-{% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
+{% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>{% endif %}
 <main>{% for c,m in msgs %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
-{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active=='/admin/menu'}}" href="/admin/menu">☰ মেনু <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t pri" href="/admin/requests/new">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
 <a class="{{'on' if active=='/'}}" href="/"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M4 10.6 12 4l8 6.6V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M9.5 20v-5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v5"/></svg></i>হোম</a><a class="{{'on' if active=='/history'}}" href="/history"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></i>হিস্ট্রি<span class="bd2" data-bd="/history"{% if not nb('/history') %} hidden{% endif %}>{{nb('/history')}}</span></a>
 <a class="{{'on' if active=='/vip'}}" href="/vip"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg></i>VIP<span class="bd2" data-bd="/vip"{% if not nb('/vip') %} hidden{% endif %}>{{nb('/vip')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="d" x="4" y="13" width="4" height="7" rx="1"/><rect class="d" x="10" y="9" width="4" height="11" rx="1"/><rect class="d" x="16" y="4" width="4" height="16" rx="1"/></svg></i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
 <a class="{{'on' if active=='/account'}}" href="/account"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="8" r="4"/><path class="d" d="M4.5 20.5a7.5 7.5 0 0 1 15 0z"/></svg></i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
+{% if u and u['is_admin'] %}{% set ap = active or '' %}<div class="nav">
+<a class="{{'on' if ap=='/admin'}}" href="/admin"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.6 12 4l8 6.6V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M9.5 20v-5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v5"/></svg></i>হোম</a>
+{% if can('requests') %}<a class="{{'on' if (ap=='/admin/requests' or ap=='/admin/request-history') and nxt!='/admin/requests/new'}}" href="/admin/requests"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13L21 13v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5z"/></svg></i>রিকোয়েস্ট<span class="bd2" data-bd="/admin/requests"{% if not nb('/admin/requests') %} hidden{% endif %}>{{nb('/admin/requests')}}</span></a>
+<a class="plus {{'on' if nxt=='/admin/requests/new'}}" href="/admin/requests/new" aria-label="নতুন রিকোয়েস্ট"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></i><span class="t">পাঠান</span></a>{% endif %}
+{% if can('users_view') %}<a class="{{'on' if ap.startswith('/admin/users')}}" href="/admin/users"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/></svg></i>ইউজার</a>{% endif %}
+<a class="{{'on' if ap not in ('/admin','/admin/requests','/admin/request-history') and not ap.startswith('/admin/users')}}" href="/admin/menu"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/></svg></i>মেনু<span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
 <script src="/assets/app.js?v={{av}}"></script></body></html>"""
 
@@ -1482,6 +1487,257 @@ CSS += AUTH_CSS
 
 ASSET_V = hashlib.sha1((CSS + JS).encode("utf-8")).hexdigest()[:10]
 
+ADMIN_CSS = r"""/* ============ ADMIN PANEL - "Ledger" design system (scoped to body.A; the client panel never loads this file) ============ */
+body.A{--bg:#F4F5F9;--card:#fff;--fld:#F7F8FB;--tint:#EEF0FA;--tx:#101426;--mut:#667089;--ln:#E3E6F0;--b:#4338CA;--b2:#3730A3;--bt:#4338CA;--aq:#EEF0FF;--aq2:#D9DEFF;--aqs:#F3F4FF;--g:#059669;--okt:#047857;--rd:#DC2626;--glow:#4338CA24;--warn:#B45309;--warnbg:#FEF3C7;--okbg:#DCFCE7;--okfg:#166534;--badbg:#FEE2E2;--badfg:#991B1B;--infobg:#E0E7FF;--infofg:#3730A3;--mutbg:#ECEEF5;--r:14px;--sh:0 1px 2px #10142610;
+ background:var(--bg);color:var(--tx);font-family:'Inter','Hind Siliguri',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.5;padding-bottom:calc(86px + env(safe-area-inset-bottom,0px));-webkit-font-smoothing:antialiased}
+:root[data-theme=dark] body.A{--bg:#0A0C16;--card:#131728;--fld:#0F1220;--tint:#1A1F36;--tx:#EDEFF8;--mut:#98A1BA;--ln:#242A44;--b:#6F76F2;--b2:#5A61E0;--bt:#A9AEFF;--aq:#1B2046;--aq2:#2B3274;--aqs:#151937;--okt:#34D399;--glow:#6F76F235;--warn:#FBBF24;--warnbg:#3A2C0C;--okbg:#0E3324;--okfg:#6EE7B7;--badbg:#431A22;--badfg:#FCA5A5;--infobg:#212860;--infofg:#B6BAFF;--mutbg:#1D2238;--sh:none}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) body.A{--bg:#0A0C16;--card:#131728;--fld:#0F1220;--tint:#1A1F36;--tx:#EDEFF8;--mut:#98A1BA;--ln:#242A44;--b:#6F76F2;--b2:#5A61E0;--bt:#A9AEFF;--aq:#1B2046;--aq2:#2B3274;--aqs:#151937;--okt:#34D399;--glow:#6F76F235;--warn:#FBBF24;--warnbg:#3A2C0C;--okbg:#0E3324;--okfg:#6EE7B7;--badbg:#431A22;--badfg:#FCA5A5;--infobg:#212860;--infofg:#B6BAFF;--mutbg:#1D2238;--sh:none}}
+body.A *{-webkit-tap-highlight-color:transparent}
+body.A h1,body.A h2,body.A h3{font-weight:700;letter-spacing:-.01em;color:var(--tx)}
+body.A h2{font-size:19px;margin:2px 0 12px}body.A h3{font-size:15.5px;margin:4px 0 10px}
+body.A .k{color:var(--mut);font-size:13px}body.A .v{font-size:21px;font-weight:700;letter-spacing:-.02em}
+body.A ::selection{background:var(--glow)}
+/* top bar */
+body.A .top{background:var(--card);background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:var(--tx);box-shadow:none;border-bottom:1px solid var(--ln);padding:0 16px;height:56px;gap:10px}
+body.A .top .brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+body.A .top .brand i{flex:none;width:32px;height:32px;border-radius:10px;background:var(--b);color:#fff;font-style:normal;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center}
+body.A .top .brand b{flex:none;font-size:15.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw}
+body.A .top .brand small{color:var(--mut);font-size:12px;background:var(--tint);border-radius:99px;padding:1px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30vw}
+@media(max-width:700px){body.A .top .brand small{display:none}}
+body.A .top .tr{display:flex;align-items:center;gap:8px;flex:none}
+body.A .top .pwa-dl{background:var(--tint);color:var(--tx);margin:0;width:34px;height:34px;box-shadow:none;border-radius:10px;min-height:0;padding:0}
+body.A .lgsw{background:var(--tint);color:var(--tx);border-radius:10px;padding:0 10px;height:34px;display:inline-flex;align-items:center;font-size:12.5px;font-weight:600;margin:0}
+body.A .bell{width:34px;height:34px;border-radius:10px;background:var(--tint);display:flex;align-items:center;justify-content:center;font-size:16px;position:relative}
+body.A .dot{top:-5px;right:-5px;background:#E11D48;color:#fff;font-weight:700;font-size:10.5px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px;border:2px solid var(--card)}
+body.A main{max-width:760px;padding:16px 16px 8px}
+/* cards */
+body.A .card{background:var(--card);border:1px solid var(--ln);border-radius:var(--r);box-shadow:var(--sh);padding:16px;margin-bottom:12px}
+body.A .card h2:first-child,body.A .card h3:first-child{margin-top:0}
+body.A .card.empty,body.A .empty{color:var(--mut);text-align:center;padding:26px 16px;font-size:14px}
+body.A .hero,body.A .hero2{background:var(--b);background-image:none;box-shadow:none;border:0;color:#fff;border-radius:var(--r)}
+body.A .new{border-left:3px solid var(--b)}
+/* buttons */
+body.A .btn,body.A button.btn,:where(body.A) button{background:var(--b);background-image:none;color:#fff;border:0;border-radius:12px;font-weight:600;font-size:14.5px;box-shadow:none;min-height:44px;padding:0 18px;display:inline-flex;align-items:center;justify-content:center;gap:6px;line-height:1.2;transition:background .15s,transform .1s;filter:none}
+body.A .btn:active,:where(body.A) button:active{transform:scale(.98);filter:none}
+@media(hover:hover){body.A .btn:hover,:where(body.A) button:hover{background:var(--b2);filter:none}}
+body.A .btn.g,body.A button.g{background:#059669}body.A .btn.r,body.A button.r{background:#DC2626}
+@media(hover:hover){body.A .btn.g:hover,body.A button.g:hover{background:#047857}body.A .btn.r:hover,body.A button.r:hover{background:#B91C1C}}
+body.A .btn.s,body.A button.s{background:var(--tint);color:var(--tx);border:1px solid var(--ln)}
+@media(hover:hover){body.A .btn.s:hover,body.A button.s:hover{background:var(--aq2)}}
+body.A .btn.w{background:#ffffff26;color:#fff}
+body.A .btn.sm,body.A button.sm{min-height:36px;padding:0 13px;font-size:13px;border-radius:10px}
+body.A .btn.dis{opacity:.45;pointer-events:none}
+body.A button[disabled]{opacity:.55}
+body.A .btn:focus-visible,body.A button:focus-visible,body.A a:focus-visible{outline:2px solid var(--b);outline-offset:2px}
+/* forms */
+body.A label{font-size:13px;font-weight:600;color:var(--mut);display:block;margin:2px 0 0}
+body.A label.ck{display:flex;align-items:center;gap:8px;color:var(--tx);font-weight:500;margin:8px 0;font-size:14px}
+body.A input,body.A select,body.A textarea{background:var(--fld);border:1px solid var(--ln);border-radius:12px;padding:0 14px;min-height:46px;font-size:16px;margin:5px 0 12px;color:var(--tx);width:100%}
+body.A textarea{padding:11px 14px;min-height:0}
+body.A input:focus,body.A select:focus,body.A textarea:focus{border-color:var(--b);box-shadow:0 0 0 3px var(--glow);outline:0}
+body.A input[type=checkbox],body.A input[type=radio]{width:18px;min-height:0;height:18px;margin:0;accent-color:var(--b);padding:0}
+body.A input::placeholder,body.A textarea::placeholder{color:#9AA2B8;font-weight:400}
+/* status pills */
+body.A .pill{display:inline-flex;align-items:center;gap:5px;border-radius:99px;font-size:12px;font-weight:600;padding:2px 10px;background:var(--mutbg);color:var(--mut);white-space:nowrap;line-height:1.5}
+body.A .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.9}
+body.A .pill.approved,body.A .pill.paid{background:var(--okbg);color:var(--okfg)}
+body.A .pill.rejected{background:var(--badbg);color:var(--badfg)}
+body.A .pill.pending,body.A .pill.review,body.A .pill.processing{background:var(--warnbg);color:var(--warn)}
+body.A .pill.submitted{background:var(--infobg);color:var(--infofg)}
+body.A .pill.expired,body.A .pill.cancelled{background:var(--mutbg);color:var(--mut)}
+body.A .hxc .pill.approved::before,body.A .hxc .pill.approved::after{content:none}
+/* messages (success / error banners) */
+body.A .msg{display:flex;gap:10px;align-items:flex-start;background:var(--okbg);color:var(--okfg);box-shadow:none;border:1px solid transparent;border-radius:12px;padding:12px 14px;font-weight:600;font-size:14px}
+body.A .msg::before{content:"\2713";flex:none;width:22px;height:22px;border-radius:50%;background:currentColor;color:var(--okbg);-webkit-text-fill-color:var(--okbg);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+body.A .msg.error{background:var(--badbg);color:var(--badfg);box-shadow:none}
+body.A .msg.error::before{content:"!";background:currentColor;color:var(--badbg);-webkit-text-fill-color:var(--badbg)}
+/* tables */
+body.A table{font-size:13.5px}body.A th{background:var(--tint);color:var(--mut);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;padding:9px 8px;border:0}
+body.A td{padding:10px 8px;border-bottom:1px solid var(--ln)}body.A tbody tr:hover td{background:var(--aqs)}
+body.A .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+body.A .copybox{background:var(--aqs);border:1px dashed var(--aq2);border-radius:12px}
+body.A .foot{color:var(--mut)}
+/* bottom navigation (mobile) / side rail (desktop) */
+body.A .nav{background:var(--card);background:color-mix(in srgb,var(--card) 94%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--ln);border-radius:0;box-shadow:none;padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));align-items:stretch;gap:2px}
+body.A .nav a{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:600;color:var(--mut);min-height:50px;border-radius:12px;--c1:var(--mut);--c2:var(--b)}
+body.A .nav a i{width:auto;height:auto;margin:0;background:transparent;border-radius:0;color:inherit;display:flex}
+body.A .nav a i svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+body.A .nav a.on{color:var(--b);background:var(--aq);font-weight:700}
+body.A .nav a.on i{background:transparent;color:var(--b);box-shadow:none}
+body.A .nav a.on::before,body.A .nav a::before{content:none;display:none}
+body.A .nav a.plus{flex:0 0 60px;max-width:60px;justify-content:flex-end;padding-bottom:3px}
+body.A .nav a.plus i{width:46px;height:46px;border-radius:15px;background:var(--b);color:#fff;align-items:center;justify-content:center;margin:0 0 1px;box-shadow:0 6px 16px -4px var(--b)}
+body.A .nav a.plus i svg{width:24px;height:24px;stroke-width:2.2}
+body.A .nav a.plus.on{background:transparent}body.A .nav a.plus.on i{background:var(--b2);color:#fff}
+body.A .nav a.plus span.t{position:static;font-size:10.5px;line-height:1.2;color:var(--mut)}
+body.A .nav a.plus.on span.t{color:var(--b)}
+body.A .nav .bd2{position:absolute;top:2px;left:calc(50% + 6px);background:#E11D48;min-width:17px;height:17px;line-height:17px;font-size:10px;border:2px solid var(--card);box-sizing:content-box;padding:0 3px}
+@media(min-width:900px){
+ body.A{padding-bottom:24px}
+ body.A .top{padding:0 24px}
+ body.A .nav{top:56px;bottom:0;right:auto;width:216px;flex-direction:column;justify-content:flex-start;border-top:0;border-right:1px solid var(--ln);padding:16px 12px;gap:4px;backdrop-filter:none;background:var(--card)}
+ body.A .nav a{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;font-size:14.5px;min-height:46px;padding:0 14px;max-width:none}
+ body.A .nav a.plus{flex:none;max-width:none;order:-1;background:var(--b);color:#fff;margin-bottom:8px}
+ body.A .nav a.plus i{width:auto;height:auto;margin:0;background:transparent;box-shadow:none;color:#fff;border-radius:0}
+ body.A .nav a.plus i svg{width:22px;height:22px}
+ body.A .nav a.plus span.t{position:static;font-size:14.5px;color:#fff}
+ body.A .nav a.plus.on{background:var(--b2)}body.A .nav a.plus.on span.t{color:#fff}
+ body.A .nav .bd2{position:static;margin-left:auto;border:0;box-sizing:border-box;padding:0 6px}
+ body.A main{margin:0;max-width:1220px;padding:24px 32px 24px 248px}
+ body.A .x-stats{grid-template-columns:repeat(4,1fr)!important}
+}
+/* ---- dashboard + shared building blocks ---- */
+body.A .x-hello{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:2px 2px 14px}
+body.A .x-hello small{color:var(--mut);font-size:13px;display:block}
+body.A .x-hello h1{font-size:22px;margin:0;line-height:1.2;overflow-wrap:anywhere}
+body.A .x-search{position:relative;margin:0 0 12px}
+body.A .x-search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:19px;height:19px;stroke:var(--mut);fill:none;stroke-width:2;stroke-linecap:round;pointer-events:none}
+body.A .x-search input{margin:0;min-height:50px;padding-left:44px;border-radius:14px;background:var(--card);font-size:16px;box-shadow:var(--sh)}
+body.A .x-res{margin:-4px 0 12px}
+body.A .x-sec{display:flex;align-items:center;justify-content:space-between;margin:18px 2px 8px}
+body.A .x-sec h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:700}
+body.A .x-sec a{font-size:13px;font-weight:600;color:var(--b)}
+body.A .x-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 12px}
+body.A .x-stat{display:block;background:var(--card);border:1px solid var(--ln);border-radius:var(--r);padding:14px;box-shadow:var(--sh);min-width:0;color:var(--tx)}
+body.A a.x-stat:active{background:var(--aqs)}
+body.A .x-stat .k{display:flex;align-items:center;gap:6px;font-weight:600}
+body.A .x-stat .v{display:block;margin-top:4px;font-size:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.A .x-stat small{color:var(--mut);font-size:12px}
+body.A .x-stat.hot{border-color:#F59E0B66;background:var(--warnbg)}body.A .x-stat.hot .v{color:var(--warn)}
+body.A .x-dot{width:8px;height:8px;border-radius:50%;background:#F59E0B;flex:none}
+body.A .x-money{background:var(--b);color:#fff;border-radius:18px;padding:18px;margin-bottom:12px;border:0}
+body.A .x-money .k{color:#ffffffb8}body.A .x-money .big{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:2px 0 12px;line-height:1.1}
+body.A .x-money .two{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-top:1px solid #ffffff2e;padding-top:12px}
+body.A .x-money .two b{display:block;font-size:16px;font-weight:700}
+body.A details.x-more{background:var(--card);border:1px solid var(--ln);border-radius:var(--r);margin-bottom:12px}
+body.A details.x-more>summary{cursor:pointer;list-style:none;padding:14px 16px;font-weight:600;font-size:14.5px;display:flex;justify-content:space-between;align-items:center}
+body.A details.x-more>summary::-webkit-details-marker{display:none}
+body.A details.x-more>summary::after{content:"\25BE";color:var(--mut)}body.A details.x-more[open]>summary::after{content:"\25B4"}
+body.A details.x-more>.in{padding:0 16px 16px}
+body.A .x-list{background:var(--card);border:1px solid var(--ln);border-radius:var(--r);overflow:hidden;margin-bottom:12px}
+body.A .x-li{display:flex;align-items:center;gap:12px;padding:13px 14px;min-height:56px;color:var(--tx);border-top:1px solid var(--ln);width:100%;background:transparent;font:inherit;text-align:left;border-radius:0;border-left:0;border-right:0;border-bottom:0}
+body.A .x-list>.x-li:first-child,body.A .x-list>form:first-child .x-li{border-top:0}
+body.A .x-li .ic{flex:none;width:36px;height:36px;border-radius:11px;background:var(--aq);display:flex;align-items:center;justify-content:center;font-size:18px}
+body.A .x-li .lt{flex:1;min-width:0;font-weight:600;font-size:14.5px}body.A .x-li .lt small{display:block;color:var(--mut);font-weight:400;font-size:12.5px}
+body.A .x-li .ch{color:var(--mut);font-size:20px;flex:none}
+body.A .x-li .bd2{position:static;flex:none}
+body.A .x-li.out,body.A .x-li.out .lt{color:#DC2626}
+body.A button.x-li:hover,body.A button.x-li{background:transparent;color:var(--tx);min-height:56px;padding:13px 14px;justify-content:flex-start;gap:12px}
+body.A button.x-li.out{color:#DC2626}
+body.A .x-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+body.A .x-tile{position:relative;display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--ln);border-radius:var(--r);padding:13px;min-height:62px;color:var(--tx);font-weight:600;font-size:14px;line-height:1.25;min-width:0;box-shadow:var(--sh)}
+body.A .x-tile:active{background:var(--aqs)}
+body.A .x-tile .ic{flex:none;width:38px;height:38px;border-radius:12px;background:var(--aq);display:flex;align-items:center;justify-content:center;font-size:19px}
+body.A .x-tile .bd2{position:absolute;top:-6px;right:-4px;border:2px solid var(--bg);box-sizing:content-box;background:#E11D48}
+/* user rows */
+body.A .x-row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--ln);border-radius:var(--r);padding:12px;margin-bottom:8px;color:var(--tx);min-width:0;box-shadow:var(--sh)}
+body.A .x-row:active{background:var(--aqs)}
+body.A .x-av{flex:none;width:42px;height:42px;border-radius:13px;background:var(--aq);color:var(--b);font-weight:800;font-size:17px;display:flex;align-items:center;justify-content:center}
+body.A .x-row.blocked .x-av{background:var(--badbg);color:var(--badfg)}
+body.A .x-main{flex:1;min-width:0;display:block;color:var(--tx)}
+body.A .x-main b{display:block;font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.A .x-main small{display:block;color:var(--mut);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.A .x-end{flex:none;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+body.A .x-end b{font-size:14.5px;font-weight:700;white-space:nowrap}
+body.A .x-go{flex:none;width:40px;height:40px;border-radius:12px;background:var(--aq);color:var(--b);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700}
+body.A .x-open{color:var(--warn);font-size:11.5px;font-weight:700}
+/* segmented controls (filters / tabs) */
+body.A .seg{display:flex;gap:4px;background:var(--tint);border-radius:12px;padding:4px;margin:0 0 12px}
+body.A .seg>*{flex:1;min-width:0;text-align:center;border-radius:9px;font-weight:600;font-size:13.5px;color:var(--mut);min-height:38px;padding:0 6px;display:flex;align-items:center;justify-content:center;gap:5px;background:transparent;border:0;box-shadow:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+body.A .seg>.on{background:var(--card);color:var(--tx);box-shadow:0 1px 3px #10142622}
+body.A .seg>*>.n,body.A .seg .n{background:#E11D48;color:#fff;border-radius:99px;font-size:10.5px;min-width:17px;height:17px;line-height:17px;padding:0 5px;font-weight:700}
+body.A .seg.big>*{min-height:52px;font-size:15px;border-radius:11px}
+body.A .seg.big>.on{background:var(--b);color:#fff;box-shadow:none}
+body.A .seg.big>.on.wd{background:#B45309}
+body.A .x-note{color:var(--mut);font-size:13px;margin:-2px 2px 12px}
+/* legacy controls re-skinned so every old page matches */
+body.A .chips,body.A .tabs{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 10px;margin:0}
+body.A .chips::-webkit-scrollbar,body.A .tabs::-webkit-scrollbar{display:none}
+body.A .chips button,body.A .tabs button{background:var(--card);background-image:none;border:1px solid var(--ln);color:var(--mut);border-radius:99px;min-height:36px;padding:0 14px;font-size:13px;font-weight:600;box-shadow:none}
+body.A .chips button.on,body.A .tabs button.on{background:var(--b);border-color:var(--b);color:#fff}
+body.A .tabs button{border-radius:11px}
+body.A .tabs button i{background:#E11D4822;color:#E11D48}body.A .tabs button.on i{background:#ffffff33;color:#fff}
+body.A .adm{display:none}
+body.A .sg{display:flex;gap:4px;background:var(--tint);border-radius:12px;padding:4px;margin:0 0 12px}
+body.A .sg a{flex:1;min-width:0;min-height:42px;border:0;background:transparent;border-radius:9px;color:var(--mut);font-size:12.5px;font-weight:600;padding:2px 4px;flex-direction:row;gap:5px;position:relative;line-height:1.2}
+body.A .sg a.on{background:var(--card);color:var(--tx);box-shadow:0 1px 3px #10142622}
+body.A .sg a .n{position:static;background:#E11D48;color:#fff;min-width:17px;height:17px;border-radius:99px;font-size:10.5px;padding:0 4px}
+body.A .fb{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;padding:2px 0}body.A .fb::-webkit-scrollbar{display:none}
+body.A .fb button{flex:none;min-height:36px;padding:0 14px;border-radius:99px;background:var(--card);background-image:none;border:1px solid var(--ln);color:var(--mut);font-size:13px;font-weight:600}
+body.A .fb button.on{background:var(--b);border-color:var(--b);color:#fff}
+body.A .fs{display:block}body.A .fs select{margin:0 0 10px;min-height:42px;font-size:14px}
+body.A .sq input{margin:0 0 10px;min-height:50px;border-radius:14px;background:var(--card)}
+body.A .sq-st{min-height:16px;font-size:12.5px;color:var(--mut);margin:0 0 6px}
+body.A .rc,body.A .uc,body.A .pr,body.A .rq-card{background:var(--card);border:1px solid var(--ln);border-radius:var(--r);box-shadow:var(--sh);padding:12px 14px;margin-bottom:8px;color:var(--tx)}
+body.A .uc{border-left:1px solid var(--ln);padding:0}body.A .uc.blocked{border-color:#DC262655}
+body.A .uc-main{padding:12px 14px}
+body.A .rq-card{border-left:3px solid var(--b)}body.A .rq-card[data-by=user]{border-left-color:var(--g)}
+body.A .rc .id{font-size:14.5px;font-weight:700}body.A .rc .am{color:var(--tx);font-size:15px}
+body.A .rq-tag{background:var(--infobg);color:var(--infofg);border-radius:6px;font-size:11.5px;padding:1px 8px}
+body.A .rq-tag.dep,body.A .rq-tag.u{background:var(--okbg);color:var(--okfg)}body.A .rq-tag.wd{background:var(--warnbg);color:var(--warn)}
+body.A .rq-sn{background:var(--aq);color:var(--b)}
+body.A .rq-am,body.A .rq-amt{color:var(--tx)}
+body.A .rq-acts{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 0}body.A .rq-acts .btn{flex:1;min-width:84px}
+body.A .rw{margin-bottom:10px}body.A .rw .rc{margin-bottom:6px}
+body.A .rq-tab{background:var(--card);border:1px solid var(--ln);box-shadow:none;border-radius:12px}body.A .rq-tab.on{background:var(--b);color:#fff;border-color:var(--b);box-shadow:none}
+body.A .sum a{background:var(--card);border:1px solid var(--ln);box-shadow:none;border-radius:12px}body.A .sum a.on{border-color:var(--b);background:var(--aq)}
+body.A .kp{gap:10px}body.A .kp .card{border-radius:var(--r);padding:14px}body.A .kp a.card:active{background:var(--aqs)}
+body.A .g2{gap:10px}
+body.A .mg{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+body.A .mt{background:var(--card);border:1px solid var(--ln);border-radius:var(--r)!important;box-shadow:none!important;min-height:58px}
+body.A .mt i{background:var(--aq)!important}
+body.A details.set,body.A details.cg,body.A details.dt,body.A details.more{background:var(--card);border:1px solid var(--ln);border-radius:var(--r);box-shadow:none}
+body.A details.dt>summary,body.A details.set>summary,body.A details.cg>summary,body.A details.more>summary{font-weight:600;font-size:14.5px}
+body.A details.dt[open]>summary{border-bottom-color:var(--ln)}
+body.A .pm{background:var(--card);border:1px solid var(--ln);border-left:4px solid var(--mc,var(--b));box-shadow:none;border-radius:var(--r)}
+body.A .pmc{background:var(--fld);border-radius:12px;border:1px solid var(--ln);border-left:4px solid var(--mc,var(--b))}body.A .pmc.on{background:var(--aq);border-color:var(--b)}
+body.A .qa{gap:10px}body.A .qa .btn{border-radius:14px;min-height:60px;flex-direction:column;gap:2px;font-size:13.5px}
+body.A .pf-bal{font-size:30px;font-weight:800;letter-spacing:-.02em}
+body.A .hxt{background:var(--tint);border:0;border-radius:12px}body.A .hxt a.on{background:var(--card);color:var(--tx);box-shadow:0 1px 3px #10142622}
+body.A .hxc{background:var(--card);border-radius:var(--r);box-shadow:none}body.A .hxc.open{border-color:var(--b);box-shadow:none}
+body.A .dm{background:#0A0C1699;backdrop-filter:blur(2px)}
+body.A .dm-box{background:var(--card);border-radius:20px 20px 0 0;box-shadow:none}
+body.A .dm-note{background:var(--infobg);color:var(--infofg)}body.A .dm-warn{background:var(--warnbg);color:var(--warn)}body.A .dm-err{background:var(--badbg);color:var(--badfg)}
+body.A .dm-btns button,body.A .dm-btns .btn{min-height:48px}
+@media(min-width:700px){body.A .dm{align-items:center}body.A .dm-box{border-radius:20px;max-width:520px}}
+body.A #ld{background:var(--b);box-shadow:none}
+body.A .sp{border-color:#ffffff55;border-top-color:#fff}
+body.A canvas{height:170px}
+/* request composer */
+body.A .x-step{display:flex;align-items:center;gap:10px;margin:0 0 8px}
+body.A .x-step b{flex:none;width:24px;height:24px;border-radius:50%;background:var(--b);color:#fff;font-size:12.5px;display:flex;align-items:center;justify-content:center}
+body.A .x-step span{font-weight:700;font-size:14.5px}
+body.A .x-sel{display:flex;align-items:center;gap:12px;background:var(--aq);border:1px solid var(--aq2);border-radius:var(--r);padding:12px;margin-bottom:12px}
+body.A .x-sel .x-main small{color:var(--mut)}
+body.A .x-sel .btn{flex:none}
+body.A .x-amt{position:relative}
+body.A .x-amt i{position:absolute;left:16px;top:50%;transform:translateY(-50%);margin-top:-6px;font-style:normal;font-weight:700;font-size:24px;color:var(--mut)}
+body.A .x-amt input{font-size:28px;font-weight:700;min-height:62px;padding-left:40px;letter-spacing:-.02em;margin:0 0 6px}
+body.A .x-warn{background:var(--warnbg);color:var(--warn);border-radius:12px;padding:11px 13px;font-size:13.5px;margin:0 0 12px}
+body.A .x-err{background:var(--badbg);color:var(--badfg);border-radius:12px;padding:11px 13px;font-size:13.5px;font-weight:600;margin:0 0 12px}
+body.A .x-send{margin-top:4px}
+body.A .x-send .btn,body.A .x-send button{width:100%;min-height:52px;font-size:16px;border-radius:14px;box-shadow:0 8px 20px -8px var(--b)}
+body.A .upl{max-height:50vh;overflow:auto;margin-bottom:8px}
+body.A .upr{background:var(--card);border:1px solid var(--ln);border-radius:var(--r);color:var(--tx);min-height:0;padding:11px 13px;display:block;box-shadow:var(--sh)}
+body.A .upr:active{background:var(--aqs)}body.A .upr:hover{background:var(--aqs)}
+body.A .upr-t span{color:var(--tx)}
+/* tx cards (deposits / withdrawals) */
+body.A .x-tx{background:var(--card);border:1px solid var(--ln);border-radius:var(--r);box-shadow:var(--sh);padding:14px;margin-bottom:10px}
+body.A .x-tx .top2{display:flex;justify-content:space-between;align-items:center;gap:8px}
+body.A .x-tx .amt{font-size:21px;font-weight:800;letter-spacing:-.02em}
+body.A .x-tx .meta{color:var(--mut);font-size:13px;margin-top:2px}
+body.A .x-tx dl{margin:10px 0 0}body.A .x-tx dl>div{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid var(--ln);font-size:13.5px}
+body.A .x-tx dt{color:var(--mut)}body.A .x-tx dd{margin:0;font-weight:600;text-align:right;overflow-wrap:anywhere}
+body.A .x-tx form{margin-top:10px}body.A .x-tx form input{margin:0 0 8px;min-height:42px;font-size:14px}
+body.A .x-tx .acts{display:flex;gap:8px}body.A .x-tx .acts button{flex:1;min-height:42px}
+body.A .x-pg{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:12px 0}
+@media(max-width:380px){body.A .x-tiles,body.A .mg{grid-template-columns:1fr!important}body.A .top .brand small{display:none}}
+@media(prefers-reduced-motion:reduce){body.A *{transition:none!important}}
+body.A .x-link{display:flex;align-items:center;gap:12px;flex:1;min-width:0;color:inherit}
+body.A .x-row .x-end{margin-left:auto}
+"""
+ADMIN_V = hashlib.sha1(ADMIN_CSS.encode("utf-8")).hexdigest()[:10]
+
 
 def _asset(body, mime):
     r = Response(body, mimetype=mime)
@@ -1492,6 +1748,11 @@ def _asset(body, mime):
 @app.route("/assets/app.css")
 def asset_css():
     return _asset(CSS, "text/css")
+
+
+@app.route("/assets/admin.css")
+def asset_admin_css():
+    return _asset(ADMIN_CSS, "text/css")  # loaded by signed-in staff only; the client panel never links it
 
 
 @app.route("/assets/app.js")
@@ -1530,12 +1791,12 @@ def page(tpl, active="", foot="", authpage=False, **ctx):
     body = render_str(tpl, **ctx)
     u = me()
     lang, tgu = cur_lang(), tg_url_active()
-    html = render_str(BASE, body=body, av=ASSET_V, msgs=msgs, active=active, foot=foot, authpage=authpage,
+    html = render_str(BASE, body=body, av=ASSET_V, adv=ADMIN_V, msgs=msgs, active=active, foot=foot, authpage=authpage,
                                   fab=bool(u and not u["is_admin"] and active == "/"), lang=lang, nxt=request.path,
                                   fab_href=tgu or "/support", fab_tg=bool(tgu), fab_label=tg_label() if tgu else ("Support" if lang == "en" else "সাপোর্ট"),
                                   dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"))
     html = to_bdt(html)
-    return tr(html) if lang == "en" else html
+    return (_ADM_RE.sub(lambda m: ADMIN_EN[m.group(1)], tr(html)) if (u and u["is_admin"]) else tr(html)) if lang == "en" else html
 
 
 def err(m):
@@ -1690,6 +1951,22 @@ _BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 def tr(html):
     """English mode: swap known Bangla phrases for English and Bangla digits for 0-9. Pure display; never touches stored data."""
     return _EN_RE.sub(lambda m: EN_PHRASES[m.group(1)], html).translate(_BN_DIGITS)
+
+
+ADMIN_EN = {"স্বাগতম": "Welcome", "ইউজারদের মোট ওয়ালেট ব্যালেন্স": "Total user wallet balance", "আজকের ডিপোজিট": "Today's deposits", "আজকের কমিশন": "Today's commission",
+            "এখনই দরকার": "Needs attention", "যাচাইয়ের অপেক্ষায়": "Awaiting review", "সাপোর্ট টিকিট": "Support tickets", "খোলা": "Open", "মোট ইউজার": "Total users", "ব্লকড": "Blocked",
+            "কমিশন পুল": "Commission pool", "প্রতিশ্রুত": "Reserved", "আরও পরিসংখ্যান": "More statistics", "সক্রিয় (30 দিন)": "Active (30 days)", "মোট ডিপোজিট": "Total deposits",
+            "মোট উইথড্র": "Total withdrawals", "মোট কমিশন": "Total commission", "রেফারেল বোনাস (প্রদত্ত)": "Referral bonus (paid)", "পেন্ডিং রেফারেল": "Pending referrals",
+            "গত 14 দিন": "Last 14 days", "সাম্প্রতিক ইউজার কার্যকলাপ": "Recent user activity", "খুঁজুন ও প্রোফাইল খুলুন": "Search and open a profile", "ব্যালেন্স আছে": "Has balance",
+            "খোলা রিকোয়েস্ট": "Open requests", "সক্রিয়": "Active", "মেনু": "Menu", "ডার্ক মোড": "Dark mode", "ইউজার": "Users", "রিকোয়েস্ট": "Requests", "4টি ধাপে": "In 4 steps",
+            "ডিপোজিট নাকি উইথড্র?": "Deposit or withdraw?", "পরিমাণ": "Amount", "ঐচ্ছিক তথ্য": "Optional details", "কমিশন ছাড়া সাধারণ রিকোয়েস্ট": "Plain request (no commission)",
+            "নির্দেশনা (ইউজারকে দেখানো হবে)": "Instructions (shown to the user)", "বদলান": "Change", "অ্যাডমিন → ইউজার": "Admin → User", "ইউজার → অ্যাডমিন": "User → Admin",
+            "অ্যাকশন দরকার": "Action needed", "আরও স্ট্যাটাস…": "More statuses…", "তবুও পাঠান": "Send anyway", "আগে ইউজার বাছাই করুন।": "Select a user first.",
+            "মেম্বার আইডি / মোবাইল / নাম / রেফারেল কোড": "Member ID / Mobile / Name / Referral code", "মাধ্যম": "Method", "সময়": "Time", "নোট (ঐচ্ছিক)": "Note (optional)",
+            "পেন্ডিং ও ইতিহাস": "Pending and history", "সব": "All", "স্ক্রিনশট দেখুন": "View screenshot", "যাচাই করা যায়নি — আবার চেষ্টা করুন।": "Could not verify — try again.",
+            "সংযোগে সমস্যা — আবার চেষ্টা করুন।": "Connection problem — try again.", "খুঁজছে…": "Searching…", "কোনো ইউজার পাওয়া যায়নি": "No users found",
+            "আরও দেখান": "Show more", "ইউজারের তথ্য লোড করা যায়নি।": "Could not load the user.", "কোনো রিকোয়েস্ট পাওয়া যায়নি": "No requests found", "ডিপোজিট": "Deposit", "উইথড্র": "Withdraw"}
+_ADM_RE = re.compile(r"(?<![\u0980-\u09FF])(" + "|".join(re.escape(k) for k in sorted(ADMIN_EN, key=len, reverse=True)) + r")(?![\u0980-\u09FF])")
 
 
 def cur_lang():
@@ -2606,6 +2883,8 @@ def admin_home():
     one = lambda sql: q1(sql)["s"]
     fin = has_perm("dashboard_fin", u)
     s = dict(open_tickets=one("SELECT COUNT(*) s FROM tickets WHERE status='open'"),
+             pend_dep=one("SELECT COUNT(*) s FROM tx WHERE kind='deposit' AND status IN('pending','review')"),
+             pend_wd=one("SELECT COUNT(*) s FROM tx WHERE kind='withdraw' AND status IN('pending','processing','approved')"),
              total=one("SELECT COUNT(*) s FROM users WHERE is_admin=0"),
              active=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=0"),
              blocked=one("SELECT COUNT(*) s FROM users WHERE is_admin=0 AND blocked=1"),
@@ -2633,32 +2912,37 @@ def admin_home():
         pend = qa(REF_SQL + " WHERE r.status='pending' ORDER BY r.id LIMIT 5")
     if has_perm("users_view", u):
         acts = qa(ACTIVITY_SQL)
-    return page("""{% if fin %}<div class="kp">
-<a class="card" href="/admin/deposits"><div class="k">পেন্ডিং ডিপোজিট</div><div class="v">{{s.pend_dep}}</div></a>
-<a class="card" href="/admin/withdrawals"><div class="k">পেন্ডিং উইথড্র</div><div class="v">{{s.pend_wd}}</div></a>
-<a class="card" href="/admin/requests"><div class="k">পেন্ডিং রিকোয়েস্ট</div><div class="v">{{s.pend_req}}</div></a>
-<a class="card" href="/admin/tickets"><div class="k">খোলা টিকিট</div><div class="v">{{s.open_tickets}}</div></a>
-<div class="card"><div class="k">আজকের ডিপোজিট</div><div class="v">৳ {{money(s.today_dep)}}</div></div>
-<div class="card"><div class="k">আজকের কমিশন</div><div class="v">৳ {{money(s.comm_today)}}</div></div>
-<div class="card"><div class="k">মোট ওয়ালেট দায়</div><div class="v">৳ {{money(s.liability)}}</div></div>
-<div class="card"><div class="k">কমিশন পুল</div><div class="v">৳ {{money(s.pool)}}</div><div class="k">প্রতিশ্রুত ৳{{money(s.pool_res)}}</div></div></div>
-<details class="card more"><summary>📈 আরও পরিসংখ্যান</summary><div class="kp">
-<div class="card"><div class="k">মোট ইউজার</div><div class="v">{{s.total}}</div></div>
-<div class="card"><div class="k">সক্রিয় (৩০ দিন)</div><div class="v">{{s.active30}}</div></div>
-<div class="card"><div class="k">ব্লক নয় / ব্লকড</div><div class="v">{{s.active}} / {{s.blocked}}</div></div>
-<div class="card"><div class="k">মোট ডিপোজিট</div><div class="v">৳ {{money(s.dep_vol)}}</div></div>
-<div class="card"><div class="k">মোট উইথড্র</div><div class="v">৳ {{money(s.wd_vol)}}</div></div>
-<div class="card"><div class="k">মোট কমিশন</div><div class="v">৳ {{money(s.comm)}}</div></div>
-<div class="card"><div class="k">রেফারেল বোনাস (প্রদত্ত)</div><div class="v">৳ {{money(s.ref_paid)}}</div></div>
-<div class="card"><div class="k">পেন্ডিং রেফারেল</div><div class="v">{{s.ref_pend_n}} <span class="k">(৳{{money(s.ref_pend_amt)}})</span></div></div></div></details>
-{% else %}<div class="g2"><div class="card"><div class="k">খোলা টিকিট</div><div class="v">{{s.open_tickets}}</div></div>
-<div class="card"><div class="k">মোট ইউজার</div><div class="v">{{s.total}}</div></div>
-{% if can('requests') %}<div class="card"><div class="k">পেন্ডিং রিকোয়েস্ট (ম্যানুয়াল)</div><div class="v">{{s.pend_req}}</div></div>{% endif %}</div>{% endif %}
-{% if acts %}<details class="card more"><summary>🕘 সাম্প্রতিক ইউজার কার্যকলাপ</summary><div class="tw"><table>{% for a in acts %}<tr><td>{{(a['t'] or '')[:16]}}</td><td>{{a['d']}}</td></tr>{% endfor %}</table></div></details>{% endif %}
-{% if can('referrals') %}<h3>⏳ পেন্ডিং রেফারেল রিকোয়েস্ট</h3>""" + REF_LIST + """{% if rows %}<a class="btn s" style="width:100%;margin-bottom:14px" href="/admin/referrals">সব রেফারেল দেখুন</a>{% endif %}{% endif %}
+    return page("""<div class="x-hello"><div><small>স্বাগতম</small><h1>{{u['name']}}</h1></div></div>
+{% if can('users_view') %}<div class="x-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="dq" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" placeholder="মেম্বার আইডি / মোবাইল / নাম / রেফারেল কোড"></div><div id="dres" class="x-res"></div>{% endif %}
+{% if fin %}<div class="x-money"><div class="k">ইউজারদের মোট ওয়ালেট ব্যালেন্স</div><div class="big">৳ {{money(s.liability)}}</div>
+<div class="two"><div><span class="k">আজকের ডিপোজিট</span><b>৳ {{money(s.today_dep)}}</b></div><div><span class="k">আজকের কমিশন</span><b>৳ {{money(s.comm_today)}}</b></div></div></div>{% endif %}
+<div class="x-sec"><h3>এখনই দরকার</h3></div>
+<div class="x-stats">
+{% if can('deposits') %}<a class="x-stat{{' hot' if s.pend_dep}}" href="/admin/deposits"><span class="k">{% if s.pend_dep %}<i class="x-dot"></i>{% endif %}ডিপোজিট</span><span class="v">{{s.pend_dep}}</span><small>অপেক্ষমাণ</small></a>{% endif %}
+{% if can('withdrawals') %}<a class="x-stat{{' hot' if s.pend_wd}}" href="/admin/withdrawals"><span class="k">{% if s.pend_wd %}<i class="x-dot"></i>{% endif %}উইথড্র</span><span class="v">{{s.pend_wd}}</span><small>অপেক্ষমাণ</small></a>{% endif %}
+{% if can('requests') %}<a class="x-stat{{' hot' if s.pend_req}}" href="/admin/requests?status=open"><span class="k">{% if s.pend_req %}<i class="x-dot"></i>{% endif %}রিকোয়েস্ট</span><span class="v">{{s.pend_req}}</span><small>যাচাইয়ের অপেক্ষায়</small></a>{% endif %}
+{% if can('tickets') %}<a class="x-stat{{' hot' if s.open_tickets}}" href="/admin/tickets"><span class="k">{% if s.open_tickets %}<i class="x-dot"></i>{% endif %}সাপোর্ট টিকিট</span><span class="v">{{s.open_tickets}}</span><small>খোলা</small></a>{% endif %}
+{% if can('users_view') %}<a class="x-stat" href="/admin/users"><span class="k">মোট ইউজার</span><span class="v">{{s.total}}</span><small>ব্লকড {{s.blocked}}</small></a>{% endif %}
+{% if fin and can('pool_view') %}<a class="x-stat" href="/admin/pool"><span class="k">কমিশন পুল</span><span class="v">৳ {{money(s.pool)}}</span><small>প্রতিশ্রুত ৳{{money(s.pool_res)}}</small></a>{% endif %}
+</div>
+{% if fin %}<details class="x-more"><summary>আরও পরিসংখ্যান</summary><div class="in"><div class="x-stats" style="margin:0">
+<div class="x-stat"><span class="k">সক্রিয় (৩০ দিন)</span><span class="v">{{s.active30}}</span></div>
+<div class="x-stat"><span class="k">মোট ডিপোজিট</span><span class="v">৳ {{money(s.dep_vol)}}</span></div>
+<div class="x-stat"><span class="k">মোট উইথড্র</span><span class="v">৳ {{money(s.wd_vol)}}</span></div>
+<div class="x-stat"><span class="k">মোট কমিশন</span><span class="v">৳ {{money(s.comm)}}</span></div>
+<div class="x-stat"><span class="k">রেফারেল বোনাস (প্রদত্ত)</span><span class="v">৳ {{money(s.ref_paid)}}</span></div>
+<div class="x-stat"><span class="k">পেন্ডিং রেফারেল</span><span class="v">{{s.ref_pend_n}}</span><small>৳{{money(s.ref_pend_amt)}}</small></div></div></div></details>{% endif %}
+{% if can('referrals') and rows %}<div class="x-sec"><h3>পেন্ডিং রেফারেল</h3><a href="/admin/referrals">সব দেখুন</a></div>""" + REF_LIST + """{% endif %}
 {% if fin %}<div id="integ"><div class="card k">⏳ লেজার যাচাই হচ্ছে…</div></div>
-<div class="card"><b>গত ১৪ দিন</b><canvas id="ch"></canvas></div>
-<script>fetch('/admin/dash/integrity',{credentials:'same-origin'}).then(function(r){return r.ok?r.text():''}).then(function(h){var e=document.getElementById('integ');if(e&&h)e.innerHTML=h});fetch('/insight/data?days=14').then(r=>r.json()).then(j=>bars('ch',j.labels,[j.deposit,j.withdraw,j.commission],['#1E90FF','#EF4444','#2BC4A8']))</script>{% endif %}""",
+<div class="x-sec"><h3>গত ১৪ দিন</h3></div><div class="card"><canvas id="ch"></canvas></div>{% endif %}
+{% if acts %}<details class="x-more"><summary>সাম্প্রতিক ইউজার কার্যকলাপ</summary><div class="in tw"><table>{% for a in acts %}<tr><td>{{(a['t'] or '')[:16]}}</td><td>{{a['d']}}</td></tr>{% endfor %}</table></div></details>{% endif %}
+<script>(function(){var i=document.getElementById('dq'),r=document.getElementById('dres');if(i){var tm,seq=0;
+function go(){var v=i.value.trim();if(!v){r.innerHTML='';return}var my=++seq;fetch('/admin/users/search?q='+encodeURIComponent(v)+'&f=all&p=1',{credentials:'same-origin'}).then(function(x){return x.ok?x.text():''}).then(function(h){if(my===seq)r.innerHTML=h}).catch(function(){})}
+i.addEventListener('input',function(){clearTimeout(tm);tm=setTimeout(go,220)});
+i.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();location.href='/admin/users?q='+encodeURIComponent(i.value.trim())}});
+r.addEventListener('click',function(e){if(e.target.closest('.uc-more')){location.href='/admin/users?q='+encodeURIComponent(i.value.trim())}})}
+var ig=document.getElementById('integ');if(ig)fetch('/admin/dash/integrity',{credentials:'same-origin'}).then(function(x){return x.ok?x.text():''}).then(function(h){if(h)ig.innerHTML=h});
+if(document.getElementById('ch'))fetch('/insight/data?days=14').then(function(x){return x.json()}).then(function(j){bars('ch',j.labels,[j.deposit,j.withdraw,j.commission],['#4338CA','#E11D48','#0D9488'])})})()</script>""",
                 active="/admin", s=s, bad=bad, rows=pend, fin=fin, acts=acts, rc=rc)
 
 
@@ -2681,18 +2965,19 @@ def _list_tx(kind, statuses, active, title):
     pg = make_pg(q1("SELECT COUNT(*) n FROM tx t WHERE %s" % where, args)["n"], 30)
     rows = qa("SELECT t.*,u.name,u.phone,u.member_id FROM tx t JOIN users u ON u.id=t.user_id WHERE %s ORDER BY t.id DESC LIMIT ? OFFSET ?" % where, args + [30, pg["off"]])
     _seen_list(active, rows, 30, pg, t0)
-    return page("""<h2>{{title}}</h2><div class="row" style="margin-bottom:10px"><a class="btn sm s" href="?status=open">খোলা</a><a class="btn sm s" href="?status=all">সব</a></div>
+    return page("""<div class="x-hello"><div><small>ইউজার → অ্যাডমিন</small><h1>{{title}}</h1></div></div>
+<div class="seg"><a class="{{'on' if st=='open'}}" href="?status=open">খোলা</a><a class="{{'on' if st!='open'}}" href="?status=all">সব</a></div>
 {% if not rows %}<div class="card empty">কিছু নেই</div>{% endif %}
-{% for t in rows %}<div class="card"><b>৳ {{money(t['amount'])}}</b> · {{t['method']}} <span class="pill {{t['status']}}">{{t['status']}}</span>
-<div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{t['created'][:16]}}</div>
-<div>{{'TrxID' if t['kind']=='deposit' else 'নম্বর'}}: <b>{{t['trx'] or t['number']}}</b></div>
-{% if t['kind']=='withdraw' %}<div>Payment Account Type: <b>{{t['account_type'] or '—'}}</b></div>{% endif %}
-{% if t['screenshot'] %}<a href="/shot/{{t['screenshot']}}" target="_blank"><b>🖼 স্ক্রিনশট</b></a>{% endif %}
-{% if t['note'] %}<div class="k">নোট: {{t['note']}}</div>{% endif %}
-{% if t['status'] in statuses %}<form method="post" action="/admin/tx/{{t['id']}}" style="margin-top:8px" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><div class="row">
-{% for a,l,c in acts[t['kind']] %}{% if t['status'] in a %}<button name="act" value="{{l[0]}}" class="btn sm {{c}}">{{l[1]}}</button>{% endif %}{% endfor %}</div></form>{% endif %}</div>{% endfor %}""" + PAGER,
-                active=active, rows=rows, title=title, statuses=statuses, acts=ACTIONS, pg=pg)
+{% for t in rows %}<div class="x-tx"><div class="top2"><span class="amt">৳ {{money(t['amount'])}}</span><span class="pill {{t['status']}}">{{txl.get(t['status'], t['status'])}}</span></div>
+<div class="meta">#{{t['member_id']}} {{t['name']}} · {{t['phone']}}</div>
+<dl><div><dt>মাধ্যম</dt><dd>{{t['method']}}</dd></div><div><dt>{{'TrxID' if t['kind']=='deposit' else 'নম্বর'}}</dt><dd>{{t['trx'] or t['number'] or '—'}}</dd></div>
+{% if t['kind']=='withdraw' %}<div><dt>Payment Account Type</dt><dd>{{t['account_type'] or '—'}}</dd></div>{% endif %}
+<div><dt>সময়</dt><dd>{{t['created'][:16]}}</dd></div>{% if t['note'] %}<div><dt>নোট</dt><dd>{{t['note']}}</dd></div>{% endif %}</dl>
+{% if t['screenshot'] %}<a class="btn sm s" style="margin-top:10px" href="/shot/{{t['screenshot']}}" target="_blank">🖼 স্ক্রিনশট দেখুন</a>{% endif %}
+{% if t['status'] in statuses %}<form method="post" action="/admin/tx/{{t['id']}}" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<input name="note" placeholder="নোট (ঐচ্ছিক)" maxlength="200"><div class="acts">
+{% for a,l,c in acts[t['kind']] %}{% if t['status'] in a %}<button name="act" value="{{l[0]}}" class="btn {{c}}">{{l[1]}}</button>{% endif %}{% endfor %}</div></form>{% endif %}</div>{% endfor %}""" + PAGER,
+                active=active, rows=rows, title=title, statuses=statuses, acts=ACTIONS, pg=pg, st=st, txl=TX_LABEL)
 
 
 @app.route("/admin/deposits")
@@ -2760,15 +3045,14 @@ def make_pg(total, per=PER_PAGE):
     return {"p": p, "pages": pages, "total": total, "per": per, "off": (p - 1) * per, "prev": url(p - 1), "next": url(p + 1)}
 
 
-PAGER = """{% if pg and pg.pages>1 %}<div class="row" style="justify-content:space-between;align-items:center;margin:10px 0">
+PAGER = """{% if pg and pg.pages>1 %}<div class="row x-pg" style="justify-content:space-between;align-items:center;margin:10px 0">
 {% if pg.p>1 %}<a class="btn sm s" href="{{pg.prev}}">← আগের</a>{% else %}<span></span>{% endif %}<span class="k">পেজ {{pg.p}} / {{pg.pages}} · মোট {{pg.total}}</span>
 {% if pg.p<pg.pages %}<a class="btn sm s" href="{{pg.next}}">পরের →</a>{% else %}<span></span>{% endif %}</div>{% endif %}"""
 
 
 # ================================================================ Admin Desk: fast user search + user hub (no schema change)
 METHOD_COLOR = {"bKash": "#E2136E", "Nagad": "#F6921E", "Rocket": "#8C3494"}
-USER_FILTERS = (("all", "সব"), ("active", "সক্রিয়"), ("blocked", "ব্লকড"), ("funded", "ব্যালেন্স আছে"),
-                ("new", "নতুন (৭ দিন)"), ("openreq", "খোলা রিকোয়েস্ট"), ("kyc", "KYC অপেক্ষমাণ"))
+USER_FILTERS = (("all", "সব"), ("funded", "ব্যালেন্স আছে"), ("blocked", "ব্লকড"), ("openreq", "খোলা রিকোয়েস্ট"))
 REQ_DEP_SQL = "(COALESCE(r.flow,'')='client_confirm' OR (COALESCE(r.flow,'')='' AND r.kind='deposit'))"   # alias r = requests
 SEARCH_PER = 20
 
@@ -2836,10 +3120,10 @@ details.dt .inn{padding-bottom:12px}
 </style>"""
 
 USER_ROWS_TPL = """{% if not rows and p==1 %}<div class="card empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}
-{% for x in rows %}<div class="uc{{' blocked' if x['blocked']}}"><a class="uc-main" href="/admin/users/{{x['id']}}"><div class="uc-t"><b>{{x['name']}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span></div>
-<div class="uc-m">#{{x['member_id']}} · 📱 {{x['phone']}}</div>
-<div class="uc-b"><span>ব্যালেন্স <b>৳ {{money(x['balance'])}}</b></span>{% if can('requests') and x['open_req'] %}<span class="uc-o">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</span>{% endif %}</div></a>
-</div>{% endfor %}
+{% for x in rows %}<div class="x-row uc{{' blocked' if x['blocked']}}"><a class="x-link" href="/admin/users/{{x['id']}}"><span class="x-av">{{(x['name'] or '?')[:1]|upper}}</span>
+<span class="x-main"><b>{{x['name']}}</b><small>#{{x['member_id']}} · {{x['phone']}}</small>{% if can('requests') and x['open_req'] %}<small class="x-open">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</small>{% endif %}</span>
+<span class="x-end"><b>৳ {{money(x['balance'])}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span></span></a>
+{% if can('requests') and not x['blocked'] %}<a class="x-go" href="/admin/requests/new?uid={{x['id']}}" title="রিকোয়েস্ট পাঠান" aria-label="রিকোয়েস্ট পাঠান">＋</a>{% endif %}</div>{% endfor %}
 {% if more %}<button type="button" class="btn s uc-more" data-next="{{p+1}}" style="width:100%;margin-bottom:10px">আরও দেখান</button>{% endif %}"""
 
 
@@ -2907,9 +3191,10 @@ def admin_users():
     rows, more = _user_search(q, f, p)
     shown = {"/admin/users/%d" % x["id"] for x in rows}
     alerts_seen(lambda link, ts: link in shown)
-    return page(DESK_STYLE + """<div class="card" style="padding:12px 14px"><div class="sq"><input id="uq" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" value="{{q}}"
-placeholder="নাম / ফোন / মেম্বার আইডি / রেফারেল কোড{% if can('payment_numbers') %} / পেমেন্ট নম্বর{% endif %}"></div>
-<div class="chips" id="uf">{% for k,l in flt %}<button type="button" data-f="{{k}}" class="{{'on' if k==f}}">{{l}}</button>{% endfor %}</div><div class="sq-st" id="ust"></div></div>
+    return page(DESK_STYLE + """<div class="x-hello"><div><small>খুঁজুন ও প্রোফাইল খুলুন</small><h1>ইউজার</h1></div></div>
+<div class="x-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="uq" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" value="{{q}}"
+placeholder="মেম্বার আইডি / মোবাইল / নাম / রেফারেল কোড"></div>
+<div class="seg" id="uf">{% for k,l in flt %}<button type="button" data-f="{{k}}" class="{{'on' if k==f}}">{{l}}</button>{% endfor %}</div><div class="sq-st" id="ust"></div>
 <div id="ures">""" + USER_ROWS_TPL + """</div>
 <script>(function(){var box=document.getElementById('ures'),inp=document.getElementById('uq'),chips=document.getElementById('uf'),st=document.getElementById('ust');
 if(!box||!inp)return;var f=(chips.querySelector('button.on')||{dataset:{f:'all'}}).dataset.f,tm=null,seq=0;
@@ -3020,14 +3305,14 @@ def admin_user(i):
     by = q1("SELECT member_id,name FROM users WHERE id=?", (x["referred_by"],)) if (x["referred_by"] and can_ref) else None
     byrow = q1("SELECT created,status FROM referrals WHERE referred_id=?", (i,)) if (x["referred_by"] and can_ref) else None
     return page(DESK_STYLE + """<div id="uprof">
-<div class="card" style="margin-bottom:10px"><div class="row" style="align-items:center;gap:8px"><h2 style="margin:0;min-width:0;overflow-wrap:anywhere">{{x['name']}}</h2>
+<div class="card" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:12px"><span class="x-av" style="width:48px;height:48px;font-size:20px">{{(x['name'] or '?')[:1]|upper}}</span><h2 style="margin:0;min-width:0;overflow-wrap:anywhere;flex:1">{{x['name']}}</h2>
 <span class="pill {{'rejected' if x['blocked'] else 'approved'}}" style="flex:0;white-space:nowrap">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span></div>
 <div class="k" style="margin-top:4px">Member ID <b>#{{x['member_id']}}</b> · <a href="tel:{{x['phone']}}"><b>📱 {{x['phone']}}</b></a></div>
 <div class="k">ওয়ালেট ব্যালেন্স</div><div class="pf-bal">৳ {{money(x['balance'])}}</div>
 <div class="k">যোগদান: {{(x['created'] or '-')[:16]}} · সর্বশেষ লগইন: {{x['last_login'] or '-'}} · রেফারেল কোড: {{x['referral_code']}}</div>
 {% if x['blocked'] and x['blocked_reason'] %}<div class="msg error" style="margin:8px 0 0">ব্লকের কারণ: {{x['blocked_reason']}} ({{(x['blocked_at'] or '')[:16]}})</div>{% endif %}
 <div class="k" style="margin-top:8px">🪪 KYC: {% set ks=kycs(x['id']) %}<span class="pill {{ks if ks in ('pending','approved','rejected') else ''}}">{{kycl[ks]}}</span>{% if can('kyc') and ks!='none' %} <a href="/admin/kyc/{{x['id']}}"><b>দেখুন</b></a>{% endif %}</div></div>
-<div class="qa">
+<div class="qa" style="grid-template-columns:1fr 1fr">
 {% if can('requests') %}{% if x['blocked'] %}<span class="btn dis">📨<br>ডিপোজিট রিকোয়েস্ট পাঠান</span><span class="btn dis">🏧<br>উইথড্র রিকোয়েস্ট পাঠান</span>
 {% else %}<a class="btn" href="/admin/requests/new?uid={{x['id']}}&type=client_confirm">📨<span>ডিপোজিট রিকোয়েস্ট পাঠান</span></a><a class="btn" href="/admin/requests/new?uid={{x['id']}}&type=admin_review">🏧<span>উইথড্র রিকোয়েস্ট পাঠান</span></a>{% endif %}{% endif %}
 {% if can('payment_numbers') %}<button type="button" class="btn s" data-go="pay">💳<span>পেমেন্ট মেথড দেখুন</span></button>{% endif %}
@@ -4201,7 +4486,7 @@ def admin_menu():
         tiles["/admin/settings?open=security"] = ("/admin/settings?open=security", "নিরাপত্তা", "🔒", "")
     if has_perm("referrals", u):
         tiles["/admin/referral-rewards"] = ("/admin/referral-rewards", "রিওয়ার্ড সেটিংস", "🎁", "")
-    layout = [("", ["/admin/alerts", "/admin/deposits", "/admin/withdrawals", "/admin/requests", "/admin/users", "/admin/tickets", "/admin/kyc"]),
+    layout = [("", ["/admin/requests", "/admin/users", "/admin/deposits", "/admin/withdrawals", "/admin/alerts", "/admin/tickets", "/admin/kyc"]),
               ("💸 কমিশন, VIP ও রেফারেল", ["/admin/commission", "/admin/vip", "/admin/pool", "/admin/referrals", "/admin/referral-rewards"]),
               ("📊 রিপোর্ট ও হিসাব", ["/admin/reports", "/admin/reconcile", "/admin/audit"]),
               ("📝 কনটেন্ট ও পেমেন্ট নম্বর", ["/admin/payment-numbers", "/admin/notices", "/admin/content"]),
@@ -4212,12 +4497,11 @@ def admin_menu():
         used.update(k for k in keys if k in tiles)
         groups.append([title, items])
     groups[-1][1].extend(v for k, v in tiles.items() if k not in used)  # safety net: no feature can ever go missing
-    return page("""<div class="cc-h">☰ মেনু</div>
-<div class="mg">{% for p,t,ic,bk in groups[0][1] %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>{% if bk %}
-<span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div>
-{% for g in groups[1:] if g[1] %}<details class="card set cg"><summary>{{g[0]}} <span class="k">({{g[1]|length}})</span><span class="gdot"></span></summary>
-<div><div class="mg">{% for p,t,ic,bk in g[1] %}<a class="mt" href="{{p}}"><i>{{ic}}</i><span class="lb">{{t}}</span>{% if bk %}
-<span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div></div></details>{% endfor %}""",
+    return page("""<div class="x-hello"><div><small>{{role_name}}</small><h1>মেনু</h1></div></div>
+<div class="x-tiles">{% for p,t,ic,bk in groups[0][1] %}<a class="x-tile" href="{{p}}"><span class="ic">{{ic}}</span><span>{{t}}</span>{% if bk %}<span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}</a>{% endfor %}</div>
+{% for g in groups[1:] if g[1] %}<div class="x-sec"><h3>{{g[0]}}</h3></div><div class="x-list">{% for p,t,ic,bk in g[1] %}<a class="x-li" href="{{p}}"><span class="ic">{{ic}}</span><span class="lt">{{t}}</span>{% if bk %}<span class="bd2" data-bd="{{bk}}"{% if not nb(bk) %} hidden{% endif %}>{{nb(bk)}}</span>{% endif %}<span class="ch">›</span></a>{% endfor %}</div>{% endfor %}
+<div class="x-sec"><h3>অ্যাকাউন্ট</h3></div><div class="x-list"><button type="button" class="x-li" onclick="toggleTheme()"><span class="ic">🌓</span><span class="lt">ডার্ক মোড</span><span class="k" id="thv"></span></button>
+<form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="x-li out"><span class="ic">🚪</span><span class="lt">লগআউট</span></button></form></div>""",
                 active="/admin/menu", groups=groups)
 
 
@@ -5052,22 +5336,21 @@ PN_JS = """function pnBind(f){var man=document.getElementById('manual');if(!man)
  function sync(){var v='manual';rs.forEach(function(r){var l=r.closest('.pmc');if(l)l.classList.toggle('on',r.checked);if(r.checked)v=r.value});man.hidden=(rs.length>0&&v!=='manual')}
  rs.forEach(function(r){r.addEventListener('change',sync)});sync()}"""
 
-UPANEL_TPL = """<div class="copybox" style="user-select:auto"><b>#{{x['member_id']}} {{x['name']}}</b>
-<div class="k">{{x['phone']}} · ব্যালেন্স ৳ {{money(x['balance'])}} · কমিশন রেট {{rate|pct}}%</div>
-<div class="row" style="margin-top:6px"><a class="btn sm s" href="/admin/users/{{x['id']}}">👤 প্রোফাইল</a>{% if chg %}<button type="button" class="btn sm s" id="uchg">ইউজার বদলান</button>{% endif %}</div></div>
-{% if show_pn %}<div class="pnsel">{% if can_pn %}<label>পেমেন্ট মাধ্যম — {{x['name']}} এর নিবন্ধিত নম্বর থেকে বাছুন</label>
+UPANEL_TPL = """<div class="x-sel"><a class="x-link" href="/admin/users/{{x['id']}}"><span class="x-av">{{(x['name'] or '?')[:1]|upper}}</span><span class="x-main"><b>{{x['name']}}</b><small>#{{x['member_id']}} · {{x['phone']}}</small><small>ব্যালেন্স ৳ {{money(x['balance'])}} · কমিশন {{rate|pct}}%</small></span></a>
+{% if chg %}<button type="button" class="btn sm s" id="uchg">বদলান</button>{% endif %}</div>
+{% if show_pn and (pns or not chg) %}<div class="pnsel">{% if can_pn %}<label>পেমেন্ট মাধ্যম — {{x['name']}} এর নিবন্ধিত নম্বর থেকে বাছুন</label>
 {% for p in pns %}<label class="pmc{{' on' if p['id']==sel}}" style="--mc:{{mcol.get(p['method'],'#1E90FF')}}"><input type="radio" name="pn" value="{{p['id']}}" {{'checked' if p['id']==sel}}><span><b>{{p['method']}} · {{acct_lbl.get(p['account_type'],p['account_type'])}}</b><span class="n">{{p['number']}}</span></span></label>{% endfor %}
 {% if not pns %}<div class="k" style="margin-bottom:8px">ইউজার এখনো কোনো নম্বর যোগ করেননি — নিচে নিজে লিখুন।</div>{% endif %}
 <label class="pmc{{' on' if not sel}}"><input type="radio" name="pn" value="manual" {{'checked' if not sel}}><span><b>✍️ অন্য নম্বর / নিজে লিখব</b></span></label>
 {% else %}<div class="k" style="margin-bottom:8px">পেমেন্ট নম্বর দেখার অনুমতি নেই — মাধ্যম ও নম্বর নিজে লিখুন।</div>{% endif %}</div>{% endif %}"""
 
 
-def _panel_html(x, sel=0, chg=True, show_pn=True):
+def _panel_html(x, sel=0, chg=True, show_pn=True, auto=False):
     """User box + that user's own registered payment methods (only rows WHERE user_id = x.id, only for staff holding payment_numbers)."""
     can_pn = has_perm("payment_numbers")
     pns = qa("SELECT id,method,account_type,number FROM payment_numbers WHERE user_id=? ORDER BY id", (x["id"],)) if can_pn else []
     if sel not in {p["id"] for p in pns}:
-        sel = 0
+        sel = pns[0]["id"] if (auto and pns) else 0  # new request: default to the user's first registered number (still changeable)
     return _frag(UPANEL_TPL, x=x, pns=pns, sel=sel, can_pn=can_pn, rate=effective_rate(x), chg=chg, show_pn=show_pn)
 
 
@@ -5206,81 +5489,78 @@ def admin_request_new():
     ptype = request.args.get("type", "client_confirm")
     if ptype not in REQ_TYPES:
         ptype = "client_confirm"
-    panel = _panel_html(x, request.args.get("pn", type=int) or 0) if x else ""
-    return page(DESK_STYLE + """<div class="card"><h2 style="margin-top:0">➕ নতুন রিকোয়েস্ট পাঠান</h2>
-<form method="post" id="rf"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" id="uid" value="{{x['id'] if x else ''}}"><input type="hidden" name="dup_ok" id="dupok" value="">
-<style>.upl{max-height:56vh;overflow:auto;margin-bottom:8px}
-.upr{display:block;width:100%;text-align:left;margin:0 0 7px;padding:10px 12px;border-radius:12px;border:1.5px solid var(--ln);background:var(--card);background-image:none;box-shadow:none;color:var(--tx);font-weight:400;touch-action:manipulation}
-.upr:active{border-color:var(--b);transform:none}.upr-t{display:flex;justify-content:space-between;gap:8px;font-size:15px}.upr-t b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.upr-t span{flex:none;font-weight:700;color:var(--okt)}
-.upr-m{font-size:12.5px;color:var(--mut);margin-top:2px}</style>
-<label>১. ক্লায়েন্ট বাছাই করুন (একজনকে)</label>
-<div id="upick"{% if x %} hidden{% endif %}><input id="uq" type="search" inputmode="search" enterkeyhint="search" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি" autocomplete="off">
-<div class="chips" id="ufl">{% for k,l in flt %}<button type="button" data-f="{{k}}" class="{{'on' if k=='all'}}">{{l}}</button>{% endfor %}</div>
+    panel = _panel_html(x, request.args.get("pn", type=int) or 0, auto=True) if x else ""
+    kind0 = "wd" if ptype in ("admin_review", "withdraw") else "dep"
+    return page(DESK_STYLE + """<form method="post" id="rf"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" id="uid" value="{{x['id'] if x else ''}}"><input type="hidden" name="dup_ok" id="dupok" value=""><input type="hidden" name="type" id="rtype" value="{{ptype}}">
+<div class="x-hello"><div><small>৪টি ধাপে</small><h1>রিকোয়েস্ট পাঠান</h1></div></div>
+<div class="card"><div class="x-step"><b>১</b><span>ইউজার</span></div>
+<div id="upick"{% if x %} hidden{% endif %}><div class="x-search" style="margin-bottom:8px"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="uq" type="search" inputmode="search" enterkeyhint="search" value="{{q}}" placeholder="মেম্বার আইডি / মোবাইল / নাম / রেফারেল কোড" autocomplete="off"></div>
 <div class="sq-st" id="ust"></div><div id="ures" class="upl"></div></div>
-<div id="upanel">{{panel|safe}}</div>
+<div id="upanel">{{panel|safe}}</div></div>
 <div id="rest"{% if not x %} hidden{% endif %}>
-<label>২. ধরন</label><select name="type" id="rtype">
-<optgroup label="ডিপোজিট"><option value="client_confirm" {{'selected' if ptype=='client_confirm'}}>ডিপোজিট রিকোয়েস্ট — ক্লায়েন্ট কনফার্ম করবে</option><option value="deposit" {{'selected' if ptype=='deposit'}}>সাধারণ ডিপোজিট (কমিশন ছাড়া)</option></optgroup>
-<optgroup label="উইথড্র"><option value="admin_review" {{'selected' if ptype=='admin_review'}}>উইথড্র/পেমেন্ট রিকোয়েস্ট — অ্যাডমিন যাচাই করবে</option><option value="withdraw" {{'selected' if ptype=='withdraw'}}>সাধারণ উইথড্র (কমিশন ছাড়া)</option></optgroup></select>
-<div class="k" id="tydesc" style="margin:-6px 0 10px"></div>
-<label>৩. পরিমাণ (৳ BDT)</label><input name="amount" type="number" step="0.01" min="0.01" required inputmode="decimal">
-<div class="k" style="margin:-6px 0 10px">পুলে উপলব্ধ ফান্ড: <b>৳{{money(avail)}}</b> · কমিশন সার্ভার হিসাব করবে, পর্যালোচনায় দেখানো হবে।</div>
-<div id="manual"><label>পেমেন্ট মাধ্যম</label><select name="method">{% for m in methods %}<option>{{m}}</option>{% endfor %}</select>
-<label>পেমেন্ট নম্বর (১১ ডিজিট; ডিপোজিট রিকোয়েস্টে লাগবে না)</label><input name="number" inputmode="numeric" maxlength="11"></div>
-<div id="wdbox" hidden><label>পেমেন্ট টাইপ</label><select name="pay_type"><option value="">— বাছাই করুন —</option><option value="personal">Personal: Send Money</option><option value="agent">Agent: Cash Out</option><option value="merchant">Merchant: Payment</option></select>
-<div class="k" style="margin:-6px 0 10px">উইথড্র রিকোয়েস্টে ইউজারের সেভ করা নম্বর ব্যবহার হয় না — এখানে দেওয়া প্রোভাইডার, নম্বর ও টাইপই ইউজারকে দেখানো হবে।</div></div>
-<label>পেমেন্ট নির্দেশনা (ঐচ্ছিক — ইউজারকে দেখানো হবে)</label><textarea name="instructions" rows="3" maxlength="500"></textarea>
-<details class="dt"><summary>⚙ আরও অপশন (সবই ঐচ্ছিক)</summary><div class="inn">
-<label>উদ্দেশ্য — বাংলা (ঐচ্ছিক; ফাঁকা থাকলে ডিফল্ট লেবেল বসবে)</label><textarea name="purpose" id="purp" rows="2" maxlength="300"></textarea>
-<label>Purpose — English (optional)</label><textarea name="purpose_en" rows="2" maxlength="300"></textarea>
+<div class="card"><div class="x-step"><b>২</b><span>ডিপোজিট নাকি উইথড্র?</span></div>
+<div class="seg big" id="kseg"><button type="button" data-k="dep" class="{{'on' if kind0=='dep'}}">📥 ডিপোজিট</button><button type="button" data-k="wd" class="{{'on wd' if kind0=='wd'}}">📤 উইথড্র</button></div>
+<div class="k" id="tydesc"></div></div>
+<div class="card"><div class="x-step"><b>৩</b><span>পরিমাণ</span></div>
+<div class="x-amt"><i>৳</i><input name="amount" type="number" step="0.01" min="0.01" required inputmode="decimal" placeholder="0" autocomplete="off"></div>
+<div class="k" style="margin-bottom:6px">কমিশন সার্ভার নিজে হিসাব করবে · পুলে উপলব্ধ ৳{{money(avail)}}</div>
+<div id="manual" hidden><label>পেমেন্ট মাধ্যম</label><select name="method">{% for m in methods %}<option>{{m}}</option>{% endfor %}</select>
+<label>পেমেন্ট নম্বর (১১ ডিজিট)</label><input name="number" inputmode="numeric" maxlength="11" placeholder="01XXXXXXXXX"></div>
+<div id="wdbox" hidden><label>পেমেন্ট টাইপ</label><select name="pay_type"><option value="personal" selected>Personal: Send Money</option><option value="agent">Agent: Cash Out</option><option value="merchant">Merchant: Payment</option></select></div>
+<details class="dt" style="margin:8px 0 0"><summary>ঐচ্ছিক তথ্য</summary><div class="inn">
+<label class="ck"><input type="checkbox" id="nocom" {{'checked' if ptype in ('deposit','withdraw')}}> কমিশন ছাড়া সাধারণ রিকোয়েস্ট</label>
+<label>নির্দেশনা (ইউজারকে দেখানো হবে)</label><textarea name="instructions" rows="2" maxlength="500"></textarea>
+<label>উদ্দেশ্য — বাংলা</label><textarea name="purpose" rows="2" maxlength="300"></textarea>
+<label>Purpose — English</label><textarea name="purpose_en" rows="2" maxlength="300"></textarea>
 <label>Order ID (ফাঁকা রাখলে স্বয়ংক্রিয়)</label><input name="order_id" maxlength="32" value="{{oid}}" autocapitalize="characters">
-<label>মেয়াদ (ঘণ্টা; ০ = মেয়াদ নেই)</label><input name="hours" type="number" min="0" max="720" value="{{dh}}"></div></details>
-<button type="button" class="btn" id="rv" style="width:100%">🔍 পর্যালোচনা করুন</button>
-<div class="k" style="margin-top:6px">পাঠানোর আগে সব তথ্য একবার দেখানো হবে। শুধু অনুরোধ পাঠালে কোনো টাকা, কমিশন বা লেজার এন্ট্রি তৈরি হয় না।</div></div></form></div>
-<div class="dm" id="rmod" hidden><div class="dm-box"><h3>📋 পাঠানোর আগে দেখে নিন</h3><div id="rbody"></div>
-<div class="dm-btns"><button type="button" class="btn s" id="rback">← সম্পাদনা</button><button type="button" class="btn g" id="rsend">📨 নিশ্চিত করে পাঠান</button></div></div></div>
+<label>মেয়াদ (ঘণ্টা; ০ = মেয়াদ নেই)</label><input name="hours" type="number" min="0" max="720" value="{{dh}}"></div></details></div>
+<div id="rerr"></div>
+<div class="x-send"><button type="button" class="btn" id="rv">📨 রিকোয়েস্ট পাঠান</button></div></div></form>
 <script>(function(){var $=function(i){return document.getElementById(i)},f=$('rf');if(!f)return;""" + PN_JS + """
-var uq=$('uq'),res=$('ures'),chips=$('ufl'),st=$('ust'),fl='all',tm=null,seq=0,TY=$('rtype'),DESC={{tydesc|tojson}},rm=$('rmod'),rb=$('rbody'),rs=$('rsend');
-function wdSync(){var wd=TY.value==='admin_review'||TY.value==='withdraw',w=$('wdbox'),man=$('manual');if(w){w.hidden=!wd;var ps=f.elements['pay_type'];if(ps)ps.required=wd}
+var KIND={{kind0|tojson}},DESC={{tydesc|tojson}},uq=$('uq'),res=$('ures'),st=$('ust'),tm=null,seq=0,TY=$('rtype'),man=$('manual'),wdb=$('wdbox'),nc=$('nocom'),er=$('rerr'),bt=$('rv');
+function sync(){var c=nc.checked,wd=KIND==='wd';TY.value=wd?(c?'withdraw':'admin_review'):(c?'deposit':'client_confirm');$('tydesc').textContent=DESC[TY.value]||'';
+ wdb.hidden=!wd;var ps=f.elements['pay_type'];if(ps){ps.disabled=!wd;ps.required=wd}
  document.querySelectorAll('#upanel .pnsel').forEach(function(e){e.hidden=wd});
- if(wd){var mr=f.querySelector('input[name=pn][value=manual]');if(mr)mr.checked=true;if(man)man.hidden=false}
- else{var ck=f.querySelector('input[name=pn]:checked');if(ck)ck.dispatchEvent(new Event('change',{bubbles:true}))}}
-function tyc(){$('tydesc').textContent=DESC[TY.value]||'';wdSync()}TY.addEventListener('change',tyc);pnBind(f);tyc();
+ var rs=f.querySelectorAll('input[name=pn]'),v='manual';rs.forEach(function(r){r.disabled=wd;var l=r.closest('.pmc');if(l)l.classList.toggle('on',r.checked);if(r.checked)v=r.value});
+ var m=wd||(rs.length?v==='manual':c);man.hidden=!m;man.querySelectorAll('input,select').forEach(function(e){e.disabled=!m});
+ var nm=f.elements['number'];if(nm)nm.required=m&&(wd||c)}
+f.addEventListener('change',function(e){if(e.target.name==='pn'||e.target.id==='nocom')sync()});
+$('kseg').addEventListener('click',function(e){var b=e.target.closest('button[data-k]');if(!b)return;KIND=b.dataset.k;
+ this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);x.classList.toggle('wd',x===b&&KIND==='wd')});sync()});
+sync();
 function pick(u){fetch('/admin/requests/panel/'+u.id+'?type='+encodeURIComponent(TY.value),{credentials:'same-origin'}).then(function(r){return r.ok?r.text():Promise.reject()}).then(function(h){
- $('upanel').innerHTML=h;$('uid').value=u.id;$('upick').hidden=true;$('rest').hidden=false;pnBind(f);wdSync();
- try{history.replaceState(null,'','/admin/requests/new?uid='+u.id+'&type='+TY.value)}catch(e){}}).catch(function(){alert('ইউজারের তথ্য লোড করা যায়নি।')})}
+ $('upanel').innerHTML=h;$('uid').value=u.id;$('upick').hidden=true;$('rest').hidden=false;sync();
+ try{history.replaceState(null,'','/admin/requests/new?uid='+u.id+'&type='+TY.value)}catch(e){}var a=f.elements['amount'];if(a)setTimeout(function(){a.focus()},50)}).catch(function(){alert('ইউজারের তথ্য লোড করা যায়নি।')})}
 function row(u){var b=document.createElement('button');b.type='button';b.className='upr';
  var t=document.createElement('div');t.className='upr-t';var n=document.createElement('b');n.textContent=u.name;var bl=document.createElement('span');bl.textContent='৳ '+u.balance;t.appendChild(n);t.appendChild(bl);
- var m=document.createElement('div');m.className='upr-m';m.textContent='#'+u.member_id+' · 📱 '+u.phone+(u.open_req?' · ⏳ '+u.open_req+'টি খোলা রিকোয়েস্ট':'');
+ var m=document.createElement('div');m.className='upr-m';m.textContent='#'+u.member_id+' · '+u.phone+(u.open_req?' · ⏳ '+u.open_req+'টি খোলা':'');
  b.appendChild(t);b.appendChild(m);b.addEventListener('click',function(){pick(u)});return b}
 function load(p,append,btn){var my=++seq;st.textContent='খুঁজছে…';
- fetch('/admin/requests/find?q='+encodeURIComponent(uq.value.trim())+'&f='+encodeURIComponent(fl)+'&p='+p,{credentials:'same-origin'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){if(my!==seq)return;
+ fetch('/admin/requests/find?q='+encodeURIComponent(uq.value.trim())+'&f=all&p='+p,{credentials:'same-origin'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(j){if(my!==seq)return;
   if(btn)btn.remove();if(!append)res.innerHTML='';
   j.rows.forEach(function(u){res.appendChild(row(u))});
-  if(!j.rows.length&&!append){var d=document.createElement('div');d.className='k';d.style.padding='8px 2px';d.textContent='কোনো ক্লায়েন্ট পাওয়া যায়নি';res.appendChild(d)}
+  if(!j.rows.length&&!append){var d=document.createElement('div');d.className='k';d.style.padding='8px 2px';d.textContent='কোনো ইউজার পাওয়া যায়নি';res.appendChild(d)}
   if(j.more){var mb=document.createElement('button');mb.type='button';mb.className='btn s';mb.style.cssText='width:100%;margin:4px 0 8px';mb.textContent='আরও দেখান';mb.addEventListener('click',function(){mb.disabled=true;load(p+1,true,mb)});res.appendChild(mb)}
   st.textContent=''}).catch(function(){if(my===seq){st.textContent='লোড করা যায়নি — আবার চেষ্টা করুন';if(btn)btn.disabled=false}})}
 uq.addEventListener('input',function(){clearTimeout(tm);tm=setTimeout(function(){load(1,false)},250)});
 uq.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();clearTimeout(tm);load(1,false);uq.blur()}});
-chips.addEventListener('click',function(e){var b=e.target.closest('button[data-f]');if(!b)return;chips.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});fl=b.dataset.f;load(1,false)});
 $('upanel').addEventListener('click',function(e){if(e.target.closest('#uchg')){$('uid').value='';$('upanel').innerHTML='';$('rest').hidden=true;$('upick').hidden=false;if(!res.children.length)load(1,false);uq.focus()}});
-if(!$('uid').value)load(1,false);
-function line(dl,k,v){var d=document.createElement('div'),a=document.createElement('dt'),b=document.createElement('dd');a.textContent=k;b.textContent=v;d.appendChild(a);d.appendChild(b);dl.appendChild(d)}
-function box(cls,t){var d=document.createElement('div');d.className=cls;d.textContent=t;return d}
-function show(d){rb.innerHTML='';$('dupok').value='';rs.disabled=false;
- if(!d.ok){rb.appendChild(box('dm-err',d.error||'যাচাই করা যায়নি'));rs.hidden=true}else{rs.hidden=false;var dl=document.createElement('dl');dl.className='dm-dl';d.rows.forEach(function(r){line(dl,r[0],r[1])});rb.appendChild(dl);
-  d.effects.forEach(function(t){rb.appendChild(box('dm-note',t))});
-  if(d.dup){var w=box('dm-warn','⚠ '+d.dup);var l=document.createElement('label');l.className='ck';var c=document.createElement('input');c.type='checkbox';c.addEventListener('change',function(){$('dupok').value=c.checked?'1':'';rs.disabled=!c.checked});
-   l.appendChild(c);l.appendChild(document.createTextNode('তবুও পাঠান'));w.appendChild(l);rb.appendChild(w);rs.disabled=true}}
- rm.hidden=false}
-function review(){if(!$('uid').value){alert('আগে ইউজার বাছাই করুন।');uq.focus();return}if(!f.reportValidity())return;
- var fd=new FormData(f),b=$('rv');b.disabled=true;
- fetch('/admin/requests/preview',{method:'POST',body:fd,credentials:'same-origin'}).then(function(r){return r.json()}).then(function(d){b.disabled=false;show(d)}).catch(function(){b.disabled=false;alert('পর্যালোচনা লোড করা যায়নি — আবার চেষ্টা করুন।')})}
-$('rv').addEventListener('click',review);$('rback').addEventListener('click',function(){rm.hidden=true});rm.addEventListener('click',function(e){if(e.target===rm)rm.hidden=true});
-rs.addEventListener('click',function(){rs.disabled=true;f.dataset.ok='1';if(typeof ldShow==='function')ldShow();f.submit()});
-f.addEventListener('submit',function(e){if(f.dataset.ok==='1')return;e.preventDefault();e.stopPropagation();review()},true)})()</script>""",
-                active="/admin/requests", x=x, q=q, flt=FIND_FILTERS, methods=METHODS, dh=dh, oid="ORD" + secrets.token_hex(4).upper(),
-                avail=pool_available(), ptype=ptype, panel=panel, tydesc=TYPE_DESC)
+if(!$('uid').value){load(1,false);if(!uq.value)setTimeout(function(){try{uq.focus()}catch(e){}},60)}
+function msg(cls,t){er.innerHTML='';var d=document.createElement('div');d.className=cls;d.textContent=t;er.appendChild(d);return d}
+function go(){f.dataset.ok='1';bt.disabled=true;if(typeof ldShow==='function')ldShow();f.submit()}
+function send(){er.innerHTML='';$('dupok').value='';
+ if(!$('uid').value){msg('x-err','আগে ইউজার বাছাই করুন।');uq.focus();return}
+ if(!f.reportValidity())return;
+ bt.disabled=true;
+ fetch('/admin/requests/preview',{method:'POST',body:new FormData(f),credentials:'same-origin'}).then(function(r){return r.json()}).then(function(d){
+  if(!d.ok){bt.disabled=false;msg('x-err',d.error||'যাচাই করা যায়নি — আবার চেষ্টা করুন।');return}
+  if(d.dup){bt.disabled=false;var w=msg('x-warn','⚠ '+d.dup+' ');var b=document.createElement('button');b.type='button';b.className='btn sm s';b.textContent='তবুও পাঠান';
+   b.addEventListener('click',function(){$('dupok').value='1';go()});w.appendChild(b);return}
+  go()}).catch(function(){bt.disabled=false;msg('x-err','সংযোগে সমস্যা — আবার চেষ্টা করুন।')})}
+bt.addEventListener('click',send);
+f.addEventListener('submit',function(e){if(f.dataset.ok==='1')return;e.preventDefault();e.stopPropagation();send()},true)})()</script>""",
+                active="/admin/requests", x=x, q=q, methods=METHODS, dh=dh, oid="ORD" + secrets.token_hex(4).upper(),
+                avail=pool_available(), ptype=ptype, panel=panel, tydesc=TYPE_DESC, kind0=kind0)
 
 
 @app.route("/admin/requests/preview", methods=["POST"])
@@ -5332,7 +5612,7 @@ def admin_request_panel(uid):
         abort(404)
     if x["blocked"]:
         return Response("blocked", status=409, mimetype="text/plain")
-    r = Response(_panel_html(x, request.args.get("pn", type=int) or 0), mimetype="text/html")
+    r = Response(_panel_html(x, request.args.get("pn", type=int) or 0, auto=True), mimetype="text/html")
     r.headers["Cache-Control"] = "no-store"
     return r
 
@@ -5452,15 +5732,13 @@ RQ_STATUS_CHIPS = {
 TX_GROUP = {"pending": ("pending",), "review": ("review", "processing"), "approved": ("approved", "paid"), "rejected": ("rejected",)}
 RQ_PER = 25
 
-RQ_TABS = """<div class="sg"><a class="{{'on' if tab=='admin'}}" href="/admin/requests?tab=admin">📤 অ্যাডমিন → ইউজার{% if n_admin %}<b class="n">{{n_admin}}</b>{% endif %}</a>
-<a class="{{'on' if tab=='user'}}" href="/admin/requests?tab=user">📥 ইউজার → অ্যাডমিন{% if n_user %}<b class="n">{{n_user}}</b>{% endif %}</a>
-<a class="{{'on' if tab=='history'}}" href="/admin/request-history">🧾 হিস্ট্রি</a></div>"""
+RQ_TABS = """<div class="sg"><a class="{{'on' if tab=='admin'}}" href="/admin/requests?tab=admin">অ্যাডমিন → ইউজার{% if n_admin %}<b class="n">{{n_admin}}</b>{% endif %}</a>
+<a class="{{'on' if tab=='user'}}" href="/admin/requests?tab=user">ইউজার → অ্যাডমিন{% if n_user %}<b class="n">{{n_user}}</b>{% endif %}</a>
+<a class="{{'on' if tab=='history'}}" href="/admin/request-history">হিস্ট্রি</a></div>"""
 
-RQ_HEAD = RQ_TABS + """<div class="sq"><input id="rq" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" value="{{q}}" placeholder="{{ph}}"></div>
+RQ_HEAD = RQ_TABS + """<div class="x-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="rq" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" value="{{q}}" placeholder="{{ph}}"></div>
 <div class="fb" id="rf2">{% for k,l in prim %}<button type="button" data-f="{{k}}" class="{{'on' if k==st}}">{{l}}</button>{% endfor %}</div>
-<div class="fs"><select id="rmore" aria-label="আরও স্ট্যাটাস"><option value="">আরও স্ট্যাটাস…</option>{% for k,l in more %}<option value="{{k}}" {{'selected' if k==st}}>{{l}}</option>{% endfor %}</select>
-<select id="rty">{% if tab=='admin' %}<option value="">সব ধরন</option>{% for k,l in tyopts %}<option value="{{k}}" {{'selected' if ty==k}}>{{l}}</option>{% endfor %}
-{% else %}<option value="">ডিপোজিট + উইথড্র</option>{% for k,l in kopts %}<option value="{{k}}" {{'selected' if kd==k}}>{{l}}</option>{% endfor %}{% endif %}</select></div>
+{% if more %}<div class="fs"><select id="rmore" aria-label="আরও স্ট্যাটাস"><option value="">আরও স্ট্যাটাস…</option>{% for k,l in more %}<option value="{{k}}" {{'selected' if k==st}}>{{l}}</option>{% endfor %}</select></div>{% endif %}
 <div class="sq-st" id="rst"></div>"""
 
 RQ_ROWS_TPL = """{% if not rows and start==0 %}<div class="card empty">{{empty}}</div>{% endif %}
@@ -5610,9 +5888,9 @@ def admin_requests():
     prim = [(k, lab[k]) for k in PRIM]
     more = [(k, l) for k, l in chips if k not in PRIM]
     return page(RQ_STYLE + RQ2_STYLE + DESK_STYLE + RQ_HEAD + """<div id="rl">{{rl|safe}}</div>""" + ACT_MODAL + """
-<script>(function(){var box=document.getElementById('rl'),inp=document.getElementById('rq'),chips=document.getElementById('rf2'),sel=document.getElementById('rty'),mo=document.getElementById('rmore'),stt=document.getElementById('rst');
-if(!box||!inp)return;var TAB={{tab|tojson}},f={{st|tojson}},tm=null,seq=0;
-function qs(p){return 'tab='+TAB+'&status='+encodeURIComponent(f)+'&'+(TAB==='admin'?'ty':'kind')+'='+encodeURIComponent(sel.value)+'&q='+encodeURIComponent(inp.value.trim())+(p?'&p='+p:'')}
+<script>(function(){var box=document.getElementById('rl'),inp=document.getElementById('rq'),chips=document.getElementById('rf2'),mo=document.getElementById('rmore')||document.createElement('select'),stt=document.getElementById('rst');
+if(!box||!inp)return;var TAB={{tab|tojson}},EX={{(ty if tab=='admin' else kd)|tojson}},f={{st|tojson}},tm=null,seq=0;
+function qs(p){return 'tab='+TAB+'&status='+encodeURIComponent(f)+'&'+(TAB==='admin'?'ty':'kind')+'='+encodeURIComponent(EX)+'&q='+encodeURIComponent(inp.value.trim())+(p?'&p='+p:'')}
 function sync(){try{history.replaceState(null,'','/admin/requests?'+qs(0))}catch(e){}}
 function load(p,append,btn){var my=++seq;stt.textContent='খুঁজছে…';fetch('/admin/requests/list?'+qs(p),{credentials:'same-origin'}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(h){if(my!==seq)return;
  if(append){if(btn)btn.remove();box.insertAdjacentHTML('beforeend',h)}else box.innerHTML=h;stt.textContent=''}).catch(function(){if(my===seq){stt.textContent='লোড করা যায়নি — আবার চেষ্টা করুন';if(btn)btn.disabled=false}})}
@@ -5620,12 +5898,11 @@ inp.addEventListener('input',function(){clearTimeout(tm);tm=setTimeout(function(
 inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();clearTimeout(tm);sync();load(1,false);inp.blur()}});
 chips.addEventListener('click',function(e){var b=e.target.closest('button[data-f]');if(!b)return;chips.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});mo.value='';f=b.dataset.f;sync();load(1,false)});
 mo.addEventListener('change',function(){if(!mo.value)return;chips.querySelectorAll('button').forEach(function(x){x.classList.remove('on')});f=mo.value;sync();load(1,false)});
-sel.addEventListener('change',function(){sync();load(1,false)});
 box.addEventListener('click',function(e){var b=e.target.closest('.rq-more');if(!b)return;b.disabled=true;load(+b.dataset.next,true,b)})})()</script>""",
                 active="/admin/requests", rl=html, tab=tab, st=st, q=q, ty=ty, kd=kd, n_admin=n_admin, n_user=n_user, prim=prim, more=more,
                 tyopts=[(k, TYPE_LABEL[k]) for k in ("client_confirm", "admin_review", "deposit", "withdraw")],
                 kopts=[(k, REQ_KIND[k]) for k in _rq_kinds()],
-                ph="Request ID / Member ID / নাম / ফোন / TrxID")
+                ph="Request ID / Member ID / নাম / ফোন")
 
 
 @app.route("/admin/requests/<int:i>/note", methods=["POST"])
@@ -6025,9 +6302,7 @@ def admin_request_history():
            "cancelled": by.get("cancelled", 0), "rejected": by.get("rejected", 0)}
     tabs = [("all", "সব"), ("pending", "অপেক্ষমাণ"), ("success", "সফল"), ("cancelled", "বাতিল"), ("rejected", "রিজেক্ট")]
     _, _, _, n_admin, n_user = _rq_summary("admin")
-    return page(RQ_TABS + """<div class="fb" style="grid-template-columns:repeat(3,1fr)">{% for k,lb in tabs[:3] %}<a class="btn s{{' on' if f==k}}" style="min-height:36px;margin:0;font-size:12.5px;padding:0 4px;{{'background:var(--b);border-color:var(--b);color:#fff' if f==k}}" href="/admin/request-history{{'' if k=='all' else '?f='+k}}">{{lb}} {{cnt[k]}}</a>{% endfor %}</div>
-<div class="fs" style="grid-template-columns:1fr"><select aria-label="আরও ফিল্টার" onchange="if(this.value)location.href=this.value"><option value="">{{('আরও: '+dict(tabs)[f]) if f in ('cancelled','rejected') else 'আরও ফিল্টার…'}}</option>{% for k,lb in tabs[3:] %}<option value="/admin/request-history?f={{k}}">{{lb}} ({{cnt[k]}})</option>{% endfor %}</select></div>
-<div style="height:8px"></div>
+    return page(RQ_TABS + """<div class="fb">{% for k,lb in tabs %}<button type="button" class="{{'on' if f==k}}" onclick="location.href='/admin/request-history{{'' if k=='all' else '?f='+k}}'">{{lb}} {{cnt[k]}}</button>{% endfor %}</div>
 {% if not rows %}<div class="card empty">কোনো রিকোয়েস্ট নেই</div>{% endif %}
 {% for r in rows %}<a class="rc" href="/admin/requests/{{r['id']}}"><div class="r1"><b class="id">{{r['order_id']}}</b><span class="pill {{r['status']}}">{{labels[r['status']]}}</span></div>
 <div class="r1" style="margin-top:2px"><span class="nm">{{r['name']}} · #{{r['member_id']}}</span><b class="am">৳ {{money(r['amount'])}}</b></div>
