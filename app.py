@@ -637,11 +637,19 @@ def _seed_defaults(c):
     defaults = {"bkash": "", "nagad": "", "rocket": "", "min_deposit": "50", "min_withdraw": "100",
                 "telegram_url": "", "tg_enabled": "1", "tg_username": "", "tg_label_bn": "", "tg_label_en": "", "welcome": WELCOME_DEFAULT, "commission_note": "", "referral_bonus": "50",
                 "site_name": SITE, "default_theme": "auto", "signup_open": "1", "notif_sound": "1", "req_expiry_hours": "24",
-                "comm_rate_default": "5", "comm_rate_max": "10", "report_tz_hours": "6", "req_cancel_fee": "100"}
+                "comm_rate_default": "3", "comm_rate_max": "10", "report_tz_hours": "6", "req_cancel_fee": "100"}
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (k, v))
     c.execute("INSERT OR IGNORE INTO pool_account(id,balance,updated) VALUES(1,0,?)", (now(),))  # the single pool row; starts at 0
     c.execute("INSERT OR IGNORE INTO meta VALUES('pool_since',?)", (now(),))  # commission/bonus credits before this moment are "pre-pool legacy"; after it, every one must be pool-backed
+
+
+def _comm_rates_v8(c):
+    """One-time: Standard rate (global default) becomes 3% and the ceiling 10% so Diamond's 10% is reachable. Existing requests are never touched."""
+    if not c.execute("SELECT 1 FROM meta WHERE k='comm_rates_v8'").fetchone():
+        c.execute("INSERT OR REPLACE INTO settings VALUES('comm_rate_default','3')")
+        c.execute("INSERT OR REPLACE INTO settings VALUES('comm_rate_max','10')")
+        c.execute("INSERT OR REPLACE INTO meta VALUES('comm_rates_v8',?)", (now(),))
 
 
 def _sync_admin(c):
@@ -679,6 +687,7 @@ def migrate_pg():
         c.execute("BEGIN IMMEDIATE")
         try:
             _seed_defaults(c)
+            _comm_rates_v8(c)
             c.execute("INSERT OR REPLACE INTO meta VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
             _sync_admin(c)
             c.execute("COMMIT")
@@ -817,6 +826,7 @@ def migrate():
               "SELECT user_id,amount,COALESCE(NULLIF(note,''),'-'),actor,idem,created FROM ledger "
               "WHERE kind='commission' AND amount>0 AND idem IS NOT NULL")
     _seed_defaults(c)
+    _comm_rates_v8(c)
     _ov = c.execute("SELECT v FROM meta WHERE k='schema_version'").fetchone()
     if _ov and str(_ov[0]).isdigit() and int(_ov[0]) < 4:  # one-time: existing 'admin' staff get the two new permissions
         for r in c.execute("SELECT id,perms FROM users WHERE role='admin'").fetchall():
@@ -3342,7 +3352,7 @@ def admin_comm_rate():
                          (scope, x["id"] if x else None, old, new, reason, "rate:" + tok, a["member_id"], a["id"], now()))
             if scope == "user":
                 db().execute("UPDATE users SET comm_rate=? WHERE id=?", (new, x["id"]))
-                shown = effective_rate({"comm_rate": new, "vip_rate": x["vip_rate"]})
+                shown = effective_rate({"comm_rate": new, "vip_level": x["vip_level"]})
                 notify(x["id"], "কমিশন রেট আপডেট", "আপনার কমিশন রেট এখন %g%%।" % shown, None,
                        "Commission rate updated", "Your commission rate is now %g%%." % shown)
             else:
@@ -4505,19 +4515,23 @@ def rate_cfg():
     return min(max(d, 0.0), m), m
 
 
+def level_rate(level):
+    """Commission % of a membership level (applies to Deposit AND Withdrawal requests alike). Standard = admin-managed global default (3% out of the box)."""
+    if level == "gold":
+        return VIP_LEVELS["gold"]["rate"]
+    if level == "diamond":
+        return VIP_LEVELS["diamond"]["rate"]
+    return rate_cfg()[0]
+
+
 def effective_rate(u):
+    """ONE rate per transaction: an explicit admin per-user override if set, otherwise the rate of the user's approved membership level."""
     d, m = rate_cfg()
     try:
         r = u["comm_rate"] if u is not None else None
     except (KeyError, IndexError):
         r = None
-    r = d if r is None else float(r)
-    try:
-        vr = u["vip_rate"] if u is not None else None
-    except (KeyError, IndexError):
-        vr = None
-    if vr:  # approved VIP level: permanent rate, never lowers an existing higher rate
-        r = max(r, float(vr))
+    r = level_rate(vip_level_of(u) if u is not None else "standard") if r is None else float(r)
     return round(min(max(r, 0.0), m), 3)
 
 
@@ -5370,7 +5384,7 @@ def _find_clients(q, f, p, per=FIND_PER):
     if q:
         order, oargs = "(CASE WHEN u.member_id=? OR u.phone=? OR u.referral_code=? THEN 0 ELSE 1 END), u.id DESC", [q, q, q.upper()]
     p = min(max(p, 1), 500)
-    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.comm_rate,u.vip_rate,"
+    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.comm_rate,u.vip_rate,u.vip_level,"
               "(SELECT COUNT(*) FROM requests r WHERE r.user_id=u.id AND r.status IN ('pending','submitted','review')) open_req "
               "FROM users u WHERE " + " AND ".join(where) + " ORDER BY " + order + " LIMIT ? OFFSET ?",
               args + oargs + [per + 1, (p - 1) * per])
@@ -6835,8 +6849,8 @@ def healthz():
 if not os.environ.get("EWALLET_SKIP_MIGRATE"):  # dbtool sets this to control the first import itself
     migrate()
 # ---------------------------------------------------------------- VIP levels (permanent once approved by an authorised admin)
-VIP_LEVELS = {"standard": dict(name="Standard", rate=5.0, n=0, dep=0, bal=0, rank=0),
-              "gold": dict(name="Gold", rate=7.5, n=3, dep=10000, bal=30000, rank=1),
+VIP_LEVELS = {"standard": dict(name="Standard", rate=3.0, n=0, dep=0, bal=0, rank=0),
+              "gold": dict(name="Gold", rate=5.0, n=3, dep=10000, bal=30000, rank=1),
               "diamond": dict(name="Diamond", rate=10.0, n=3, dep=20000, bal=50000, rank=2)}
 
 
@@ -6868,6 +6882,9 @@ def vip_page():
     bal = float(u["balance"] or 0)
     cards = []
     for key, L in VIP_LEVELS.items():
+        L = dict(L)
+        if key == "standard":
+            L["rate"] = level_rate("standard")
         free = len(_vip_free_deposits(u["id"], key)) if L["n"] else 0
         dep_ok, bal_ok = free >= L["n"], bal >= L["bal"]
         if L["rank"] < VIP_LEVELS[cur]["rank"] or key == cur:
@@ -6912,7 +6929,7 @@ def vip_page():
 <div class="vnum">{{u['member_id']}} · {{c.L.name|upper}}</div>{% if c.st in ('locked','eligible','pending') %}<div class="vlock"><div class="vlkh">{{'অ্যাপ্লিকেশন Admin রিভিউতে আছে।' if c.st=='pending' else 'আনলক করতে নিচের শর্ত পূরণ করুন।'}}</div><div class="vlkb"><svg viewBox="0 0 24 24" fill="none"><defs><linearGradient id="gl{{c.key}}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff2b8"/><stop offset=".5" stop-color="#e0a82e"/><stop offset="1" stop-color="#b97f10"/></linearGradient></defs><rect x="4" y="10.5" width="16" height="10.5" rx="2.5" fill="url(#gl{{c.key}})"/><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" stroke="url(#gl{{c.key}})" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="15.5" r="1.5" fill="#3b2a00"/></svg><b>LOCKED</b></div></div>{% endif %}</div>
 {% if c.key!='standard' %}<div class="card" style="margin-top:10px"><div class="vreq"><div class="{{'ok' if c.dep_ok else 'no'}}">{{'✓' if c.dep_ok else '○'}} {{'কমপক্ষে ১০,০০০ টাকা করে ৩টি এড মানি অথবা উইথড্র রিকোয়েস্ট সম্পন্ন করতে হবে।' if c.key=='gold' else 'কমপক্ষে ২০,০০০ টাকা করে ৩টি এড মানি অথবা উইথড্র রিকোয়েস্ট সম্পন্ন করতে হবে।'}}</div>
 <div class="{{'ok' if c.bal_ok else 'no'}}">{{'✓' if c.bal_ok else '○'}} {{'অ্যাকাউন্টে কমপক্ষে ৩০,০০০ টাকা ব্যালেন্স থাকতে হবে।' if c.key=='gold' else 'অ্যাকাউন্টে কমপক্ষে ৫০,০০০ টাকা ব্যালেন্স থাকতে হবে।'}}</div>
-<div class="k" style="margin-top:4px">{{'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ৭.৫% কমিশন কার্যকর হবে।' if c.key=='gold' else 'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ১০% কমিশন কার্যকর হবে।'}}</div></div>
+<div class="k" style="margin-top:4px">{{'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ৫% কমিশন কার্যকর হবে।' if c.key=='gold' else 'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ১০% কমিশন কার্যকর হবে।'}}</div></div>
 {% if c.st=='eligible' %}<form method="post" action="/vip/apply" data-confirm="Apply for {{c.L.name}} VIP?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="{{c.key}}"><button style="width:100%;margin-top:10px">Apply for {{c.L.name}}</button></form>
 {% elif c.st=='pending' %}<div class="hl" style="margin-top:10px">⏳ Your application is waiting for Admin review.</div>
 {% elif c.st in ('current','done') %}<div class="hl" style="margin-top:10px">✓ {{'This is your permanent level.' if c.st=='current' else 'Included in your current level.'}}</div>
@@ -6973,7 +6990,7 @@ def admin_vip():
 <form method="get"><input name="q" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি" maxlength="40"><button class="s" style="width:100%">খুঁজুন</button></form>
 {% for f in found %}<form method="post" action="/admin/vip/user/{{f['id']}}" class="card" style="margin-top:8px" data-confirm="VIP পরিবর্তন করবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <b>#{{f['member_id']}} {{f['name']}}</b> <span class="k">({{(f['vip_level'] or 'standard')|title}})</span>
-<select name="level"><option value="standard">Standard (বাতিল)</option><option value="gold">Gold 7.5%</option><option value="diamond">Diamond 10%</option></select>
+<select name="level"><option value="standard">Standard (বাতিল)</option><option value="gold">Gold 5%</option><option value="diamond">Diamond 10%</option></select>
 <input name="reason" placeholder="কারণ" required minlength="3" maxlength="200"><button style="width:100%">আপডেট</button></form>{% endfor %}</div>
 {% if holders %}<div class="card"><h3>বর্তমান VIP সদস্য</h3>{% for h in holders %}<div class="row" style="margin-bottom:6px"><span>#{{h['member_id']}} {{h['name']}}</span><b>{{h['vip_level']|title}} · {{h['vip_rate']|pct}}%</b></div>{% endfor %}</div>{% endif %}
 {% if done %}<div class="card"><h3>সাম্প্রতিক সিদ্ধান্ত</h3>{% for d in done %}<div class="row" style="margin-bottom:6px"><span>#{{d['member_id']}} {{d['name']}} · {{d['level']|title}}</span><span class="pill {{d['status']}}">{{d['status']}}</span></div>{% endfor %}</div>{% endif %}""",
@@ -6984,9 +7001,11 @@ def _vip_set(x, level, reason, a, kind):
     """Single place that changes a user's VIP level + rate (inside an atomic block). Logged, audited, user notified."""
     old = vip_level_of(x)
     rate_old = effective_rate(x)
-    L = VIP_LEVELS[level]
+    L = dict(VIP_LEVELS[level])
+    if level == "standard":
+        L["rate"] = level_rate("standard")
     db().execute("UPDATE users SET vip_level=?, vip_rate=? WHERE id=?", (level if level != "standard" else None, L["rate"] if level != "standard" else None, x["id"]))
-    new_rate = effective_rate({"comm_rate": x["comm_rate"], "vip_rate": L["rate"] if level != "standard" else None})
+    new_rate = effective_rate({"comm_rate": x["comm_rate"], "vip_level": level})
     db().execute("INSERT INTO vip_log(user_id,action,old_level,new_level,rate,reason,actor,actor_id,created) VALUES(?,?,?,?,?,?,?,?,?)",
                  (x["id"], kind, old, level, L["rate"], reason, a["member_id"], a["id"], now()))
     db().execute("INSERT INTO commission_rate_log(scope,user_id,old_rate,new_rate,reason,idem,actor,actor_id,created) VALUES(?,?,?,?,?,?,?,?,?)",
