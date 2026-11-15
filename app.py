@@ -637,7 +637,7 @@ def _seed_defaults(c):
     defaults = {"bkash": "", "nagad": "", "rocket": "", "min_deposit": "50", "min_withdraw": "100",
                 "telegram_url": "", "tg_enabled": "1", "tg_username": "", "tg_label_bn": "", "tg_label_en": "", "welcome": WELCOME_DEFAULT, "commission_note": "", "referral_bonus": "50",
                 "site_name": SITE, "default_theme": "auto", "signup_open": "1", "notif_sound": "1", "req_expiry_hours": "24",
-                "comm_rate_default": "3", "comm_rate_max": "10", "report_tz_hours": "6", "req_cancel_fee": "100"}
+                "comm_rate_default": "5", "comm_rate_max": "10", "report_tz_hours": "6", "req_cancel_fee": "100"}
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (k, v))
     c.execute("INSERT OR IGNORE INTO pool_account(id,balance,updated) VALUES(1,0,?)", (now(),))  # the single pool row; starts at 0
@@ -650,6 +650,16 @@ def _comm_rates_v8(c):
         c.execute("INSERT OR REPLACE INTO settings VALUES('comm_rate_default','3')")
         c.execute("INSERT OR REPLACE INTO settings VALUES('comm_rate_max','10')")
         c.execute("INSERT OR REPLACE INTO meta VALUES('comm_rates_v8',?)", (now(),))
+
+
+def _comm_rates_v9(c):
+    """One-time: Standard = 5%, Gold = 7.5%, Diamond = 10% (Deposit and Withdraw alike). Existing requests keep the commission stored when they were created."""
+    if not c.execute("SELECT 1 FROM meta WHERE k='comm_rates_v9'").fetchone():
+        c.execute("INSERT OR REPLACE INTO settings VALUES('comm_rate_default','5')")
+        c.execute("INSERT OR REPLACE INTO settings VALUES('comm_rate_max','10')")
+        c.execute("UPDATE users SET vip_rate=7.5 WHERE vip_level='gold'")  # display copy only; the live rate comes from level_rate()
+        c.execute("UPDATE vip_applications SET rate=7.5 WHERE level='gold' AND status='pending'")
+        c.execute("INSERT OR REPLACE INTO meta VALUES('comm_rates_v9',?)", (now(),))
 
 
 def _sync_admin(c):
@@ -688,6 +698,7 @@ def migrate_pg():
         try:
             _seed_defaults(c)
             _comm_rates_v8(c)
+            _comm_rates_v9(c)
             c.execute("INSERT OR REPLACE INTO meta VALUES('schema_version',?)", (str(SCHEMA_VERSION),))
             _sync_admin(c)
             c.execute("COMMIT")
@@ -827,6 +838,7 @@ def migrate():
               "WHERE kind='commission' AND amount>0 AND idem IS NOT NULL")
     _seed_defaults(c)
     _comm_rates_v8(c)
+    _comm_rates_v9(c)
     _ov = c.execute("SELECT v FROM meta WHERE k='schema_version'").fetchone()
     if _ov and str(_ov[0]).isdigit() and int(_ov[0]) < 4:  # one-time: existing 'admin' staff get the two new permissions
         for r in c.execute("SELECT id,perms FROM users WHERE role='admin'").fetchall():
@@ -4564,7 +4576,7 @@ def rate_cfg():
 
 
 def level_rate(level):
-    """Commission % of a membership level (applies to Deposit AND Withdrawal requests alike). Standard = admin-managed global default (3% out of the box)."""
+    """Commission % of a membership level (applies to Deposit AND Withdrawal requests alike). Standard = admin-managed global default (5% out of the box)."""
     if level == "gold":
         return VIP_LEVELS["gold"]["rate"]
     if level == "diamond":
@@ -6897,8 +6909,8 @@ def healthz():
 if not os.environ.get("EWALLET_SKIP_MIGRATE"):  # dbtool sets this to control the first import itself
     migrate()
 # ---------------------------------------------------------------- VIP levels (permanent once approved by an authorised admin)
-VIP_LEVELS = {"standard": dict(name="Standard", rate=3.0, n=0, dep=0, bal=0, rank=0),
-              "gold": dict(name="Gold", rate=5.0, n=3, dep=10000, bal=30000, rank=1),
+VIP_LEVELS = {"standard": dict(name="Standard", rate=5.0, n=0, dep=0, bal=0, rank=0),
+              "gold": dict(name="Gold", rate=7.5, n=3, dep=10000, bal=30000, rank=1),
               "diamond": dict(name="Diamond", rate=10.0, n=3, dep=20000, bal=50000, rank=2)}
 
 
@@ -6977,7 +6989,7 @@ def vip_page():
 <div class="vnum">{{u['member_id']}} · {{c.L.name|upper}}</div>{% if c.st in ('locked','eligible','pending') %}<div class="vlock"><div class="vlkh">{{'অ্যাপ্লিকেশন Admin রিভিউতে আছে।' if c.st=='pending' else 'আনলক করতে নিচের শর্ত পূরণ করুন।'}}</div><div class="vlkb"><svg viewBox="0 0 24 24" fill="none"><defs><linearGradient id="gl{{c.key}}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff2b8"/><stop offset=".5" stop-color="#e0a82e"/><stop offset="1" stop-color="#b97f10"/></linearGradient></defs><rect x="4" y="10.5" width="16" height="10.5" rx="2.5" fill="url(#gl{{c.key}})"/><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" stroke="url(#gl{{c.key}})" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="15.5" r="1.5" fill="#3b2a00"/></svg><b>LOCKED</b></div></div>{% endif %}</div>
 {% if c.key!='standard' %}<div class="card" style="margin-top:10px"><div class="vreq"><div class="{{'ok' if c.dep_ok else 'no'}}">{{'✓' if c.dep_ok else '○'}} {{'কমপক্ষে ১০,০০০ টাকা করে ৩টি এড মানি অথবা উইথড্র রিকোয়েস্ট সম্পন্ন করতে হবে।' if c.key=='gold' else 'কমপক্ষে ২০,০০০ টাকা করে ৩টি এড মানি অথবা উইথড্র রিকোয়েস্ট সম্পন্ন করতে হবে।'}}</div>
 <div class="{{'ok' if c.bal_ok else 'no'}}">{{'✓' if c.bal_ok else '○'}} {{'অ্যাকাউন্টে কমপক্ষে ৩০,০০০ টাকা ব্যালেন্স থাকতে হবে।' if c.key=='gold' else 'অ্যাকাউন্টে কমপক্ষে ৫০,০০০ টাকা ব্যালেন্স থাকতে হবে।'}}</div>
-<div class="k" style="margin-top:4px">{{'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ৫% কমিশন কার্যকর হবে।' if c.key=='gold' else 'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ১০% কমিশন কার্যকর হবে।'}}</div></div>
+<div class="k" style="margin-top:4px">{{'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ৭.৫% কমিশন কার্যকর হবে।' if c.key=='gold' else 'শর্ত পূরণ হলে VIP পাওয়ার জন্য আবেদন করতে হবে। Admin অনুমোদন দিলে ১০% কমিশন কার্যকর হবে।'}}</div></div>
 {% if c.st=='eligible' %}<form method="post" action="/vip/apply" data-confirm="Apply for {{c.L.name}} VIP?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="{{c.key}}"><button style="width:100%;margin-top:10px">Apply for {{c.L.name}}</button></form>
 {% elif c.st=='pending' %}<div class="hl" style="margin-top:10px">⏳ Your application is waiting for Admin review.</div>
 {% elif c.st in ('current','done') %}<div class="hl" style="margin-top:10px">✓ {{'This is your permanent level.' if c.st=='current' else 'Included in your current level.'}}</div>
@@ -7029,7 +7041,7 @@ def admin_vip():
                ("%" + q + "%",) * 3) if q else []
     return page("""<h2>👑 VIP আবেদন</h2>
 {% if not pend %}<div class="card empty">কোনো পেন্ডিং আবেদন নেই</div>{% endif %}
-{% for a in pend %}<div class="card"><b>{{a['level']|title}} VIP · {{a['rate']|pct}}%</b> <span class="pill pending">pending</span>
+{% for a in pend %}<div class="card"><b>{{a['level']|title}} VIP · {{lr(a['level'])|pct}}%</b> <span class="pill pending">pending</span>
 <div class="k">#{{a['member_id']}} {{a['name']}} · {{a['phone']}} · {{a['created'][:16]}}</div>
 <div>আবেদনের সময় ব্যালেন্স: <b>৳ {{money(a['balance_at'])}}</b> · এখন: ৳ {{money(a['balance'])}}</div><div class="k">গণনাকৃত ডিপোজিট tx#: {{a['deposit_ids']}}</div>
 <form method="post" action="/admin/vip/{{a['id']}}" style="margin-top:8px" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
@@ -7038,11 +7050,11 @@ def admin_vip():
 <form method="get"><input name="q" value="{{q}}" placeholder="নাম / ফোন / মেম্বার আইডি" maxlength="40"><button class="s" style="width:100%">খুঁজুন</button></form>
 {% for f in found %}<form method="post" action="/admin/vip/user/{{f['id']}}" class="card" style="margin-top:8px" data-confirm="VIP পরিবর্তন করবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <b>#{{f['member_id']}} {{f['name']}}</b> <span class="k">({{(f['vip_level'] or 'standard')|title}})</span>
-<select name="level"><option value="standard">Standard (বাতিল)</option><option value="gold">Gold 5%</option><option value="diamond">Diamond 10%</option></select>
+<select name="level"><option value="standard">Standard (বাতিল)</option><option value="gold">Gold 7.5%</option><option value="diamond">Diamond 10%</option></select>
 <input name="reason" placeholder="কারণ" required minlength="3" maxlength="200"><button style="width:100%">আপডেট</button></form>{% endfor %}</div>
-{% if holders %}<div class="card"><h3>বর্তমান VIP সদস্য</h3>{% for h in holders %}<div class="row" style="margin-bottom:6px"><span>#{{h['member_id']}} {{h['name']}}</span><b>{{h['vip_level']|title}} · {{h['vip_rate']|pct}}%</b></div>{% endfor %}</div>{% endif %}
+{% if holders %}<div class="card"><h3>বর্তমান VIP সদস্য</h3>{% for h in holders %}<div class="row" style="margin-bottom:6px"><span>#{{h['member_id']}} {{h['name']}}</span><b>{{h['vip_level']|title}} · {{lr(h['vip_level'])|pct}}%</b></div>{% endfor %}</div>{% endif %}
 {% if done %}<div class="card"><h3>সাম্প্রতিক সিদ্ধান্ত</h3>{% for d in done %}<div class="row" style="margin-bottom:6px"><span>#{{d['member_id']}} {{d['name']}} · {{d['level']|title}}</span><span class="pill {{d['status']}}">{{d['status']}}</span></div>{% endfor %}</div>{% endif %}""",
-                active="/admin/vip", pend=pend, done=done, holders=holders, q=q, found=found)
+                active="/admin/vip", pend=pend, done=done, holders=holders, q=q, found=found, lr=level_rate)
 
 
 def _vip_set(x, level, reason, a, kind):
