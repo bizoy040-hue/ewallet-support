@@ -457,7 +457,7 @@ END $r$;
 # Every change is "ADD COLUMN IF MISSING" or "CREATE TABLE IF NOT EXISTS". Nothing is dropped, renamed or rewritten.
 # (table, column, sqlite type, postgres type)
 V5_COLUMNS = [
-    ("users", "blocked_reason", "TEXT", "TEXT"), ("users", "blocked_at", "TEXT", "TEXT"),
+    ("users", "blocked_reason", "TEXT", "TEXT"), ("users", "blocked_at", "TEXT", "TEXT"), ("users", "removed_at", "TEXT", "TEXT"),
     ("notifications", "title_en", "TEXT", "TEXT"), ("notifications", "body_en", "TEXT", "TEXT"),
     ("users", "comm_rate", "REAL", "NUMERIC(7,3)"),
     ("requests", "flow", "TEXT", "TEXT"), ("requests", "commission", "REAL", "NUMERIC(14,2)"), ("requests", "commission_rate", "REAL", "NUMERIC(7,3)"),
@@ -1436,6 +1436,7 @@ body.auth main{max-width:440px;margin:0 auto;padding:0 16px calc(16px + env(safe
 .au-seg.up .au-ind{transform:translateX(100%)}
 .au-msg{display:flex;gap:9px;align-items:flex-start;padding:9px 12px;border-radius:12px;margin-bottom:12px;font-size:13.5px;line-height:1.5;word-break:break-word;background:#DDF8EC;color:#0B6B47}
 .au-msg svg{width:18px;height:18px;flex:none;margin-top:2px}
+.au-msg span{white-space:pre-line}
 .au-msg.error{background:#FFE4E6;color:#991b1b}
 .au-form label{display:block;font-size:13.5px;font-weight:600;color:var(--tx);margin:0 0 5px}
 .au-lr{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
@@ -1992,9 +1993,18 @@ def login():
         if too_many(p, ip):
             err("অনেকবার ভুল হয়েছে। ১৫ মিনিট পরে চেষ্টা করুন।"); return redirect("/login")
         u = q1("SELECT * FROM users WHERE phone=?", (p,))
-        ok = bool(u and not u["blocked"] and check_password_hash(u["pw"], request.form.get("pw", "")))
+        if not u and p.lstrip("#").isdigit():
+            u = q1("SELECT * FROM users WHERE member_id=? AND is_admin=0", (p.lstrip("#"),))
+        pw_ok = bool(u and check_password_hash(u["pw"], request.form.get("pw", "")))
+        ok = bool(pw_ok and not u["blocked"])
         db().execute("INSERT INTO login_history(user_id,phone,ip,ok,created) VALUES(?,?,?,?,?)",
                      (u["id"] if u else None, p, ip, int(ok), now()))
+        if pw_ok and u["blocked"]:
+            # only shown after the CORRECT password -> no account-existence leak to unauthenticated visitors
+            if u["removed_at"]:
+                err("নম্বর/পাসওয়ার্ড ভুল অথবা অ্যাকাউন্ট ব্লকড/নিষ্ক্রিয়।"); return redirect("/login")
+            rsn = (u["blocked_reason"] or "").strip() or "Not specified"
+            err("Your account has been blocked by the administrator.\nReason: %s" % rsn); return redirect("/login")
         if ok and u["is_admin"] and check_password_hash(u["pw"], "admin123"):
             err("ডিফল্ট অ্যাডমিন পাসওয়ার্ড নিষিদ্ধ। Render-এ ADMIN_PASSWORD সেট করে রিডেপ্লয় করুন।"); return redirect("/login")
         if ok and u["is_admin"]:
@@ -2777,7 +2787,7 @@ PAGER = """{% if pg and pg.pages>1 %}<div class="row" style="justify-content:spa
 
 # ================================================================ Admin Desk: fast user search + user hub (no schema change)
 METHOD_COLOR = {"bKash": "#E2136E", "Nagad": "#F6921E", "Rocket": "#8C3494"}
-USER_FILTERS = (("all", "সব"), ("active", "সক্রিয়"), ("blocked", "ব্লকড"), ("funded", "ব্যালেন্স আছে"),
+USER_FILTERS = (("all", "সব"), ("active", "সক্রিয়"), ("blocked", "ব্লকড"), ("archived", "আর্কাইভড"), ("funded", "ব্যালেন্স আছে"),
                 ("new", "নতুন (৭ দিন)"), ("openreq", "খোলা রিকোয়েস্ট"), ("kyc", "KYC অপেক্ষমাণ"))
 REQ_DEP_SQL = "(COALESCE(r.flow,'')='client_confirm' OR (COALESCE(r.flow,'')='' AND r.kind='deposit'))"   # alias r = requests
 SEARCH_PER = 20
@@ -2846,8 +2856,8 @@ details.dt .inn{padding-bottom:12px}
 </style>"""
 
 USER_ROWS_TPL = """{% if not rows and p==1 %}<div class="card empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}
-{% for x in rows %}<div class="uc{{' blocked' if x['blocked']}}"><a class="uc-main" href="/admin/users/{{x['id']}}"><div class="uc-t"><b>{{x['name']}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span></div>
-<div class="uc-m">#{{x['member_id']}} · 📱 {{x['phone']}}</div>
+{% for x in rows %}<div class="uc{{' blocked' if x['blocked']}}"><a class="uc-main" href="/admin/users/{{x['id']}}"><div class="uc-t"><b>{{x['name']}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'আর্কাইভড' if x['removed_at'] else ('ব্লকড' if x['blocked'] else 'সক্রিয়')}}</span></div>
+<div class="uc-m">#{{x['member_id']}} · 📱 {{x['phone']}} · ✅ {{x['tx_ok']}} সফল লেনদেন</div>
 <div class="uc-b"><span>ব্যালেন্স <b>৳ {{money(x['balance'])}}</b></span>{% if can('requests') and x['open_req'] %}<span class="uc-o">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</span>{% endif %}</div></a>
 </div>{% endfor %}
 {% if more %}<button type="button" class="btn s uc-more" data-next="{{p+1}}" style="width:100%;margin-bottom:10px">আরও দেখান</button>{% endif %}"""
@@ -2882,6 +2892,10 @@ def _user_search(q, f, p, per=SEARCH_PER):
             cond += " OR EXISTS(SELECT 1 FROM payment_numbers pn WHERE pn.user_id=u.id AND pn.number LIKE ?)"
             args.append(like)
         where.append("(" + cond + ")")
+    if f == "archived":
+        where.append("u.removed_at IS NOT NULL")
+    else:
+        where.append("u.removed_at IS NULL")          # archived (removed) accounts only show under the 'আর্কাইভড' filter
     if f == "active":
         where.append("COALESCE(u.blocked,0)=0")
     elif f == "blocked":
@@ -2895,11 +2909,16 @@ def _user_search(q, f, p, per=SEARCH_PER):
     elif f == "kyc" and has_perm("kyc"):
         where.append("EXISTS(SELECT 1 FROM meta m WHERE m.k='kyc:'||u.id AND (m.v LIKE ? OR m.v LIKE ?))")
         args += ['%"status": "pending"%', '%"status":"pending"%']
-    order, oargs = "u.id DESC", []
+    # successful = approved/paid tx rows + approved requests (pending/rejected/cancelled/expired never count)
+    txn = ("((SELECT COUNT(*) FROM tx t WHERE t.user_id=u.id AND t.status IN ('approved','paid'))"
+           "+(SELECT COUNT(*) FROM requests r2 WHERE r2.user_id=u.id AND r2.status='approved'))")
+    order, oargs = "COALESCE(u.blocked,0) ASC, " + txn + " DESC, u.id DESC", []
     if q:
-        order, oargs = "(CASE WHEN u.member_id=? OR u.phone=? OR u.referral_code=? THEN 0 ELSE 1 END), u.id DESC", [q, q, q.upper()]
+        order = "COALESCE(u.blocked,0) ASC, (CASE WHEN u.member_id=? OR u.phone=? OR u.referral_code=? THEN 0 ELSE 1 END), " + txn + " DESC, u.id DESC"
+        oargs = [q, q, q.upper()]
     p = min(max(p, 1), 500)
-    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.commission,u.blocked,u.created,"
+    rows = qa("SELECT u.id,u.name,u.phone,u.member_id,u.balance,u.commission,u.blocked,u.created,u.removed_at,"
+              + txn + " tx_ok,"
               "(SELECT COUNT(*) FROM requests r WHERE r.user_id=u.id AND r.status IN ('pending','submitted','review')) open_req "
               "FROM users u WHERE " + " AND ".join(where) + " ORDER BY " + order + " LIMIT ? OFFSET ?",
               args + oargs + [per + 1, (p - 1) * per])
@@ -3031,7 +3050,7 @@ def admin_user(i):
     byrow = q1("SELECT created,status FROM referrals WHERE referred_id=?", (i,)) if (x["referred_by"] and can_ref) else None
     return page(DESK_STYLE + """<div id="uprof">
 <div class="card" style="margin-bottom:10px"><div class="row" style="align-items:center;gap:8px"><h2 style="margin:0;min-width:0;overflow-wrap:anywhere">{{x['name']}}</h2>
-<span class="pill {{'rejected' if x['blocked'] else 'approved'}}" style="flex:0;white-space:nowrap">{{'ব্লকড' if x['blocked'] else 'সক্রিয়'}}</span></div>
+<span class="pill {{'rejected' if x['blocked'] else 'approved'}}" style="flex:0;white-space:nowrap">{{'আর্কাইভড' if x['removed_at'] else ('ব্লকড' if x['blocked'] else 'সক্রিয়')}}</span></div>
 <div class="k" style="margin-top:4px">Member ID <b>#{{x['member_id']}}</b> · <a href="tel:{{x['phone']}}"><b>📱 {{x['phone']}}</b></a></div>
 <div class="k">ওয়ালেট ব্যালেন্স</div><div class="pf-bal">৳ {{money(x['balance'])}}</div>
 <div class="k">যোগদান: {{(x['created'] or '-')[:16]}} · সর্বশেষ লগইন: {{x['last_login'] or '-'}} · রেফারেল কোড: {{x['referral_code']}}</div>
@@ -3056,8 +3075,9 @@ def admin_user(i):
 {% if open_reqs %}{% set lst=open_reqs %}""" + REQ_ROWS_TPL + """{% else %}<div class="k">এই ইউজারের কোনো খোলা (pending / submitted / review) রিকোয়েস্ট নেই।</div>{% endif %}</div>{% endif %}
 {% if can('users_manage') %}<details class="dt"><summary>🔒 ব্লক / পাসওয়ার্ড রিসেট কোড</summary><div class="inn"><form method="post" action="/admin/users/{{x['id']}}/block" data-confirm="নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <input type="hidden" name="act" value="{{'unblock' if x['blocked'] else 'block'}}"><label>{{'আনব্লকের নোট (ঐচ্ছিক)' if x['blocked'] else 'ব্লকের কারণ (আবশ্যক)'}}</label><input name="reason" maxlength="200" {{'' if x['blocked'] else 'required'}}>
-<button class="btn {{'g' if x['blocked'] else 'r'}}" style="width:100%">{{'🔓 আনব্লক' if x['blocked'] else '🔒 ব্লক'}}</button></form>
-<form method="post" action="/admin/users/{{x['id']}}/resetcode" data-confirm="নতুন রিসেট কোড তৈরি করবেন?" style="margin-top:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn s" style="width:100%">পাসওয়ার্ড রিসেট কোড</button></form></div></details>{% endif %}
+<button class="btn {{'g' if x['blocked'] else 'r'}}" style="width:100%">{{('♻ রিস্টোর' if x['removed_at'] else '🔓 আনব্লক') if x['blocked'] else '🔒 ব্লক'}}</button></form>
+<form method="post" action="/admin/users/{{x['id']}}/resetcode" data-confirm="নতুন রিসেট কোড তৈরি করবেন?" style="margin-top:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn s" style="width:100%">পাসওয়ার্ড রিসেট কোড</button></form></div></details>
+{% if not x['removed_at'] %}<div style="text-align:center;margin:-2px 0 12px"><button type="button" class="k" data-do="remove" data-u="/admin/users/{{x['id']}}/remove" data-c="r" data-t="🗑 অ্যাকাউন্ট রিমুভ" data-need="1" data-m="অ্যাকাউন্টটি আর্কাইভ হবে ও লগইন বন্ধ হবে। সব লেনদেন, ওয়ালেট ও লেজার রেকর্ড অক্ষত থাকবে। ব্যালেন্স ০ না হলে বা খোলা রিকোয়েস্ট থাকলে রিমুভ হবে না। পরে আনব্লক করলে রিস্টোর হবে।" style="background:none;border:0;box-shadow:none;color:#b91c1c;font-size:12.5px;text-decoration:underline;padding:6px;width:auto;cursor:pointer">🗑 অ্যাকাউন্ট রিমুভ</button></div>{% endif %}{% endif %}
 {% if can('rates') %}<details class="dt"><summary>💸 কমিশন রেট — কার্যকর {{eff|pct}}%</summary><div class="inn"><form method="post" action="/admin/commission/rate" data-confirm="কমিশন রেট বদলাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="idem" value="{{ridem}}"><input type="hidden" name="scope" value="user"><input type="hidden" name="uid" value="{{x['id']}}">
 <div class="k">কার্যকর রেট: <b>{{eff|pct}}%</b> {% if x['comm_rate'] is not none %}(ইউজার-নির্দিষ্ট){% else %}(গ্লোবাল){% endif %} · সর্বোচ্চ {{rmax}}%</div>
 <select name="op"><option value="set">সেট করুন</option><option value="inc">বাড়ান (+)</option><option value="dec">কমান (−)</option><option value="reset">গ্লোবালে ফিরুন</option></select>
@@ -3144,11 +3164,39 @@ def admin_block(i):
         if cur.rowcount == 1:
             audit("block" if want else "unblock", "user#%d %s" % (i, reason))
             if not want:
+                db().execute("UPDATE users SET removed_at=NULL WHERE id=?", (i,))
                 notify(i, "অ্যাকাউন্ট চালু হয়েছে", "আপনার অ্যাকাউন্ট আবার চালু করা হয়েছে।", None, "Account reactivated", "Your account has been reactivated.")
             flash("ইউজার ব্লক করা হয়েছে।" if want else "ইউজার আনব্লক করা হয়েছে।")
         else:
             flash("অবস্থা আগেই বদলে গেছে — কিছু পরিবর্তন হয়নি।")
     return redirect("/admin/users/%d" % i)
+
+
+@app.route("/admin/users/<int:i>/remove", methods=["POST"])
+@staff_required("users_manage")
+def admin_user_remove(i):
+    """Soft-remove (archive): login disabled, hidden from the default list; ALL tx / ledger / wallet records stay untouched."""
+    reason = (request.form.get("reason") or request.form.get("note") or "").strip()[:200]
+    if len(reason) < 3:
+        err("রিমুভের কারণ লিখুন (কমপক্ষে ৩ অক্ষর)।"); return redirect("/admin/users/%d" % i)
+    with atomic():
+        x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (i,))
+        if not x:
+            abort(404)
+        if x["removed_at"]:
+            flash("অ্যাকাউন্ট আগেই রিমুভ (আর্কাইভ) করা হয়েছে।"); return redirect("/admin/users/%d" % i)
+        if abs(float(x["balance"] or 0)) > 0.004:
+            err("ওয়ালেট ব্যালেন্স ০ না হলে অ্যাকাউন্ট রিমুভ করা যায় না।"); return redirect("/admin/users/%d" % i)
+        if q1("SELECT 1 FROM requests WHERE user_id=? AND status IN ('pending','submitted','review')", (i,)) or \
+           q1("SELECT 1 FROM tx WHERE user_id=? AND status IN ('pending','submitted','review')", (i,)):
+            err("খোলা রিকোয়েস্ট/লেনদেন থাকলে অ্যাকাউন্ট রিমুভ করা যায় না। আগে সেগুলো নিষ্পত্তি করুন।"); return redirect("/admin/users/%d" % i)
+        ts = now()
+        cur = db().execute("UPDATE users SET blocked=1, blocked_reason=?, blocked_at=?, removed_at=?, session_ver=session_ver+1 "
+                           "WHERE id=? AND is_admin=0 AND removed_at IS NULL", ("Account removed: " + reason, ts, ts, i))
+        if cur.rowcount == 1:
+            audit("user_remove", "user#%d member=#%s reason=%s at=%s" % (i, x["member_id"], reason, ts))
+            flash("অ্যাকাউন্ট রিমুভ (আর্কাইভ) করা হয়েছে। সব আর্থিক রেকর্ড সংরক্ষিত আছে।")
+    return redirect("/admin/users")
 
 
 @app.route("/admin/users/<int:i>/notice", methods=["POST"])
