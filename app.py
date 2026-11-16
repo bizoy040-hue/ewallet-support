@@ -1250,10 +1250,12 @@ document.addEventListener('submit',function(e){var f=e.target,c=f.dataset.confir
  ldShow();
  setTimeout(function(){f.querySelectorAll('button').forEach(function(b){b.style.minWidth=b.offsetWidth+'px';b.disabled=true;b.dataset.h=b.innerHTML;b.innerHTML='<span class="sp"></span>'})},0);});
 window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document.querySelectorAll('button[data-h]').forEach(function(b){b.disabled=false;b.innerHTML=b.dataset.h;b.removeAttribute('data-h')})}});
+window.addEventListener('pageshow',function(){window._hardNav=0;ldHide()});
+document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[data-hard]');if(!a)return;if(window._hardNav){e.preventDefault();return}window._hardNav=1;ldShow();setTimeout(function(){window._hardNav=0},8000)});
 (function(){var seq=0,SKIPS=['/login','/signup','/forgot','/static','/shot','/lang','/logout','/manifest.json','/service-worker.js','/assets','/healthz','/admin/backup'];
  function skip(p){return SKIPS.some(function(x){return p===x||p.indexOf(x+'/')===0})}
  function ok(a,e){if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return false;
-  if(a.target&&a.target!=='_self'||a.hasAttribute('download')||a.dataset.copy!==undefined||a.dataset.share!==undefined)return false;
+  if(a.target&&a.target!=='_self'||a.hasAttribute('download')||a.dataset.copy!==undefined||a.dataset.share!==undefined||a.dataset.hard!==undefined)return false;
   var u;try{u=new URL(a.href,location.href)}catch(x){return false}
   if(u.origin!==location.origin||skip(u.pathname))return false;
   if(u.pathname===location.pathname&&u.search===location.search&&u.hash)return false;return u}
@@ -2799,7 +2801,7 @@ PAGER = """{% if pg and pg.pages>1 %}<div class="row" style="justify-content:spa
 
 # ================================================================ Admin Desk: fast user search + user hub (no schema change)
 METHOD_COLOR = {"bKash": "#E2136E", "Nagad": "#F6921E", "Rocket": "#8C3494"}
-USER_FILTERS = (("all", "সব"), ("active", "সক্রিয়"), ("blocked", "ব্লকড"), ("archived", "আর্কাইভড"), ("funded", "ব্যালেন্স আছে"),
+USER_FILTERS = (("all", "সব"), ("active", "সক্রিয়"), ("blocked", "ব্লকড"), ("funded", "ব্যালেন্স আছে"), ("archived", "আর্কাইভড"),
                 ("new", "নতুন (৭ দিন)"), ("openreq", "খোলা রিকোয়েস্ট"), ("kyc", "KYC অপেক্ষমাণ"))
 REQ_DEP_SQL = "(COALESCE(r.flow,'')='client_confirm' OR (COALESCE(r.flow,'')='' AND r.kind='deposit'))"   # alias r = requests
 SEARCH_PER = 20
@@ -2868,7 +2870,7 @@ details.dt .inn{padding-bottom:12px}
 </style>"""
 
 USER_ROWS_TPL = """{% if not rows and p==1 %}<div class="card empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}
-{% for x in rows %}<div class="uc{{' blocked' if x['blocked']}}"><a class="uc-main" href="/admin/users/{{x['id']}}"><div class="uc-t"><b>{{x['name']}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'আর্কাইভড' if x['removed_at'] else ('ব্লকড' if x['blocked'] else 'সক্রিয়')}}</span></div>
+{% for x in rows %}<div class="uc{{' blocked' if x['blocked']}}"><a class="uc-main" data-hard href="/admin/users/{{x['id']}}"><div class="uc-t"><b>{{x['name']}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'আর্কাইভড' if x['removed_at'] else ('ব্লকড' if x['blocked'] else 'সক্রিয়')}}</span></div>
 <div class="uc-m">#{{x['member_id']}} · 📱 {{x['phone']}} · ✅ {{x['tx_ok']}} সফল লেনদেন</div>
 <div class="uc-b"><span>ব্যালেন্স <b>৳ {{money(x['balance'])}}</b></span>{% if can('requests') and x['open_req'] %}<span class="uc-o">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</span>{% endif %}</div></a>
 </div>{% endfor %}
