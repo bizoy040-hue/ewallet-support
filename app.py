@@ -1423,28 +1423,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <a class="{{'on' if active=='/vip'}}" href="/vip"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg></i>VIP<span class="bd2" data-bd="/vip"{% if not nb('/vip') %} hidden{% endif %}>{{nb('/vip')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="d" x="4" y="13" width="4" height="7" rx="1"/><rect class="d" x="10" y="9" width="4" height="11" rx="1"/><rect class="d" x="16" y="4" width="4" height="16" rx="1"/></svg></i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
 <a class="{{'on' if active=='/account'}}" href="/account"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="8" r="4"/><path class="d" d="M4.5 20.5a7.5 7.5 0 0 1 15 0z"/></svg></i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
-{% if popups %}<style>
-.pn-ov{position:fixed;inset:0;z-index:1000;background:rgba(8,16,40,.62);display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch}
-.pn-box{position:relative;width:100%;max-width:460px;max-height:88vh;max-height:88dvh;overflow-y:auto;border-radius:24px;color:#fff;padding:26px 22px 22px;background:linear-gradient(140deg,#7C3AED 0%,#2563EB 52%,#06B6D4 100%);box-shadow:0 24px 60px -12px rgba(30,20,120,.65);animation:pnIn .28s ease-out both}
-@keyframes pnIn{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
-.pn-x{position:absolute;top:10px;right:10px;width:38px;height:38px;border-radius:99px;border:0;background:rgba(255,255,255,.28);color:#fff;font-size:24px;line-height:1;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:none}
-.pn-x:hover{background:rgba(255,255,255,.42)}
-.pn-ic{font-size:34px;line-height:1;margin-bottom:8px}
-.pn-i+.pn-i{margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.3)}
-.pn-t{font-size:20px;font-weight:700;line-height:1.3;margin:0 36px 8px 0;overflow-wrap:anywhere}
-.pn-b{font-size:15.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:#F4F8FF}
-.pn-ok{margin-top:18px;width:100%;background:#fff;color:#5B21B6;border-radius:14px;box-shadow:none}
-@media(max-width:420px){.pn-box{padding:22px 16px 18px;border-radius:20px}.pn-t{font-size:18px}}
-</style>
-<div class="pn-ov" id="pnov" role="dialog" aria-modal="true" aria-label="Notice"><div class="pn-box"><button type="button" class="pn-x" id="pnx" aria-label="Close">&times;</button>
-<div class="pn-ic">📢</div>{% for p in popups %}<div class="pn-i"><h3 class="pn-t">{{p['title']}}</h3><div class="pn-b">{{p['body']}}</div></div>{% endfor %}
-<button type="button" class="pn-ok" id="pnok">OK</button></div></div>
-<script>(function(){var o=document.getElementById('pnov');if(!o)return;var done=false;
-function close(){if(done)return;done=true;o.remove();try{var d=new FormData();d.append('_csrf','{{csrf_token}}');d.append('ids','{{popups|map(attribute="id")|join(",")}}');
-fetch('/popup/dismiss',{method:'POST',body:d,credentials:'same-origin',headers:{'X-CSRF':'{{csrf_token}}'}}).catch(function(){})}catch(e){}}
-document.getElementById('pnx').onclick=close;document.getElementById('pnok').onclick=close;
-o.addEventListener('click',function(e){if(e.target===o)close()});document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script>{% endif %}
-<script src="/assets/app.js?v={{av}}"></script></body></html>"""
+<!--PN--><script src="/assets/app.js?v={{av}}"></script></body></html>"""
 
 AUTH_CSS = """
 body.auth{background:#1668D0;padding-bottom:0;min-height:100vh;min-height:100dvh;overflow-x:hidden;color:var(--tx)}
@@ -1567,6 +1546,32 @@ def render_str(src, **ctx):
     return _tpl(src).render(ctx)
 
 
+POPUP_TPL = """<style>
+.pn-ov{position:fixed;inset:0;z-index:1000;background:rgba(20,16,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;animation:pnFd .18s ease-out both}
+.pn-ov.pn-out{opacity:0;transition:opacity .15s ease}
+.pn-box{position:relative;width:100%;max-width:460px;max-height:88vh;max-height:88dvh;overflow-y:auto;border-radius:22px;color:#000;padding:26px 22px 22px;background:#FFF8D6;border:1px solid #F1E3A0;box-shadow:0 20px 50px -14px rgba(90,70,0,.45);animation:pnIn .22s ease-out both}
+@keyframes pnIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes pnFd{from{opacity:0}to{opacity:1}}
+.pn-x{position:absolute;top:10px;right:10px;width:38px;height:38px;border-radius:99px;border:0;background:rgba(0,0,0,.08);color:#000;font-size:24px;line-height:1;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:none}
+.pn-x:hover{background:rgba(0,0,0,.16)}
+.pn-ic{font-size:32px;line-height:1;margin-bottom:8px}
+.pn-i+.pn-i{margin-top:16px;padding-top:16px;border-top:1px solid #E6D58A}
+.pn-t{font-size:20px;font-weight:700;line-height:1.3;margin:0 36px 8px 0;overflow-wrap:anywhere;color:#000}
+.pn-b{font-size:15.5px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;color:#000}
+.pn-ok{margin-top:18px;width:100%;background:#000;color:#FFF8D6;border-radius:14px;box-shadow:none}
+@media(max-width:420px){.pn-box{padding:22px 16px 18px;border-radius:18px}.pn-t{font-size:18px}}
+</style>
+<div class="pn-ov" id="pnov" role="dialog" aria-modal="true" aria-label="Notice"><div class="pn-box"><button type="button" class="pn-x" id="pnx" aria-label="Close">&times;</button>
+<div class="pn-ic">📢</div>{% for p in popups %}<div class="pn-i">{% if p['title'] %}<h3 class="pn-t">{{p['title']}}</h3>{% endif %}<div class="pn-b">{{p['body']}}</div></div>{% endfor %}
+<button type="button" class="pn-ok" id="pnok">OK</button></div></div>
+<script>(function(){var o=document.getElementById('pnov');if(!o)return;var done=false;
+function close(){if(done)return;done=true;try{var d=new FormData();d.append('_csrf','{{csrf_token}}');d.append('ids','{{ids}}');
+fetch('/popup/dismiss',{method:'POST',body:d,credentials:'same-origin',keepalive:true,headers:{'X-CSRF':'{{csrf_token}}'}}).catch(function(){})}catch(e){}
+o.classList.add('pn-out');setTimeout(function(){if(o.parentNode)o.parentNode.removeChild(o)},150)}
+document.getElementById('pnx').onclick=close;document.getElementById('pnok').onclick=close;
+o.addEventListener('click',function(e){if(e.target===o)close()});document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script>"""
+
+
 def page(tpl, active="", foot="", authpage=False, **ctx):
     from flask import get_flashed_messages
     msgs = get_flashed_messages(with_categories=True)
@@ -1579,9 +1584,12 @@ def page(tpl, active="", foot="", authpage=False, **ctx):
     html = render_str(BASE, body=body, av=ASSET_V, msgs=msgs, active=active, foot=foot, authpage=authpage,
                                   fab=bool(u and not u["is_admin"] and active == "/"), lang=lang, nxt=request.path,
                                   fab_href=tgu or "/support", fab_tg=bool(tgu), fab_label=tg_label() if tgu else ("Support" if lang == "en" else "সাপোর্ট"),
-                                  dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"), popups=popup_pending(u))
+                                  dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"))
     html = to_bdt(html)
-    return tr(html) if lang == "en" else html
+    if lang == "en":
+        html = tr(html)
+    pops = popup_pending(u)  # inserted AFTER the display transforms so the admin's text is shown exactly as written
+    return html.replace("<!--PN-->", render_str(POPUP_TPL, popups=pops, csrf_token=csrf(), ids=",".join("%s:%d" % (x["id"], x["n"]) for x in pops)) if pops else "", 1)
 
 
 def err(m):
@@ -3127,11 +3135,9 @@ def admin_user(i):
 <form method="post" action="/admin/users/{{x['id']}}/vip-grant" data-confirm="এই ইউজারকে Diamond VIP দেবেন? কোনো শর্ত যাচাই হবে না এবং এটি স্থায়ী।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="diamond"><button style="width:100%">💎 Grant Diamond VIP</button></form></div></details>{% endif %}
 {% if can('notices') %}<details class="dt"><summary>📌 ব্যক্তিগত নোটিশ / নির্দেশনা</summary><div class="inn"><form method="post" action="/admin/users/{{x['id']}}/notice" data-confirm="ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <select name="kind"><option value="notice">📌 নোটিশ</option><option value="instruction">📋 নির্দেশনা</option></select>
-<label>শিরোনাম (বাংলা)</label><input name="title_bn" required maxlength="80"><label>বার্তা (বাংলা)</label><textarea name="body_bn" required rows="3" maxlength="1000"></textarea>
-<label>Title (English, optional)</label><input name="title_en" maxlength="80"><label>Message (English, optional)</label><textarea name="body_en" rows="3" maxlength="1000"></textarea>
+<label>শিরোনাম</label><input name="title_bn" required maxlength="80"><label>বার্তা (বাংলা / English / মিশ্র — যেভাবে লিখবেন সেভাবেই দেখাবে)</label><textarea name="body_bn" required rows="5" maxlength="1000"></textarea>
 <button style="width:100%">পাঠান</button></form>
-{% if main_admin and pops %}<h4 style="margin:14px 0 6px">🔔 লগইন পপ-আপ নোটিশ</h4>{% for e in pops|reverse %}<div class="row" style="align-items:center;margin-bottom:8px;gap:8px"><div style="flex:1;min-width:0"><b>{{e['t']}}</b><div class="k">{{(e['ts'] or '')[:16]}} · {{'সক্রিয়' if e['on'] else 'নিষ্ক্রিয়'}}{% if e['seen'] %} · ইউজার বন্ধ করেছেন{% endif %}</div></div>
-<form method="post" action="/admin/users/{{x['id']}}/popup/{{e['id']}}/toggle" style="flex:0"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm">{{'নিষ্ক্রিয় করুন' if e['on'] else 'সক্রিয় করুন'}}</button></form></div>{% endfor %}{% endif %}</div></details>{% endif %}
+</div></details>{% endif %}
 {% if can('notices') or can('requests') %}<details class="dt"><summary>⚠ সতর্কবার্তা (Warning)</summary><div class="inn"><form method="post" action="/admin/warnings/new" data-confirm="সতর্কবার্তা ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" value="{{x['id']}}"><input type="hidden" name="next" value="/admin/users/{{x['id']}}">
 <textarea name="message" rows="3" required minlength="5" maxlength="500" placeholder="যেমন: Repeated cancellation of requests may result in temporary transaction restrictions."></textarea>
 <div class="k" style="margin-bottom:6px">ইউজার নোটিফিকেশন ও অনুরোধ পেজে দেখবেন। শুধু সতর্কবার্তায় কোনো লেনদেন সীমাবদ্ধ হয় না — ব্লক করতে আলাদা অ্যাকশন লাগে।</div><button style="width:100%">⚠ সতর্কবার্তা পাঠান</button></form></div></details>{% endif %}
@@ -3183,7 +3189,7 @@ show(location.hash.slice(1),false)})()</script>""" + ACT_MODAL,
                 open_reqs=open_reqs, a2u_reqs=a2u_reqs, u2a_reqs=u2a_reqs, acts=_user_activity(i), labels=REQ_LABEL,
                 ra=req_actions, rbtn=RQ_BTN, rnote=req_note, tnote=tx_note, txl=TX_LABEL, kinds=REQ_KIND, txacts=ACTIONS,
                 eff=effective_rate(x), rmax=rate_cfg()[1], ridem=secrets.token_hex(8),
-                main_admin=is_main_admin(), pops=_popup_load(i) if is_main_admin() else [])
+                main_admin=is_main_admin())
 
 
 @app.route("/admin/users/<int:i>/block", methods=["POST"])
@@ -3263,16 +3269,22 @@ def _popup_save(uid, lst):
     db().execute("INSERT OR REPLACE INTO meta VALUES(?,?)", ("popup:%d" % uid, _json.dumps(lst[-POPUP_MAX:], ensure_ascii=False)))
 
 
+def _popup_count(e):
+    """Times this user has dismissed the notice (legacy entries dismissed once under the old rule count as finished)."""
+    try:
+        return int(e["n"]) if "n" in e else (2 if e.get("seen") else 0)
+    except (TypeError, ValueError):
+        return 2
+
+
 def popup_pending(u):
-    """Active, not-yet-dismissed personal notices of the signed-in customer (own id only), checked on every page load."""
+    """Personal notices of the signed-in customer (own id only) that were dismissed fewer than twice; checked on every page load."""
     if not u or u["is_admin"]:
         return []
-    en = cur_lang() == "en"
     out = []
     for e in _popup_load(u["id"]):
-        if e.get("on") and not e.get("seen") and POPUP_ID_RE.fullmatch(str(e.get("id", ""))):
-            out.append(dict(id=e["id"], title=(e.get("te") if en and e.get("te") else e.get("t", "")),
-                            body=(e.get("be") if en and e.get("be") else e.get("b", ""))))
+        if e.get("on") is not False and _popup_count(e) < 2 and POPUP_ID_RE.fullmatch(str(e.get("id", ""))):
+            out.append(dict(id=e["id"], n=_popup_count(e), title=e.get("t", ""), body=e.get("b", "")))
     return out[-5:]
 
 
@@ -3280,33 +3292,24 @@ def popup_pending(u):
 @customer_required
 def popup_dismiss():
     u = me()
-    ids = {x for x in request.form.get("ids", "").split(",") if POPUP_ID_RE.fullmatch(x)}
-    with atomic():
-        lst, ch = _popup_load(u["id"]), False
-        for e in lst:
-            if e.get("id") in ids and not e.get("seen"):
-                e["seen"] = now(); ch = True
-        if ch:
-            _popup_save(u["id"], lst)
+    seen = {}
+    for x in request.form.get("ids", "").split(","):
+        m = re.fullmatch(r"([0-9a-f]{12}):([01])", x)
+        if m:
+            seen[m.group(1)] = int(m.group(2))
+    if seen:
+        with atomic():
+            lst, ch = _popup_load(u["id"]), False
+            for e in lst:
+                # count only if it still matches what the user was shown -> a double click / second tab cannot burn both showings
+                if e.get("id") in seen and _popup_count(e) == seen[e["id"]]:
+                    e["n"] = seen[e["id"]] + 1
+                    if e["n"] >= 2:
+                        e["seen"] = e.get("seen") or now()
+                    ch = True
+            if ch:
+                _popup_save(u["id"], lst)
     return ("", 204)
-
-
-@app.route("/admin/users/<int:i>/popup/<pid>/toggle", methods=["POST"])
-@staff_required()
-def admin_popup_toggle(i, pid):
-    a = me()
-    if not is_main_admin(a) or not POPUP_ID_RE.fullmatch(pid):
-        abort(403)
-    with atomic():
-        lst = _popup_load(i)
-        e = next((x for x in lst if x.get("id") == pid), None)
-        if not e:
-            abort(404)
-        e["on"] = not e.get("on")
-        _popup_save(i, lst)
-        audit("popup_toggle", "user#%d popup=%s active=%s" % (i, pid, int(bool(e["on"]))))
-    flash("পপ-আপ নোটিশ %s করা হয়েছে।" % ("চালু" if e["on"] else "বন্ধ"))
-    return redirect("/admin/users/%d" % i)
 
 
 @app.route("/admin/users/<int:i>/vip-grant", methods=["POST"])
@@ -3347,19 +3350,18 @@ def admin_vip_grant(i):
 def admin_user_notice(i):
     f = request.form
     kind = "instruction" if f.get("kind") == "instruction" else "notice"
-    tb, bb = f.get("title_bn", "").strip()[:80], f.get("body_bn", "").strip()[:1000]
-    te, be = f.get("title_en", "").strip()[:80], f.get("body_en", "").strip()[:1000]
+    tb, bb = f.get("title_bn", "").strip()[:80], f.get("body_bn", "").replace("\r\n", "\n").strip()[:1000]
     if not q1("SELECT 1 FROM users WHERE id=? AND is_admin=0", (i,)):
         abort(404)
     if not tb or not bb:
         err("বাংলা শিরোনাম ও বার্তা দিন।"); return redirect("/admin/users/%d" % i)
     pre = "📋 " if kind == "instruction" else "📌 "
     with atomic():
-        notify(i, pre + tb, bb, None, (pre + te) if te else None, be or None)
+        notify(i, pre + tb, bb, None, None, None)
         audit("personal_notice", "user#%d %s %s" % (i, kind, tb))
         if is_main_admin():  # login pop-up only for notices sent by the Main Admin
             lst = _popup_load(i)
-            lst.append(dict(id=secrets.token_hex(6), t=pre + tb, b=bb, te=(pre + te) if te else "", be=be, on=True, seen=None, ts=now()))
+            lst.append(dict(id=secrets.token_hex(6), t=tb, b=bb, on=True, n=0, seen=None, ts=now()))
             _popup_save(i, lst)
     flash("ব্যক্তিগত %s পাঠানো হয়েছে।" % ("নির্দেশনা" if kind == "instruction" else "নোটিশ"))
     return redirect("/admin/users/%d" % i)
