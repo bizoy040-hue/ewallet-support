@@ -2053,7 +2053,6 @@ def login():
         if ok:
             session.clear(); session.permanent = True
             session["uid"], session["sv"] = u["id"], u["session_ver"]
-            session["popup"] = 1  # show active personal notices once after this successful login
             db().execute("UPDATE users SET last_login=? WHERE id=?", (now(), u["id"]))
             return redirect("/")
         err("নম্বর/পাসওয়ার্ড ভুল অথবা অ্যাকাউন্ট ব্লকড/নিষ্ক্রিয়।"); return redirect("/login")
@@ -3265,8 +3264,8 @@ def _popup_save(uid, lst):
 
 
 def popup_pending(u):
-    """Active, not-yet-dismissed personal notices of the signed-in customer (own id only) - only right after a login."""
-    if not u or u["is_admin"] or not session.get("popup"):
+    """Active, not-yet-dismissed personal notices of the signed-in customer (own id only), checked on every page load."""
+    if not u or u["is_admin"]:
         return []
     en = cur_lang() == "en"
     out = []
@@ -3289,7 +3288,6 @@ def popup_dismiss():
                 e["seen"] = now(); ch = True
         if ch:
             _popup_save(u["id"], lst)
-    session.pop("popup", None)
     return ("", 204)
 
 
