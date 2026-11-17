@@ -1423,6 +1423,27 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <a class="{{'on' if active=='/vip'}}" href="/vip"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg></i>VIP<span class="bd2" data-bd="/vip"{% if not nb('/vip') %} hidden{% endif %}>{{nb('/vip')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="d" x="4" y="13" width="4" height="7" rx="1"/><rect class="d" x="10" y="9" width="4" height="11" rx="1"/><rect class="d" x="16" y="4" width="4" height="16" rx="1"/></svg></i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
 <a class="{{'on' if active=='/account'}}" href="/account"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="8" r="4"/><path class="d" d="M4.5 20.5a7.5 7.5 0 0 1 15 0z"/></svg></i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
+{% if popups %}<style>
+.pn-ov{position:fixed;inset:0;z-index:1000;background:rgba(8,16,40,.62);display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.pn-box{position:relative;width:100%;max-width:460px;max-height:88vh;max-height:88dvh;overflow-y:auto;border-radius:24px;color:#fff;padding:26px 22px 22px;background:linear-gradient(140deg,#7C3AED 0%,#2563EB 52%,#06B6D4 100%);box-shadow:0 24px 60px -12px rgba(30,20,120,.65);animation:pnIn .28s ease-out both}
+@keyframes pnIn{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+.pn-x{position:absolute;top:10px;right:10px;width:38px;height:38px;border-radius:99px;border:0;background:rgba(255,255,255,.28);color:#fff;font-size:24px;line-height:1;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;box-shadow:none}
+.pn-x:hover{background:rgba(255,255,255,.42)}
+.pn-ic{font-size:34px;line-height:1;margin-bottom:8px}
+.pn-i+.pn-i{margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,.3)}
+.pn-t{font-size:20px;font-weight:700;line-height:1.3;margin:0 36px 8px 0;overflow-wrap:anywhere}
+.pn-b{font-size:15.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:#F4F8FF}
+.pn-ok{margin-top:18px;width:100%;background:#fff;color:#5B21B6;border-radius:14px;box-shadow:none}
+@media(max-width:420px){.pn-box{padding:22px 16px 18px;border-radius:20px}.pn-t{font-size:18px}}
+</style>
+<div class="pn-ov" id="pnov" role="dialog" aria-modal="true" aria-label="Notice"><div class="pn-box"><button type="button" class="pn-x" id="pnx" aria-label="Close">&times;</button>
+<div class="pn-ic">📢</div>{% for p in popups %}<div class="pn-i"><h3 class="pn-t">{{p['title']}}</h3><div class="pn-b">{{p['body']}}</div></div>{% endfor %}
+<button type="button" class="pn-ok" id="pnok">OK</button></div></div>
+<script>(function(){var o=document.getElementById('pnov');if(!o)return;var done=false;
+function close(){if(done)return;done=true;o.remove();try{var d=new FormData();d.append('_csrf','{{csrf_token}}');d.append('ids','{{popups|map(attribute="id")|join(",")}}');
+fetch('/popup/dismiss',{method:'POST',body:d,credentials:'same-origin',headers:{'X-CSRF':'{{csrf_token}}'}}).catch(function(){})}catch(e){}}
+document.getElementById('pnx').onclick=close;document.getElementById('pnok').onclick=close;
+o.addEventListener('click',function(e){if(e.target===o)close()});document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script>{% endif %}
 <script src="/assets/app.js?v={{av}}"></script></body></html>"""
 
 AUTH_CSS = """
@@ -1558,7 +1579,7 @@ def page(tpl, active="", foot="", authpage=False, **ctx):
     html = render_str(BASE, body=body, av=ASSET_V, msgs=msgs, active=active, foot=foot, authpage=authpage,
                                   fab=bool(u and not u["is_admin"] and active == "/"), lang=lang, nxt=request.path,
                                   fab_href=tgu or "/support", fab_tg=bool(tgu), fab_label=tg_label() if tgu else ("Support" if lang == "en" else "সাপোর্ট"),
-                                  dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"))
+                                  dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"), popups=popup_pending(u))
     html = to_bdt(html)
     return tr(html) if lang == "en" else html
 
@@ -2032,6 +2053,7 @@ def login():
         if ok:
             session.clear(); session.permanent = True
             session["uid"], session["sv"] = u["id"], u["session_ver"]
+            session["popup"] = 1  # show active personal notices once after this successful login
             db().execute("UPDATE users SET last_login=? WHERE id=?", (now(), u["id"]))
             return redirect("/")
         err("নম্বর/পাসওয়ার্ড ভুল অথবা অ্যাকাউন্ট ব্লকড/নিষ্ক্রিয়।"); return redirect("/login")
@@ -2501,7 +2523,7 @@ def support():
     return page("""<div class="card"><h2>সাপোর্ট</h2>{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
 <form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>বিষয়</label><input name="subject" required maxlength="100">
 <label>বার্তা</label><textarea name="message" rows="3" required maxlength="1000"></textarea><button style="width:100%">টিকিট জমা দিন</button></form></div>
-{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
+{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{'open' if t['status']=='passed' else t['status']}}</span>
 <div>{{t['message']}}</div>{% if t['reply'] %}<div class="k" style="margin-top:8px">↳ সাপোর্ট: {{t['reply']}}</div>{% endif %}</div>{% endfor %}""", active="/account", rows=rows)
 
 
@@ -3101,11 +3123,16 @@ def admin_user(i):
 <label>ধরন</label><select name="direction"><option value="credit">➕ ব্যালেন্স যোগ</option><option value="debit">➖ ব্যালেন্স বিয়োগ</option></select>
 <label>পরিমাণ (৳)</label><input name="amount" type="number" step="0.01" min="0.01" required><label>রেফারেন্স (যোগের জন্য আবশ্যক)</label><input name="reference" maxlength="40">
 <label>কারণ (কমপক্ষে ৫ অক্ষর)</label><input name="reason" required minlength="5" maxlength="200"><button style="width:100%">সমন্বয় করুন</button></form></div></details>{% endif %}
+{% if main_admin %}<details class="dt"><summary>👑 VIP ম্যানুয়াল গ্রান্ট (Main Admin) — বর্তমান: {{(x['vip_level'] or 'standard')|title}}</summary><div class="inn"><p class="k">কোনো শর্ত (লেনদেন/রেফারেল/ব্যালেন্স) যাচাই ছাড়াই স্থায়ী VIP দেওয়া হবে। অ্যাডমিন না বদলালে বা বাতিল না করলে এটি থাকবে।</p>
+<form method="post" action="/admin/users/{{x['id']}}/vip-grant" data-confirm="এই ইউজারকে Gold VIP দেবেন? কোনো শর্ত যাচাই হবে না এবং এটি স্থায়ী।" style="margin-bottom:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="gold"><button style="width:100%">🥇 Grant Gold VIP</button></form>
+<form method="post" action="/admin/users/{{x['id']}}/vip-grant" data-confirm="এই ইউজারকে Diamond VIP দেবেন? কোনো শর্ত যাচাই হবে না এবং এটি স্থায়ী।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="diamond"><button style="width:100%">💎 Grant Diamond VIP</button></form></div></details>{% endif %}
 {% if can('notices') %}<details class="dt"><summary>📌 ব্যক্তিগত নোটিশ / নির্দেশনা</summary><div class="inn"><form method="post" action="/admin/users/{{x['id']}}/notice" data-confirm="ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <select name="kind"><option value="notice">📌 নোটিশ</option><option value="instruction">📋 নির্দেশনা</option></select>
 <label>শিরোনাম (বাংলা)</label><input name="title_bn" required maxlength="80"><label>বার্তা (বাংলা)</label><textarea name="body_bn" required rows="3" maxlength="1000"></textarea>
 <label>Title (English, optional)</label><input name="title_en" maxlength="80"><label>Message (English, optional)</label><textarea name="body_en" rows="3" maxlength="1000"></textarea>
-<button style="width:100%">পাঠান</button></form></div></details>{% endif %}
+<button style="width:100%">পাঠান</button></form>
+{% if main_admin and pops %}<h4 style="margin:14px 0 6px">🔔 লগইন পপ-আপ নোটিশ</h4>{% for e in pops|reverse %}<div class="row" style="align-items:center;margin-bottom:8px;gap:8px"><div style="flex:1;min-width:0"><b>{{e['t']}}</b><div class="k">{{(e['ts'] or '')[:16]}} · {{'সক্রিয়' if e['on'] else 'নিষ্ক্রিয়'}}{% if e['seen'] %} · ইউজার বন্ধ করেছেন{% endif %}</div></div>
+<form method="post" action="/admin/users/{{x['id']}}/popup/{{e['id']}}/toggle" style="flex:0"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm">{{'নিষ্ক্রিয় করুন' if e['on'] else 'সক্রিয় করুন'}}</button></form></div>{% endfor %}{% endif %}</div></details>{% endif %}
 {% if can('notices') or can('requests') %}<details class="dt"><summary>⚠ সতর্কবার্তা (Warning)</summary><div class="inn"><form method="post" action="/admin/warnings/new" data-confirm="সতর্কবার্তা ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" value="{{x['id']}}"><input type="hidden" name="next" value="/admin/users/{{x['id']}}">
 <textarea name="message" rows="3" required minlength="5" maxlength="500" placeholder="যেমন: Repeated cancellation of requests may result in temporary transaction restrictions."></textarea>
 <div class="k" style="margin-bottom:6px">ইউজার নোটিফিকেশন ও অনুরোধ পেজে দেখবেন। শুধু সতর্কবার্তায় কোনো লেনদেন সীমাবদ্ধ হয় না — ব্লক করতে আলাদা অ্যাকশন লাগে।</div><button style="width:100%">⚠ সতর্কবার্তা পাঠান</button></form></div></details>{% endif %}
@@ -3156,7 +3183,8 @@ show(location.hash.slice(1),false)})()</script>""" + ACT_MODAL,
                 sm=user_summary(i), idem=secrets.token_hex(8), adj_cap=adjust_cap(me()), pns=pns, pn_logs=pn_logs,
                 open_reqs=open_reqs, a2u_reqs=a2u_reqs, u2a_reqs=u2a_reqs, acts=_user_activity(i), labels=REQ_LABEL,
                 ra=req_actions, rbtn=RQ_BTN, rnote=req_note, tnote=tx_note, txl=TX_LABEL, kinds=REQ_KIND, txacts=ACTIONS,
-                eff=effective_rate(x), rmax=rate_cfg()[1], ridem=secrets.token_hex(8))
+                eff=effective_rate(x), rmax=rate_cfg()[1], ridem=secrets.token_hex(8),
+                main_admin=is_main_admin(), pops=_popup_load(i) if is_main_admin() else [])
 
 
 @app.route("/admin/users/<int:i>/block", methods=["POST"])
@@ -3213,6 +3241,109 @@ def admin_user_remove(i):
     return redirect("/admin/users")
 
 
+def is_main_admin(u=None):
+    u = u or me()
+    return bool(u and u["is_admin"] and u["role"] == "super_admin")
+
+
+# ---- personal-notice login pop-ups: stored in the existing `meta` table (key popup:<user id>, JSON list) - no schema change
+POPUP_MAX = 30
+POPUP_ID_RE = re.compile(r"[0-9a-f]{12}")
+
+
+def _popup_load(uid):
+    r = q1("SELECT v FROM meta WHERE k=?", ("popup:%d" % uid,))
+    try:
+        d = _json.loads(r["v"]) if r else []
+    except Exception:
+        d = []
+    return d if isinstance(d, list) else []
+
+
+def _popup_save(uid, lst):
+    db().execute("INSERT OR REPLACE INTO meta VALUES(?,?)", ("popup:%d" % uid, _json.dumps(lst[-POPUP_MAX:], ensure_ascii=False)))
+
+
+def popup_pending(u):
+    """Active, not-yet-dismissed personal notices of the signed-in customer (own id only) - only right after a login."""
+    if not u or u["is_admin"] or not session.get("popup"):
+        return []
+    en = cur_lang() == "en"
+    out = []
+    for e in _popup_load(u["id"]):
+        if e.get("on") and not e.get("seen") and POPUP_ID_RE.fullmatch(str(e.get("id", ""))):
+            out.append(dict(id=e["id"], title=(e.get("te") if en and e.get("te") else e.get("t", "")),
+                            body=(e.get("be") if en and e.get("be") else e.get("b", ""))))
+    return out[-5:]
+
+
+@app.route("/popup/dismiss", methods=["POST"])
+@customer_required
+def popup_dismiss():
+    u = me()
+    ids = {x for x in request.form.get("ids", "").split(",") if POPUP_ID_RE.fullmatch(x)}
+    with atomic():
+        lst, ch = _popup_load(u["id"]), False
+        for e in lst:
+            if e.get("id") in ids and not e.get("seen"):
+                e["seen"] = now(); ch = True
+        if ch:
+            _popup_save(u["id"], lst)
+    session.pop("popup", None)
+    return ("", 204)
+
+
+@app.route("/admin/users/<int:i>/popup/<pid>/toggle", methods=["POST"])
+@staff_required()
+def admin_popup_toggle(i, pid):
+    a = me()
+    if not is_main_admin(a) or not POPUP_ID_RE.fullmatch(pid):
+        abort(403)
+    with atomic():
+        lst = _popup_load(i)
+        e = next((x for x in lst if x.get("id") == pid), None)
+        if not e:
+            abort(404)
+        e["on"] = not e.get("on")
+        _popup_save(i, lst)
+        audit("popup_toggle", "user#%d popup=%s active=%s" % (i, pid, int(bool(e["on"]))))
+    flash("পপ-আপ নোটিশ %s করা হয়েছে।" % ("চালু" if e["on"] else "বন্ধ"))
+    return redirect("/admin/users/%d" % i)
+
+
+@app.route("/admin/users/<int:i>/vip-grant", methods=["POST"])
+@staff_required()
+def admin_vip_grant(i):
+    a, level = me(), request.form.get("level", "")
+    if not is_main_admin(a):
+        abort(403)
+    if level not in ("gold", "diamond"):
+        abort(400)
+    dest = "/admin/users/%d" % i
+    with atomic():
+        x = q1("SELECT * FROM users WHERE id=? AND is_admin=0", (i,))
+        if not x:
+            abort(404)
+        cur = vip_level_of(x)
+        if cur == level:
+            err("ইউজার আগেই এই VIP লেভেলে আছে।"); return redirect(dest)
+        if VIP_LEVELS[cur]["rank"] > VIP_LEVELS[level]["rank"]:
+            err("ইউজার আরও উচ্চতর লেভেলে আছে। লেভেল কমাতে VIP পেজ ব্যবহার করুন।"); return redirect(dest)
+        L = _vip_set(x, level, "manual grant by Main Admin", a, "grant")
+        for ap in qa("SELECT id,level FROM vip_applications WHERE user_id=? AND status='pending'", (i,)):
+            if VIP_LEVELS[ap["level"]]["rank"] <= VIP_LEVELS[level]["rank"]:  # application is now moot
+                db().execute("DELETE FROM vip_deposit_use WHERE app_id=?", (ap["id"],))
+                db().execute("UPDATE vip_applications SET status='rejected', note=?, admin=?, admin_id=?, decided=? WHERE id=? AND status='pending'",
+                             ("superseded by manual grant", a["member_id"], a["id"], now(), ap["id"]))
+        audit("vip_manual_grant", "admin=%s user#%s member=#%s level=%s rate=%g at=%s" % (a["member_id"], i, x["member_id"], level, L["rate"], now()))
+        notify(i, "VIP অনুমোদিত", "অভিনন্দন! আপনি এখন %s VIP — কমিশন %g%%। এটি স্থায়ী।" % (L["name"], L["rate"]), "/vip",
+               "VIP approved", "Congratulations! You are now %s VIP — %g%% commission. This level is permanent." % (L["name"], L["rate"]))
+        if not q1("SELECT 1 FROM vip_applications WHERE status='pending'"):
+            alerts_done("/admin/vip")
+    flash("%s VIP দেওয়া হয়েছে।" % L["name"])
+    return redirect(dest)
+
+
 @app.route("/admin/users/<int:i>/notice", methods=["POST"])
 @staff_required("notices")
 def admin_user_notice(i):
@@ -3228,6 +3359,10 @@ def admin_user_notice(i):
     with atomic():
         notify(i, pre + tb, bb, None, (pre + te) if te else None, be or None)
         audit("personal_notice", "user#%d %s %s" % (i, kind, tb))
+        if is_main_admin():  # login pop-up only for notices sent by the Main Admin
+            lst = _popup_load(i)
+            lst.append(dict(id=secrets.token_hex(6), t=pre + tb, b=bb, te=(pre + te) if te else "", be=be, on=True, seen=None, ts=now()))
+            _popup_save(i, lst)
     flash("ব্যক্তিগত %s পাঠানো হয়েছে।" % ("নির্দেশনা" if kind == "instruction" else "নোটিশ"))
     return redirect("/admin/users/%d" % i)
 
@@ -3885,6 +4020,36 @@ def admin_ticker():
     return redirect("/admin/notices")
 
 
+@app.route("/admin/tickets/<int:tid>/<act>", methods=["POST"])
+@staff_required("tickets")
+def admin_ticket_pass(tid, act):
+    a = me()
+    if not is_main_admin(a):
+        abort(403)
+    if act not in ("pass", "reopen"):
+        abort(404)
+    with atomic():
+        t = q1("SELECT * FROM tickets WHERE id=?", (tid,))
+        if not t:
+            abort(404)
+        if act == "pass":
+            if t["status"] != "open":
+                err("শুধু খোলা টিকিট পাস করা যায়।"); return redirect("/admin/tickets")
+            db().execute("UPDATE tickets SET status='passed' WHERE id=? AND status='open'", (tid,))
+            audit("ticket_pass", "ticket#%d user#%s" % (tid, t["user_id"]))
+            if not q1("SELECT 1 FROM tickets WHERE status='open'"):
+                alerts_done("/admin/tickets")
+            flash("টিকিট পাস করা হয়েছে। পাস করা টিকিটে দেখা যাবে।")
+            return redirect("/admin/tickets")
+        if t["status"] != "passed":
+            err("এই টিকিট পাস করা নেই।"); return redirect("/admin/tickets?view=passed")
+        db().execute("UPDATE tickets SET status='open' WHERE id=? AND status='passed'", (tid,))
+        audit("ticket_reopen", "ticket#%d user#%s" % (tid, t["user_id"]))
+        alert_admins("সাপোর্ট টিকিট পুনরায় খোলা হয়েছে", "#%s: %s" % (tid, (t["subject"] or "")[:60]), "/admin/tickets", "tickets")
+        flash("টিকিট আবার খোলা হয়েছে।")
+    return redirect("/admin/tickets")
+
+
 @app.route("/admin/tickets", methods=["GET", "POST"])
 @staff_required("tickets")
 def admin_tickets():
@@ -3900,14 +4065,23 @@ def admin_tickets():
                 if not q1("SELECT 1 FROM tickets WHERE status='open'"):
                     alerts_done("/admin/tickets")
         return redirect("/admin/tickets")
+    main = is_main_admin()
+    passed_view = main and request.args.get("view") == "passed"
+    npass = q1("SELECT COUNT(*) s FROM tickets WHERE status='passed'")["s"] if main else 0
     t0 = now()
-    rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
-    _seen_list("/admin/tickets", rows, 50, {"p": 1}, t0)
-    return page("""{% if not rows %}<div class="card empty">কোনো টিকিট নেই</div>{% endif %}{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
+    if passed_view:
+        rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status='passed' ORDER BY t.id DESC LIMIT 100")
+    else:
+        rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status!='passed' ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
+        _seen_list("/admin/tickets", rows, 50, {"p": 1}, t0)
+    return page("""{% if main %}<div class="row" style="margin-bottom:10px"><a class="btn {{'' if not pv else 's'}}" href="/admin/tickets">সক্রিয় টিকিট</a><a class="btn {{'s' if not pv else ''}}" href="/admin/tickets?view=passed">⏭ পাস করা টিকিট ({{npass}})</a></div>{% endif %}
+{% if not rows %}<div class="card empty">{{'কোনো পাস করা টিকিট নেই' if pv else 'কোনো টিকিট নেই'}}</div>{% endif %}{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
 <div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{t['created'][:16]}}</div><div>{{t['message']}}</div>
-{% if t['reply'] %}<div class="k">↳ {{t['reply']}}{% if t['replied_by'] %} — {{t['replied_by']}}{% endif %}</div>{% else %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="id" value="{{t['id']}}">
-<input name="reply" placeholder="উত্তর লিখুন" required maxlength="500"><button class="btn sm">পাঠান</button></form>{% endif %}
-{% if can('users_view') %}<a class="k" href="/admin/users/{{t['user_id']}}">👤 ইউজার দেখুন</a>{% endif %}</div>{% endfor %}""", active="/admin/tickets", rows=rows)
+{% if t['reply'] %}<div class="k">↳ {{t['reply']}}{% if t['replied_by'] %} — {{t['replied_by']}}{% endif %}</div>{% elif t['status']=='open' %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="id" value="{{t['id']}}">
+<input name="reply" placeholder="উত্তর লিখুন" required maxlength="500"><button class="btn sm">পাঠান</button></form>
+{% if main %}<form method="post" action="/admin/tickets/{{t['id']}}/pass" data-confirm="এই টিকিট পাস করবেন? এটি সক্রিয় তালিকা থেকে সরে পাস করা টিকিটে যাবে (মুছবে না)।" style="margin-top:6px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm s">⏭ Pass</button></form>{% endif %}
+{% elif t['status']=='passed' and main %}<form method="post" action="/admin/tickets/{{t['id']}}/reopen" data-confirm="টিকিট আবার খুলবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm">↩ আবার খুলুন</button></form>{% endif %}
+{% if can('users_view') %}<a class="k" href="/admin/users/{{t['user_id']}}">👤 ইউজার দেখুন</a>{% endif %}</div>{% endfor %}""", active="/admin/tickets", rows=rows, main=main, pv=passed_view, npass=npass)
 
 
 ONOFF = [("1", "চালু"), ("0", "বন্ধ")]
