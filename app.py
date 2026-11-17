@@ -1267,6 +1267,7 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
   ['.top','main','.nav','.fab'].forEach(function(sel){var o=cur.querySelector(sel),n=nb.querySelector(sel);
    if(o&&n)o.replaceWith(document.importNode(n,true));else if(o&&!n)o.remove();else if(!o&&n){var m=cur.querySelector('main');if(sel==='.top')cur.insertBefore(document.importNode(n,true),cur.firstChild);else if(sel==='main'){}else m.after(document.importNode(n,true))}});
   document.querySelectorAll('main script').forEach(function(o){var n=document.createElement('script');n.textContent=o.textContent;o.replaceWith(n)});
+  var po=document.getElementById('pnov');if(po)po.remove();
   if(push)history.pushState({},'',url);window.scrollTo(0,0);paintToggles();
   if(typeof pollNotif==='function')pollNotif();return true}
  function go(url,push){var my=++seq;ldShow();
@@ -1364,9 +1365,20 @@ function pollNotif(){if(document.hidden&&!nfActive())return;  // background tabs
  fetch('/api/notif',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(j){
   if(!j)return;var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
   if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}
-  nfCheck(j);_last=j.latest}).catch(function(){})}
+  nfCheck(j);_last=j.latest;if(j.pn)popCheck()}).catch(function(){})}
 function applyBadges(j){var d=document.getElementById('nd');if(d){d.textContent=j.unread;d.hidden=!j.unread}
  if(j.badges){document.querySelectorAll('[data-bd]').forEach(function(el){var n=j.badges[el.dataset.bd]||0;el.textContent=n>99?'99+':n;el.hidden=!n})}}
+window._pnGone={};window._pnBusy=0;
+function popCheck(){if(location.pathname!=='/'||document.getElementById('pnov')||window._pnBusy)return;window._pnBusy=1;
+ fetch('/popup/pending',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.status===200?r.text():''}).then(function(h){window._pnBusy=0;
+  if(!h||location.pathname!=='/'||document.getElementById('pnov'))return;
+  var d=document.createElement('div');d.innerHTML=h;var o=d.querySelector('#pnov');if(!o)return;
+  var ids=(o.dataset.ids||'').split(',');for(var i=0;i<ids.length;i++){if(window._pnGone[ids[i]])return}
+  while(d.firstChild)document.body.appendChild(d.firstChild)}).catch(function(){window._pnBusy=0})}
+document.addEventListener('click',function(e){var x=e.target.closest&&e.target.closest('#pnx');if(!x)return;var o=document.getElementById('pnov');if(!o||o.dataset.gone)return;
+ o.dataset.gone='1';var ids=o.dataset.ids||'',tk=o.dataset.csrf||'',b=new URLSearchParams();ids.split(',').forEach(function(k){if(k)window._pnGone[k]=1});
+ b.set('_csrf',tk);b.set('ids',ids);o.classList.add('pn-out');setTimeout(function(){if(o.parentNode)o.parentNode.removeChild(o)},150);
+ try{fetch('/popup/dismiss',{method:'POST',body:b,credentials:'same-origin',keepalive:true,headers:{'X-CSRF':tk}}).catch(function(){})}catch(err){}});
 var _rq=Promise.resolve();
 function markRead(el){if(!el||el.dataset.rd==='1')return;el.dataset.rd='1';el.classList.remove('new');
  var box=el.closest('[data-csrf]'),b=new URLSearchParams();b.set('id',el.dataset.nid);b.set('_csrf',box?box.dataset.csrf:'');
@@ -1558,18 +1570,11 @@ POPUP_TPL = """<style>
 .pn-i+.pn-i{margin-top:16px;padding-top:16px;border-top:1px solid #E6D58A}
 .pn-t{font-size:20px;font-weight:700;line-height:1.3;margin:0 36px 8px 0;overflow-wrap:anywhere;color:#000}
 .pn-b{font-size:15.5px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;color:#000}
-.pn-ok{margin-top:18px;width:100%;background:#000;color:#FFF8D6;border-radius:14px;box-shadow:none}
 @media(max-width:420px){.pn-box{padding:22px 16px 18px;border-radius:18px}.pn-t{font-size:18px}}
 </style>
-<div class="pn-ov" id="pnov" role="dialog" aria-modal="true" aria-label="Notice"><div class="pn-box"><button type="button" class="pn-x" id="pnx" aria-label="Close">&times;</button>
+<div class="pn-ov" id="pnov" role="dialog" aria-modal="true" aria-label="Notice" data-ids="{{ids}}" data-csrf="{{csrf_token}}"><div class="pn-box"><button type="button" class="pn-x" id="pnx" aria-label="Close">&times;</button>
 <div class="pn-ic">📢</div>{% for p in popups %}<div class="pn-i">{% if p['title'] %}<h3 class="pn-t">{{p['title']}}</h3>{% endif %}<div class="pn-b">{{p['body']}}</div></div>{% endfor %}
-<button type="button" class="pn-ok" id="pnok">OK</button></div></div>
-<script>(function(){var o=document.getElementById('pnov');if(!o)return;var done=false;
-function close(){if(done)return;done=true;try{var d=new FormData();d.append('_csrf','{{csrf_token}}');d.append('ids','{{ids}}');
-fetch('/popup/dismiss',{method:'POST',body:d,credentials:'same-origin',keepalive:true,headers:{'X-CSRF':'{{csrf_token}}'}}).catch(function(){})}catch(e){}
-o.classList.add('pn-out');setTimeout(function(){if(o.parentNode)o.parentNode.removeChild(o)},150)}
-document.getElementById('pnx').onclick=close;document.getElementById('pnok').onclick=close;
-o.addEventListener('click',function(e){if(e.target===o)close()});document.addEventListener('keydown',function(e){if(e.key==='Escape')close()})})();</script>"""
+</div></div>"""
 
 
 def page(tpl, active="", foot="", authpage=False, **ctx):
@@ -1588,8 +1593,8 @@ def page(tpl, active="", foot="", authpage=False, **ctx):
     html = to_bdt(html)
     if lang == "en":
         html = tr(html)
-    pops = popup_pending(u)  # inserted AFTER the display transforms so the admin's text is shown exactly as written
-    return html.replace("<!--PN-->", render_str(POPUP_TPL, popups=pops, csrf_token=csrf(), ids=",".join("%s:%d" % (x["id"], x["n"]) for x in pops)) if pops else "", 1)
+    pops = popup_pending(u) if active == "/" else []  # homepage only; inserted AFTER the display transforms so the admin's text is shown exactly as written
+    return html.replace("<!--PN-->", render_str(POPUP_TPL, popups=pops, csrf_token=csrf(), ids=",".join(x["id"] for x in pops)) if pops else "", 1)
 
 
 def err(m):
@@ -3278,12 +3283,12 @@ def _popup_count(e):
 
 
 def popup_pending(u):
-    """Personal notices of the signed-in customer (own id only) that were dismissed fewer than twice; checked on every page load."""
+    """Personal notices of the signed-in customer (own id only) that this customer has not dismissed yet (each notice is shown only once)."""
     if not u or u["is_admin"]:
         return []
     out = []
     for e in _popup_load(u["id"]):
-        if e.get("on") is not False and _popup_count(e) < 2 and POPUP_ID_RE.fullmatch(str(e.get("id", ""))):
+        if e.get("on") is not False and _popup_count(e) < 1 and POPUP_ID_RE.fullmatch(str(e.get("id", ""))):
             out.append(dict(id=e["id"], n=_popup_count(e), title=e.get("t", ""), body=e.get("b", "")))
     return out[-5:]
 
@@ -3291,25 +3296,37 @@ def popup_pending(u):
 @app.route("/popup/dismiss", methods=["POST"])
 @customer_required
 def popup_dismiss():
+    """X pressed: the notice is permanently marked dismissed for THIS user only (stored in the database; never shown again)."""
     u = me()
-    seen = {}
+    seen = set()
     for x in request.form.get("ids", "").split(","):
-        m = re.fullmatch(r"([0-9a-f]{12}):([01])", x)
+        m = re.fullmatch(r"([0-9a-f]{12})(?::[01])?", x.strip())
         if m:
-            seen[m.group(1)] = int(m.group(2))
+            seen.add(m.group(1))
     if seen:
         with atomic():
             lst, ch = _popup_load(u["id"]), False
             for e in lst:
-                # count only if it still matches what the user was shown -> a double click / second tab cannot burn both showings
-                if e.get("id") in seen and _popup_count(e) == seen[e["id"]]:
-                    e["n"] = seen[e["id"]] + 1
-                    if e["n"] >= 2:
-                        e["seen"] = e.get("seen") or now()
+                if e.get("id") in seen and _popup_count(e) < 1:
+                    e["n"] = 1
+                    e["seen"] = e.get("seen") or now()
                     ch = True
             if ch:
                 _popup_save(u["id"], lst)
     return ("", 204)
+
+
+@app.route("/popup/pending")
+@customer_required
+def popup_pending_view():
+    """HTML of the personal notices this customer has not dismissed yet (204 = nothing). Fetched by the homepage without a refresh."""
+    u = me()
+    pops = popup_pending(u)
+    if not pops:
+        return ("", 204)
+    r = Response(render_str(POPUP_TPL, popups=pops, csrf_token=csrf(), ids=",".join(x["id"] for x in pops)), mimetype="text/html")
+    r.headers["Cache-Control"] = "no-store"
+    return r
 
 
 @app.route("/admin/users/<int:i>/vip-grant", methods=["POST"])
@@ -4477,7 +4494,7 @@ def api_notif():
         latest = q1("SELECT COALESCE(MAX(a.id),0) m FROM admin_alerts a WHERE %s AND a.created>=?" % f, pa + [u["created"] or ""])["m"]
     else:
         latest = q1("SELECT COALESCE(MAX(id),0) m FROM notifications WHERE user_id=?", (u["id"],))["m"]
-    return jsonify(unread=bd.get("*", 0), latest=latest, badges=bd, uid=u["id"])
+    return jsonify(unread=bd.get("*", 0), latest=latest, badges=bd, uid=u["id"], pn=len(popup_pending(u)))
 
 
 def _safe_link(link, admin):
