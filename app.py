@@ -11,7 +11,26 @@ from flask import (Flask, request, redirect, session, render_template_string, g,
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+def _secret():  # stable across restarts/workers so sessions + CSRF tokens never silently invalidate
+    k = os.environ.get("SECRET_KEY")
+    if k:
+        return k
+    p = os.path.join(os.path.dirname(os.path.abspath(os.environ.get("DATABASE_PATH", "ewallet.db"))), ".secret_key")
+    try:
+        if os.path.exists(p):
+            k = open(p).read().strip()
+            if k:
+                return k
+        k = secrets.token_hex(32)
+        with open(p, "w") as fh:
+            fh.write(k)
+        os.chmod(p, 0o600)
+        return k
+    except Exception:
+        return secrets.token_hex(32)
+
+
+app.secret_key = _secret()
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")),
                   MAX_CONTENT_LENGTH=6 * 1024 * 1024,
@@ -958,12 +977,27 @@ def csrf():
     return session["csrf"]
 
 
+def _sclear():  # clear the login session but keep the CSRF token so other open tabs/forms stay valid
+    k = session.get("csrf")
+    session.clear()
+    if k:
+        session["csrf"] = k
+
+
 @app.before_request
 def _guard():
+    if not session.permanent:
+        session.permanent = True  # persistent cookie: mobile browsers no longer drop the session (and token) on app switch
     if request.method == "POST":
-        t = (request.form.get("_csrf") or request.headers.get("X-CSRF") or "").encode()
-        if not t or not secrets.compare_digest(t, session.get("csrf", "").encode()):
-            abort(400, "Invalid CSRF token. Reload the page.")
+        tok, sess = request.form.get("_csrf") or request.headers.get("X-CSRF") or "", session.get("csrf", "")
+        if not (tok and sess and secrets.compare_digest(tok.encode(), sess.encode())):
+            csrf()  # renew the token right away so the retry works
+            msg = "পেজটি পুরনো হয়ে গেছে বা সেশনের মেয়াদ শেষ। পেজ আপডেট করা হয়েছে — আবার চেষ্টা করুন।"
+            if request.headers.get("X-CSRF"):
+                return jsonify(error=msg, csrf=session["csrf"]), 400
+            err(msg)
+            ref = request.referrer or ""
+            return redirect(ref if ref.startswith(request.host_url) else ("/" if me() else "/login"))
 
 
 @app.after_request
@@ -972,7 +1006,7 @@ def _headers(r):
     r.headers["X-Frame-Options"] = "DENY"
     r.headers["Referrer-Policy"] = "same-origin"
     r.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
-    if "uid" in session and not r.headers.get("Cache-Control"):
+    if ("uid" in session or r.mimetype == "text/html") and not r.headers.get("Cache-Control"):  # never reuse a page (and its CSRF token) from cache
         r.headers["Cache-Control"] = "no-store"
     try:  # gzip text responses (HTML ~3-5x smaller) when the proxy in front does not already do it
         if (r.status_code == 200 and not r.direct_passthrough and "gzip" in request.headers.get("Accept-Encoding", "")
@@ -991,7 +1025,7 @@ def login_required(f):
     @wraps(f)
     def w(*a, **k):
         if not me():
-            session.clear()
+            _sclear()
             return redirect("/login")
         return f(*a, **k)
     return w
@@ -1002,7 +1036,7 @@ def customer_required(f):
     def w(*a, **k):
         u = me()
         if not u:
-            session.clear()
+            _sclear()
             return redirect("/login")
         if u["is_admin"]:
             return redirect("/admin")
@@ -1017,7 +1051,7 @@ def staff_required(*perms):
         def w(*a, **k):
             u = me()
             if not u:
-                session.clear()
+                _sclear()
                 return redirect("/login")
             if not u["is_admin"] or (perms and not any(has_perm(p, u) for p in perms)):
                 abort(403)
@@ -1213,7 +1247,7 @@ img.shot{max-width:100%;border-radius:12px;margin:8px 0;border:1px solid var(--l
 :root[data-theme=dark] .top{background:linear-gradient(100deg,#1B7FE0,#1259B0)}:root[data-theme=dark] .hero{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0);box-shadow:0 16px 34px -16px #000a}:root[data-theme=dark] .hero2{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0)}:root[data-theme=dark] .nav a{--t:#1E90FF26}:root[data-theme=dark] .mt i,:root[data-theme=dark] .li .ic{background:linear-gradient(135deg,#123B4A,#0F2F44)}:root[data-theme=dark] .pill.approved,:root[data-theme=dark] .pill.paid{background:#0F3D31;color:#6EE7B7}:root[data-theme=dark] .pill.rejected{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .pill.pending,:root[data-theme=dark] .pill.review,:root[data-theme=dark] .pill.processing{background:#4A3512;color:#FCD34D}:root[data-theme=dark] .pill.submitted{background:#0F3555;color:#8CCBFF}:root[data-theme=dark] .pill.expired,:root[data-theme=dark] .pill.cancelled{background:#1A3449;color:#9DB4C4}:root[data-theme=dark] .hxc .pill.pending,:root[data-theme=dark] .hxc .pill.review,:root[data-theme=dark] .hxc .pill.processing,:root[data-theme=dark] .hxc .pill.submitted{background:#4A3512;color:#FCD34D}:root[data-theme=dark] .hxc.hy .hy-tt .pill{background:#1A3449;color:#9DB4C4}:root[data-theme=dark] .hxc.hy .hy-tt .pill.pending,:root[data-theme=dark] .hxc.hy .hy-tt .pill.review,:root[data-theme=dark] .hxc.hy .hy-tt .pill.processing,:root[data-theme=dark] .hxc.hy .hy-tt .pill.submitted{background:#4A3512;color:#FCD34D}:root[data-theme=dark] .hxc.hy .hy-tt .pill.approved,:root[data-theme=dark] .hxc.hy .hy-tt .pill.paid{background:#0F3D31;color:#6EE7B7}:root[data-theme=dark] .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .msg{background:#0F3A44;color:#A8EDE6}:root[data-theme=dark] .msg.error{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .au-msg{background:#0F3D31;color:#6EE7B7}:root[data-theme=dark] .au-msg.error{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .ur-b{background:#1A3449;color:#9DB4C4}:root[data-theme=dark] .ur-b.pending,:root[data-theme=dark] .ur-b.review{background:#4A3512;color:#FCD34D}:root[data-theme=dark] .ur-b.submitted{background:#0F3555;color:#8CCBFF}:root[data-theme=dark] .ur-b.approved{background:#0F3D31;color:#6EE7B7}:root[data-theme=dark] .ur-b.rejected{background:#4A1D24;color:#FCA5A5}:root[data-theme=dark] .ur-b.expired,:root[data-theme=dark] .ur-b.cancelled{background:#1A3449;color:#9DB4C4}:root[data-theme=dark] body.auth{background:#0A2A4A}:root[data-theme=dark] body.auth::before{background:radial-gradient(90% 60% at 100% 0%,#DFF7F522,#DFF7F500 60%),linear-gradient(165deg,#0F5FB5,#082F57)}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .top{background:linear-gradient(100deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .hero{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0);box-shadow:0 16px 34px -16px #000a}:root:not([data-theme=light]) .hero2{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .nav a{--t:#1E90FF26}:root:not([data-theme=light]) .mt i,:root:not([data-theme=light]) .li .ic{background:linear-gradient(135deg,#123B4A,#0F2F44)}:root:not([data-theme=light]) .pill.approved,:root:not([data-theme=light]) .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .pill.pending,:root:not([data-theme=light]) .pill.review,:root:not([data-theme=light]) .pill.processing{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .pill.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .pill.expired,:root:not([data-theme=light]) .pill.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc .pill.pending,:root:not([data-theme=light]) .hxc .pill.review,:root:not([data-theme=light]) .hxc .pill.processing,:root:not([data-theme=light]) .hxc .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.pending,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.review,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.processing,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.approved,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .msg{background:#0F3A44;color:#A8EDE6}:root:not([data-theme=light]) .msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .au-msg{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .au-msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .ur-b.pending,:root:not([data-theme=light]) .ur-b.review{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .ur-b.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .ur-b.approved{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .ur-b.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b.expired,:root:not([data-theme=light]) .ur-b.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) body.auth{background:#0A2A4A}:root:not([data-theme=light]) body.auth::before{background:radial-gradient(90% 60% at 100% 0%,#DFF7F522,#DFF7F500 60%),linear-gradient(165deg,#0F5FB5,#082F57)}}
 /* ===== admin simplification v2: consistent controls, compact menu, touch safety ===== */
-a,button,.btn,summary,select,label.pmc{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+a,button,.btn,summary,select,label.pmc{touch-action:manipulation;-webkit-tap-highlight-color:transparent}a.btn:active,button:active,summary:active,.pr-m:active,.nav a:active{transform:scale(.96);filter:brightness(.9);transition-duration:.05s}button:disabled{opacity:.75;cursor:wait}
 .btn,button.btn{min-height:40px}.btn.sm{min-height:34px}
 .adm{gap:6px;margin-bottom:8px}.adm a.t{min-height:38px;box-sizing:border-box;padding:0 14px;font-size:13.5px;font-weight:600;border-radius:12px;margin:0}
 .adm a.t.on{box-shadow:none}
@@ -1245,11 +1279,15 @@ var _ldT=null;
 function ldShow(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.opacity='1';b.style.width='12%';
  _ldT=setTimeout(function(){b.style.width='70%'},120);setTimeout(function(){if(b.style.opacity==='1')b.style.width='88%'},1500)}
 function ldHide(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.width='100%';setTimeout(function(){b.style.opacity='0';setTimeout(function(){b.style.width='0'},250)},180)}
+document.addEventListener('touchstart',function(){},{passive:true});
 document.addEventListener('submit',function(e){var f=e.target,c=f.dataset.confirm;
+ if(e.defaultPrevented)return;
  if(c&&!confirm(c)){e.preventDefault();return}
+ if(f.dataset.sub==='1'){e.preventDefault();return}
+ f.dataset.sub='1';setTimeout(function(){f.dataset.sub=''},15000);
  ldShow();
  setTimeout(function(){f.querySelectorAll('button').forEach(function(b){b.style.minWidth=b.offsetWidth+'px';b.disabled=true;b.dataset.h=b.innerHTML;b.innerHTML='<span class="sp"></span>'})},0);});
-window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document.querySelectorAll('button[data-h]').forEach(function(b){b.disabled=false;b.innerHTML=b.dataset.h;b.removeAttribute('data-h')})}});
+window.addEventListener('pageshow',function(e){if(e.persisted){ldHide();document.querySelectorAll('form[data-sub]').forEach(function(f){f.dataset.sub=''});document.querySelectorAll('button[data-h]').forEach(function(b){b.disabled=false;b.innerHTML=b.dataset.h;b.removeAttribute('data-h')})}});
 window.addEventListener('pageshow',function(){window._hardNav=0;ldHide()});
 document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[data-hard]');if(!a)return;if(window._hardNav){e.preventDefault();return}window._hardNav=1;ldShow();setTimeout(function(){window._hardNav=0},8000)});
 (function(){var seq=0,SKIPS=['/login','/signup','/forgot','/static','/shot','/lang','/logout','/manifest.json','/service-worker.js','/assets','/healthz','/admin/backup'];
@@ -2060,11 +2098,11 @@ def login():
             if not _tf_configured():
                 err("অ্যাডমিন সিকিউরিটি কোড সার্ভারে সেট করা নেই। Render-এ ADMIN_SECURITY_CODE (বা ADMIN_2FA_CODE_HASH) সেট করে রিডেপ্লয় করুন।")
                 return redirect("/login")
-            session.clear()
+            _sclear()
             session["tf"] = {"uid": u["id"], "sv": u["session_ver"], "ts": int(time.time())}
             return redirect("/login/verify")
         if ok:
-            session.clear(); session.permanent = True
+            _sclear(); session.permanent = True
             session["uid"], session["sv"] = u["id"], u["session_ver"]
             db().execute("UPDATE users SET last_login=? WHERE id=?", (now(), u["id"]))
             return redirect("/")
@@ -2099,7 +2137,7 @@ def login_verify():
                 session.pop("tf", None)
                 err("অনেকবার ভুল কোড দেওয়া হয়েছে। ১৫ মিনিট পরে চেষ্টা করুন।"); return redirect("/login")
             err("সিকিউরিটি কোড সঠিক নয়।"); return redirect("/login/verify")
-        session.clear(); session.permanent = True          # session is created only now, after both factors passed
+        _sclear(); session.permanent = True          # session is created only now, after both factors passed
         session["uid"], session["sv"] = u["id"], u["session_ver"]
         db().execute("UPDATE users SET last_login=? WHERE id=?", (now(), u["id"]))
         audit("staff_login", "role=%s" % u["role"], actor=u)
@@ -2109,7 +2147,7 @@ def login_verify():
 
 @app.route("/logout", methods=["POST"])
 def logout():
-    session.clear(); return redirect("/login")
+    _sclear(); return redirect("/login")
 
 
 @app.route("/forgot")
@@ -2546,7 +2584,7 @@ def _change_password(u, back_to):
     if not check_password_hash(u["pw"], request.form.get("old", "")) or len(request.form.get("new", "")) < 6:
         err("পুরনো পাসওয়ার্ড ভুল অথবা নতুন পাসওয়ার্ড ৬ অক্ষরের কম।"); return redirect(back_to)
     db().execute("UPDATE users SET pw=?, session_ver=session_ver+1 WHERE id=?", (generate_password_hash(request.form["new"]), u["id"]))
-    session.clear(); flash("পাসওয়ার্ড বদলেছে। আবার সাইন ইন করুন।"); return redirect("/login")
+    _sclear(); flash("পাসওয়ার্ড বদলেছে। আবার সাইন ইন করুন।"); return redirect("/login")
 
 
 @app.route("/account", methods=["GET", "POST"])
@@ -3040,7 +3078,7 @@ def _user_activity(uid, limit=40):
         for l in qa("SELECT created,ip,ok FROM login_history WHERE user_id=? ORDER BY id DESC LIMIT 10", (uid,)):
             ev.append((l["created"], "✅" if l["ok"] else "❌", "লগইন %s · IP %s" % ("সফল" if l["ok"] else "ব্যর্থ", l["ip"] or "-")))
     if has_perm("audit"):
-        for l in qa("SELECT created,actor,action,detail FROM audit WHERE detail LIKE ? OR detail LIKE ? ORDER BY id DESC LIMIT 20",
+        for l in qa("SELECT created,actor,action,detail FROM audit WHERE id>(SELECT COALESCE(MAX(id),0)-5000 FROM audit) AND (detail LIKE ? OR detail LIKE ?) ORDER BY id DESC LIMIT 20",
                     ("%%user#%d %%" % uid, "%%user#%d" % uid)):
             ev.append((l["created"], "📜", "অডিট %s · %s · %s" % (l["action"], l["actor"], (l["detail"] or "")[:140])))
     ev.sort(key=lambda e: e[0] or "", reverse=True)
@@ -3135,9 +3173,8 @@ def admin_user(i):
 <label>ধরন</label><select name="direction"><option value="credit">➕ ব্যালেন্স যোগ</option><option value="debit">➖ ব্যালেন্স বিয়োগ</option></select>
 <label>পরিমাণ (৳)</label><input name="amount" type="number" step="0.01" min="0.01" required><label>রেফারেন্স (যোগের জন্য আবশ্যক)</label><input name="reference" maxlength="40">
 <label>কারণ (কমপক্ষে ৫ অক্ষর)</label><input name="reason" required minlength="5" maxlength="200"><button style="width:100%">সমন্বয় করুন</button></form></div></details>{% endif %}
-{% if main_admin %}<details class="dt"><summary>👑 VIP ম্যানুয়াল গ্রান্ট (Main Admin) — বর্তমান: {{(x['vip_level'] or 'standard')|title}}</summary><div class="inn"><p class="k">কোনো শর্ত (লেনদেন/রেফারেল/ব্যালেন্স) যাচাই ছাড়াই স্থায়ী VIP দেওয়া হবে। অ্যাডমিন না বদলালে বা বাতিল না করলে এটি থাকবে।</p>
-<form method="post" action="/admin/users/{{x['id']}}/vip-grant" data-confirm="এই ইউজারকে Gold VIP দেবেন? কোনো শর্ত যাচাই হবে না এবং এটি স্থায়ী।" style="margin-bottom:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="gold"><button style="width:100%">🥇 Grant Gold VIP</button></form>
-<form method="post" action="/admin/users/{{x['id']}}/vip-grant" data-confirm="এই ইউজারকে Diamond VIP দেবেন? কোনো শর্ত যাচাই হবে না এবং এটি স্থায়ী।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="diamond"><button style="width:100%">💎 Grant Diamond VIP</button></form></div></details>{% endif %}
+{% if main_admin %}<details class="dt"><summary>👑 VIP ম্যানেজ (Main Admin) — বর্তমান: {{(x['vip_level'] or 'standard')|title}}</summary><div class="inn"><p class="k">কোনো শর্ত যাচাই ছাড়াই যেকোনো সময় আপগ্রেড/ডাউনগ্রেড করা যাবে। তাৎক্ষণিক কার্যকর; Main Admin না বদলানো পর্যন্ত স্থায়ী।</p>
+{% for lv,lb in (('diamond','💎 Diamond VIP'),('gold','🥇 Gold VIP'),('standard','⚪ Normal')) %}<form method="post" action="/admin/users/{{x['id']}}/vip-grant" data-confirm="মেম্বারশিপ {{lb}} করবেন? তাৎক্ষণিক কার্যকর ও স্থায়ী।" style="margin-bottom:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="level" value="{{lv}}"><button style="width:100%"{% if (x['vip_level'] or 'standard')==lv %} disabled{% endif %}>{{lb}}{% if (x['vip_level'] or 'standard')==lv %} ✓ (বর্তমান){% endif %}</button></form>{% endfor %}</div></details>{% endif %}
 {% if can('notices') %}<details class="dt"><summary>📌 ব্যক্তিগত নোটিশ / নির্দেশনা</summary><div class="inn"><form method="post" action="/admin/users/{{x['id']}}/notice" data-confirm="ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <select name="kind"><option value="notice">📌 নোটিশ</option><option value="instruction">📋 নির্দেশনা</option></select>
 <label>শিরোনাম</label><input name="title_bn" required maxlength="80"><label>বার্তা (বাংলা / English / মিশ্র — যেভাবে লিখবেন সেভাবেই দেখাবে)</label><textarea name="body_bn" required rows="5" maxlength="1000"></textarea>
@@ -3335,7 +3372,7 @@ def admin_vip_grant(i):
     a, level = me(), request.form.get("level", "")
     if not is_main_admin(a):
         abort(403)
-    if level not in ("gold", "diamond"):
+    if level not in VIP_LEVELS:  # standard (Normal), gold, diamond
         abort(400)
     dest = "/admin/users/%d" % i
     with atomic():
@@ -3345,17 +3382,15 @@ def admin_vip_grant(i):
         cur = vip_level_of(x)
         if cur == level:
             err("ইউজার আগেই এই VIP লেভেলে আছে।"); return redirect(dest)
-        if VIP_LEVELS[cur]["rank"] > VIP_LEVELS[level]["rank"]:
-            err("ইউজার আরও উচ্চতর লেভেলে আছে। লেভেল কমাতে VIP পেজ ব্যবহার করুন।"); return redirect(dest)
-        L = _vip_set(x, level, "manual grant by Main Admin", a, "grant")
+        L = _vip_set(x, level, "manual change by Main Admin %s (%s -> %s)" % (a["member_id"], cur, level), a, "manual")
         for ap in qa("SELECT id,level FROM vip_applications WHERE user_id=? AND status='pending'", (i,)):
             if VIP_LEVELS[ap["level"]]["rank"] <= VIP_LEVELS[level]["rank"]:  # application is now moot
                 db().execute("DELETE FROM vip_deposit_use WHERE app_id=?", (ap["id"],))
                 db().execute("UPDATE vip_applications SET status='rejected', note=?, admin=?, admin_id=?, decided=? WHERE id=? AND status='pending'",
                              ("superseded by manual grant", a["member_id"], a["id"], now(), ap["id"]))
-        audit("vip_manual_grant", "admin=%s user#%s member=#%s level=%s rate=%g at=%s" % (a["member_id"], i, x["member_id"], level, L["rate"], now()))
-        notify(i, "VIP অনুমোদিত", "অভিনন্দন! আপনি এখন %s VIP — কমিশন %g%%। এটি স্থায়ী।" % (L["name"], L["rate"]), "/vip",
-               "VIP approved", "Congratulations! You are now %s VIP — %g%% commission. This level is permanent." % (L["name"], L["rate"]))
+        audit("vip_manual_grant", "admin=%s user#%s member=#%s old=%s level=%s rate=%g at=%s" % (a["member_id"], i, x["member_id"], cur, level, L["rate"], now()))
+        notify(i, "VIP আপডেট", "আপনার মেম্বারশিপ এখন %s — কমিশন %g%%।" % (L["name"], L["rate"]), "/vip",
+               "VIP updated", "Your membership is now %s — %g%% commission." % (L["name"], L["rate"]))
         if not q1("SELECT 1 FROM vip_applications WHERE status='pending'"):
             alerts_done("/admin/vip")
     flash("%s VIP দেওয়া হয়েছে।" % L["name"])
@@ -3991,7 +4026,7 @@ def admin_profile():
         with atomic():
             db().execute("UPDATE users SET pw=?, session_ver=session_ver+1 WHERE id=?", (generate_password_hash(request.form["new"]), u["id"]))
             audit("password_change", "self")
-        session.clear(); flash("পাসওয়ার্ড বদলেছে। আবার সাইন ইন করুন।"); return redirect("/login")
+        _sclear(); flash("পাসওয়ার্ড বদলেছে। আবার সাইন ইন করুন।"); return redirect("/login")
     return page("""<div class="card"><h2>{{u['name']}}</h2><p>📱 {{u['phone']}} · {{role_name}}</p></div>
 {% if u['role']!='super_admin' %}<div class="card"><h3>পাসওয়ার্ড বদলান</h3><form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <label>পুরনো পাসওয়ার্ড</label><input name="old" type="password" required><label>নতুন পাসওয়ার্ড (৮+ অক্ষর)</label><input name="new" type="password" minlength="8" required>
@@ -7101,6 +7136,21 @@ def healthz():
 
 if not os.environ.get("EWALLET_SKIP_MIGRATE"):  # dbtool sets this to control the first import itself
     migrate()
+    try:  # composite indexes for the admin profile / list queries (idempotent, no data change)
+        with app.app_context():
+            for _i in ("CREATE INDEX IF NOT EXISTS ix_ledger_user_id ON ledger(user_id,id)",
+                       "CREATE INDEX IF NOT EXISTS ix_tx_user_id ON tx(user_id,id)",
+                       "CREATE INDEX IF NOT EXISTS ix_req_user_id ON requests(user_id,id)",
+                       "CREATE INDEX IF NOT EXISTS ix_tx_user_status ON tx(user_id,status)",
+                       "CREATE INDEX IF NOT EXISTS ix_reqlog_req_id ON request_log(request_id,id)",
+                       "CREATE INDEX IF NOT EXISTS ix_vipapp_user ON vip_applications(user_id)",
+                       "CREATE INDEX IF NOT EXISTS ix_login_user_id ON login_history(user_id,id)"):
+                try:
+                    db().execute(_i)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 # ---------------------------------------------------------------- VIP levels (permanent once approved by an authorised admin)
 VIP_LEVELS = {"standard": dict(name="Standard", rate=5.0, n=0, dep=0, bal=0, rank=0),
               "gold": dict(name="Gold", rate=7.5, n=3, dep=10000, bal=30000, rank=1),
