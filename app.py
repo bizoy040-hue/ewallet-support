@@ -1248,6 +1248,10 @@ img.shot{max-width:100%;border-radius:12px;margin:8px 0;border:1px solid var(--l
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .top{background:linear-gradient(100deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .hero{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0);box-shadow:0 16px 34px -16px #000a}:root:not([data-theme=light]) .hero2{background:radial-gradient(120% 90% at 100% 0%,#DFF7F52e 0,#DFF7F500 55%),linear-gradient(125deg,#1B7FE0,#1259B0)}:root:not([data-theme=light]) .nav a{--t:#1E90FF26}:root:not([data-theme=light]) .mt i,:root:not([data-theme=light]) .li .ic{background:linear-gradient(135deg,#123B4A,#0F2F44)}:root:not([data-theme=light]) .pill.approved,:root:not([data-theme=light]) .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .pill.pending,:root:not([data-theme=light]) .pill.review,:root:not([data-theme=light]) .pill.processing{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .pill.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .pill.expired,:root:not([data-theme=light]) .pill.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc .pill.pending,:root:not([data-theme=light]) .hxc .pill.review,:root:not([data-theme=light]) .hxc .pill.processing,:root:not([data-theme=light]) .hxc .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.pending,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.review,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.processing,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.submitted{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.approved,:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.paid{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .msg{background:#0F3A44;color:#A8EDE6}:root:not([data-theme=light]) .msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .au-msg{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .au-msg.error{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) .ur-b.pending,:root:not([data-theme=light]) .ur-b.review{background:#4A3512;color:#FCD34D}:root:not([data-theme=light]) .ur-b.submitted{background:#0F3555;color:#8CCBFF}:root:not([data-theme=light]) .ur-b.approved{background:#0F3D31;color:#6EE7B7}:root:not([data-theme=light]) .ur-b.rejected{background:#4A1D24;color:#FCA5A5}:root:not([data-theme=light]) .ur-b.expired,:root:not([data-theme=light]) .ur-b.cancelled{background:#1A3449;color:#9DB4C4}:root:not([data-theme=light]) body.auth{background:#0A2A4A}:root:not([data-theme=light]) body.auth::before{background:radial-gradient(90% 60% at 100% 0%,#DFF7F522,#DFF7F500 60%),linear-gradient(165deg,#0F5FB5,#082F57)}}
 /* ===== admin simplification v2: consistent controls, compact menu, touch safety ===== */
 a,button,.btn,summary,select,label.pmc{touch-action:manipulation;-webkit-tap-highlight-color:transparent}a.btn:active,button:active,summary:active,.pr-m:active,.nav a:active{transform:scale(.96);filter:brightness(.9);transition-duration:.05s}button:disabled{opacity:.75;cursor:wait}
+body.adm-on a,body.adm-on button,body.adm-on summary,body.adm-on label.pmc{transition:transform .08s ease-out,background-color .08s ease-out,box-shadow .08s ease-out,filter .08s ease-out}
+body.adm-on .prs,body.adm-on .btn:active,body.adm-on button:active,body.adm-on summary:active,body.adm-on .adm .t:active{transform:scale(.95);filter:brightness(.88);box-shadow:inset 0 2px 5px #0A3D6633}
+body.adm-on .uc-main{border-radius:14px}body.adm-on .uc-main.prs,body.adm-on .uc-main:active,body.adm-on .pr-m.prs,body.adm-on .pr-m:active{transform:scale(.98);filter:none;background:#1E90FF22;box-shadow:none}
+body.adm-on .chips button.prs,body.adm-on .tabs button.prs{transform:scale(.93)}
 .btn,button.btn{min-height:40px}.btn.sm{min-height:34px}
 .adm{gap:6px;margin-bottom:8px}.adm a.t{min-height:38px;box-sizing:border-box;padding:0 14px;font-size:13.5px;font-weight:600;border-radius:12px;margin:0}
 .adm a.t.on{box-shadow:none}
@@ -1276,10 +1280,15 @@ details.cg{padding:12px 14px;margin-bottom:8px;box-shadow:none}details.cg summar
 
 JS = """
 var _ldT=null;
-function ldShow(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.opacity='1';b.style.width='12%';
- _ldT=setTimeout(function(){b.style.width='70%'},120);setTimeout(function(){if(b.style.opacity==='1')b.style.width='88%'},1500)}
-function ldHide(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);b.style.width='100%';setTimeout(function(){b.style.opacity='0';setTimeout(function(){b.style.width='0'},250)},180)}
+function ldShow(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);
+ _ldT=setTimeout(function(){b.style.opacity='1';b.style.width='30%';_ldT=setTimeout(function(){b.style.width='70%'},300);setTimeout(function(){if(b.style.opacity==='1')b.style.width='88%'},1500)},180)}
+function ldHide(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);if(b.style.opacity!=='1')return;b.style.width='100%';setTimeout(function(){b.style.opacity='0';setTimeout(function(){b.style.width='0'},250)},180)}
 document.addEventListener('touchstart',function(){},{passive:true});
+(function(){var S='a[href],button,summary,label.pmc,[data-do],.uc-main',el=null;
+ function on(e){if(!document.body.classList.contains('adm-on'))return;var t=e.target.closest&&e.target.closest(S);if(!t||t.disabled)return;if(el)el.classList.remove('prs');el=t;t.classList.add('prs')}
+ function off(){if(el){var t=el;el=null;setTimeout(function(){t.classList.remove('prs')},140)}}
+ document.addEventListener('pointerdown',on,{passive:true});
+ ['pointerup','pointercancel','pointerleave','dragstart'].forEach(function(k){document.addEventListener(k,off,true)});document.addEventListener('scroll',off,true)})();
 document.addEventListener('submit',function(e){var f=e.target,c=f.dataset.confirm;
  if(e.defaultPrevented)return;
  if(c&&!confirm(c)){e.preventDefault();return}
@@ -1308,13 +1317,14 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
   var po=document.getElementById('pnov');if(po)po.remove();
   if(push)history.pushState({},'',url);window.scrollTo(0,0);paintToggles();
   if(typeof pollNotif==='function')pollNotif();return true}
- function go(url,push){var my=++seq;ldShow();
+ var busyU=null;
+ function go(url,push){if(push&&busyU===url)return;busyU=url;var my=++seq;ldShow();
   fetch(url,{credentials:'same-origin',headers:{'X-Soft-Nav':'1'}}).then(function(r){
    var ct=r.headers.get('content-type')||'';
    var rp=new URL(r.url).pathname;if(ct.indexOf('text/html')<0||(r.redirected&&(rp==='/login'||rp==='/signup'))){location.href=url;return null}
    return r.text().then(function(t){return{t:t,u:r.url}})}).then(function(x){
    if(!x||my!==seq)return;
-   if(!swap(x.t,x.u||url,push)){location.href=url;return}ldHide()}).catch(function(){location.href=url})}
+   if(!swap(x.t,x.u||url,push)){location.href=url;return}ldHide();busyU=null}).catch(function(){busyU=null;location.href=url})}
  document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[href]');if(!a)return;var u=ok(a,e);if(!u)return;
   e.preventDefault();go(u.href,true)});
  window.addEventListener('popstate',function(){go(location.href,false)})})();
@@ -1458,7 +1468,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap"></noscript>
 <link rel="stylesheet" href="/assets/app.css?v={{av}}">
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
-<body{% if authpage %} class="auth"{% endif %}{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
+<body class="{{'auth' if authpage}}{{' adm-on' if u and u['is_admin']}}"{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
 <div id="ld"></div>
 <div class="top"><b>{{site}}</b><button type="button" id="pwa-install" class="pwa-dl" aria-label="Download App" title="Download App">📲</button><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
 {% if u and not u['is_admin'] %}<span><a class="bell" href="/notifications">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
@@ -2942,7 +2952,7 @@ details.dt .inn{padding-bottom:12px}
 </style>"""
 
 USER_ROWS_TPL = """{% if not rows and p==1 %}<div class="card empty">কোনো ইউজার পাওয়া যায়নি</div>{% endif %}
-{% for x in rows %}<div class="uc{{' blocked' if x['blocked']}}"><a class="uc-main" data-hard href="/admin/users/{{x['id']}}"><div class="uc-t"><b>{{x['name']}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'আর্কাইভড' if x['removed_at'] else ('ব্লকড' if x['blocked'] else 'সক্রিয়')}}</span></div>
+{% for x in rows %}<div class="uc{{' blocked' if x['blocked']}}"><a class="uc-main" href="/admin/users/{{x['id']}}"><div class="uc-t"><b>{{x['name']}}</b><span class="pill {{'rejected' if x['blocked'] else 'approved'}}">{{'আর্কাইভড' if x['removed_at'] else ('ব্লকড' if x['blocked'] else 'সক্রিয়')}}</span></div>
 <div class="uc-m">#{{x['member_id']}} · 📱 {{x['phone']}} · ✅ {{x['tx_ok']}} সফল লেনদেন</div>
 <div class="uc-b"><span>ব্যালেন্স <b>৳ {{money(x['balance'])}}</b></span>{% if can('requests') and x['open_req'] %}<span class="uc-o">⏳ {{x['open_req']}}টি খোলা রিকোয়েস্ট</span>{% endif %}</div></a>
 </div>{% endfor %}
