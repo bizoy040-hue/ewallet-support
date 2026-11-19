@@ -2421,30 +2421,38 @@ def history():
 .hy .hxd .hxr,.hxc.open.hy .hxd .hxr{font-size:13.5px;padding:5px 0}
 /* expanded details: vertical premium cream layout (User Panel history only) */
 .hy-full{display:none}
-.hxc.hy.open{background:#FFFBEF;background-image:linear-gradient(180deg,#FFFDF5 0%,#FFF8E6 100%);border:1px solid #F0E2B6;border-radius:18px;padding:16px 16px 12px;cursor:pointer;box-shadow:0 6px 22px -8px #B8902C38,0 1px 3px #B8902C1f}
+.hxc.hy.open{background:#FFFBEF;background-image:linear-gradient(180deg,#FFFDF5 0%,#FFF8E6 100%);border:1px solid #F0E2B6;border-radius:16px;padding:12px 14px 10px;cursor:pointer;box-shadow:0 6px 22px -8px #B8902C38,0 1px 3px #B8902C1f}
 .hxc.hy.open>.hy-top,.hxc.hy.open>.hy-g,.hxc.hy.open>.hy-cm,.hxc.hy.open>.hy-more,.hxc.hy.open>.hxd{display:none}
 .hxc.hy.open>.hy-full{display:block}
-.hy-full .hf-h{font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#9A7B2F;padding-bottom:8px;margin-bottom:2px;border-bottom:1px solid #EFE0B0}
-.hy-full .hf-r{display:flex;flex-direction:column;gap:3px;padding:11px 2px;border-bottom:1px solid #F1E6C4}
+.hy-full .hf-h{font-size:11.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#9A7B2F;padding-bottom:6px;margin-bottom:0;border-bottom:1px solid #EFE0B0}
+.hy-full .hf-r{display:flex;flex-direction:row;align-items:baseline;justify-content:space-between;gap:12px;padding:7px 2px;border-bottom:1px solid #F1E6C4}
 .hy-full .hf-r:last-of-type{border-bottom:0}
-.hy-full .hf-r>span{font-size:12.5px;font-weight:600;color:#8A7646;line-height:1.3}
-.hy-full .hf-r>b{font-size:16px;font-weight:650;line-height:1.4;color:#3B3017;overflow-wrap:anywhere;word-break:break-word}
-.hy-full .hf-r>b.amt{font-size:21px;font-weight:800}
+.hy-full .hf-r>span{flex:none;font-size:13px;font-weight:600;color:#8A7646;line-height:1.3}
+.hy-full .hf-r>b{min-width:0;text-align:right;font-size:14.5px;font-weight:650;line-height:1.35;color:#3B3017;overflow-wrap:anywhere;word-break:break-word}
+.hy-full .hf-r>b.amt{font-size:18px;font-weight:800}
 .hy-full .hf-r>b.amt.neg{color:#dc2626}.hy-full .hf-r>b.amt.pos{color:#0B7A50}
-.hy-full .hf-r>b.cm{color:#0B7A50;font-weight:800}
+.hy-full .hf-r>b.pre{text-align:right}
+.hy-full .hf-cm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 4px;padding:9px 12px;border-radius:13px;background:linear-gradient(135deg,#EAF4FF 0%,#E3F0FF 100%);border:1px solid #BFDCFA;border-left:4px solid #F2C94C;box-shadow:0 2px 8px -3px #1E90FF30}
+.hy-full .hf-cm>span{font-size:13.5px;font-weight:700;color:#1B5FA8;min-width:0}
+.hy-full .hf-cm>span i{font-style:normal;font-size:17px;margin-right:5px}
+.hy-full .hf-cm>b{flex:none;font-size:22px;font-weight:800;line-height:1.1;color:#0B7A50;letter-spacing:-.3px;white-space:nowrap}
 .hy-full .hf-r>b.pre{white-space:pre-line;font-weight:500}
-.hy-full .hf-r .pill{display:inline-block;padding:2px 12px;font-size:13px;font-weight:700;line-height:1.6;border-radius:99px;background:#F3EAD0;color:#6B5A2E;box-shadow:inset 0 0 0 1px #0000000f}
+.hy-full .hf-r .pill{display:inline-block;padding:1px 11px;font-size:12.5px;font-weight:700;line-height:1.6;border-radius:99px;background:#F3EAD0;color:#6B5A2E;box-shadow:inset 0 0 0 1px #0000000f}
 .hy-full .hf-r .pill::before,.hy-full .hf-r .pill::after{content:none!important}
 .hy-full .hf-r .pill.pending,.hy-full .hf-r .pill.review,.hy-full .hf-r .pill.processing,.hy-full .hf-r .pill.submitted{background:#fef3c7;color:#b45309}
 .hy-full .hf-r .pill.approved,.hy-full .hf-r .pill.paid{background:#DDF8EC;color:#0B7A50}
 .hy-full .hf-r .pill.rejected{background:#FFE4E6;color:#b91c1c}
 .hy-full .hf-c{text-align:center;font-size:12.5px;color:#9A8B5E;padding-top:8px}
+.hy-full .hf-r:last-child{border-bottom:0}
 :root[data-theme=dark] .hxc.hy.open{background:#2A2414;background-image:linear-gradient(180deg,#2E2816 0%,#252010 100%);border-color:#5A4A1E}
 :root[data-theme=dark] .hy-full .hf-h{color:#E3C877;border-color:#4A3E1C}
 :root[data-theme=dark] .hy-full .hf-r{border-color:#3F3519}
 :root[data-theme=dark] .hy-full .hf-r>span{color:#C9B77C}
 :root[data-theme=dark] .hy-full .hf-r>b{color:#F7EBC8}
 :root[data-theme=dark] .hy-full .hf-c{color:#BBA766}
+:root[data-theme=dark] .hy-full .hf-cm{background:linear-gradient(135deg,#10283F 0%,#0D2236 100%);border-color:#1E4157;border-left-color:#D9B23F}
+:root[data-theme=dark] .hy-full .hf-cm>span{color:#9FD6FF}:root[data-theme=dark] .hy-full .hf-cm>b{color:#7FE3B8}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hy-full .hf-cm{background:linear-gradient(135deg,#10283F 0%,#0D2236 100%);border-color:#1E4157;border-left-color:#D9B23F}:root:not([data-theme=light]) .hy-full .hf-cm>span{color:#9FD6FF}:root:not([data-theme=light]) .hy-full .hf-cm>b{color:#7FE3B8}}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hxc.hy.open{background:#2A2414;background-image:linear-gradient(180deg,#2E2816 0%,#252010 100%);border-color:#5A4A1E}:root:not([data-theme=light]) .hy-full .hf-h{color:#E3C877;border-color:#4A3E1C}:root:not([data-theme=light]) .hy-full .hf-r{border-color:#3F3519}:root:not([data-theme=light]) .hy-full .hf-r>span{color:#C9B77C}:root:not([data-theme=light]) .hy-full .hf-r>b{color:#F7EBC8}:root:not([data-theme=light]) .hy-full .hf-c{color:#BBA766}}
 @media(max-width:380px){.hxc.hy{padding:10px 11px}.hy-ic{width:32px;height:32px;font-size:16px}.hy-tt b{font-size:15px}.hy-am{font-size:16px}.hy-g{gap:8px 8px}.hy-g b{font-size:13.5px}.hy-cm>b{font-size:15.5px}}
 </style>
@@ -2471,7 +2479,7 @@ def history():
 <div class="hf-r"><span>{{L.method}}</span><b>{{it.method or '—'}}</b></div>
 {% if it.number %}<div class="hf-r"><span>{{L.number}}</span><b>{{it.number}}</b></div>{% endif %}
 <div class="hf-r"><span>{{L.when}}</span><b>{{it.when or '—'}}</b></div>
-{% if it.comm %}<div class="hf-r"><span>{{L.comm}}</span><b class="cm">{{it.comm}}</b></div>{% endif %}
+{% if it.comm %}<div class="hf-cm"><span><i>🎁</i>{{L.comm}}</span><b>{{it.comm}}</b></div>{% endif %}
 {% for k,v in it.extra %}<div class="hf-r"><span>{{L[k]}}</span><b{% if k in ('why','ins') %} class="pre"{% endif %}>{{v}}</b></div>{% endfor %}
 </div></div>{% endfor %}
 <script>(function(){if(window._hxInit)return;window._hxInit=1;function t(c){var o=!c.classList.contains('open');c.classList.toggle('open',o);c.setAttribute('aria-expanded',o?'true':'false');document.body.classList.toggle('hx1',o);if(o){window.scrollTo(0,0)}else{c.scrollIntoView({block:'center'})}}
