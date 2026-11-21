@@ -1481,7 +1481,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
 <main>{% for c,m in msgs %}<div class="msg {{c}}">{{m}}</div>{% endfor %}
-{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active=='/admin/menu'}}" href="/admin/menu">☰ মেনু <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('requests') %}<a class="t pri" href="/admin/requests/new">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
+{% if u and u['is_admin'] %}<div class="adm"><a class="t {{'on' if active=='/admin'}}" href="/admin">🏠 ড্যাশবোর্ড</a><a class="t {{'on' if active=='/admin/menu'}}" href="/admin/menu">☰ মেনু <span class="bd2" data-bd="*"{% if not nb('*') %} hidden{% endif %}>{{nb('*')}}</span></a>{% if can('tickets') %}<a class="t {{'on' if active.startswith('/admin/tickets')}}" href="/admin/tickets">💬 সাপোর্ট <span class="bd2" data-bd="/admin/tickets"{% if not nb('/admin/tickets') %} hidden{% endif %}>{{nb('/admin/tickets')}}</span></a>{% endif %}{% if can('requests') %}<a class="t pri" href="/admin/requests/new">➕ রিকোয়েস্ট পাঠান</a>{% endif %}</div>{% endif %}
 {{body|safe}}
 {% if foot %}<div class="foot">{{foot}}</div>{% endif %}</main>
 {% if u and not u['is_admin'] %}<div class="nav">
@@ -2631,8 +2631,44 @@ def referral():
                 active="/account", st=st, rows=rows, by=by, link=link, text=text, bonus=bonus)
 
 
-SC_CSS = '<style>\n.sc{background:var(--card);border:1px solid var(--ln);border-radius:20px;overflow:hidden;box-shadow:0 10px 28px -16px #0007;margin-bottom:14px}\n.sc-h{display:flex;align-items:center;gap:11px;padding:13px 14px;background:linear-gradient(100deg,var(--b),var(--b2));color:#fff}\n.sc-h .sc-hi{min-width:0;flex:1}.sc-h b{display:block;font-size:15.5px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-h small{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.92;margin-top:2px;overflow:hidden;white-space:nowrap}\n.sc-av{width:42px;height:42px;border-radius:50%;background:#ffffff2b;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;flex:none;color:#fff}\n.sc-av.sm{width:30px;height:30px;font-size:15px;background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-dot{width:8px;height:8px;border-radius:50%;background:#3df59b;box-shadow:0 0 0 3px #3df59b40;flex:none}.sc-dot.off{background:#c3ccd4;box-shadow:none}\n.sc-st{font-size:11px;font-weight:800;padding:5px 11px;border-radius:99px;background:#ffffff2b;white-space:nowrap}\n.sc-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:9px 12px;border-bottom:1px solid var(--ln);background:var(--tint)}\n.sc-bar form{margin:0}.sc-bar a,.sc-bar button{font-size:13px;font-weight:700;padding:8px 14px;border-radius:99px;border:1px solid var(--ln);background:var(--card);color:var(--tx);width:auto;margin:0;cursor:pointer;text-decoration:none;display:inline-block;box-shadow:none;line-height:1.2}\n.sc-bar button.ok{background:linear-gradient(135deg,#14c08f,#0b8f69);border-color:transparent;color:#fff}\n.sc-body{height:420px;height:min(58vh,540px);min-height:300px;overflow-y:auto;padding:14px 12px;background:var(--bg);display:flex;flex-direction:column;gap:7px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}\n.sc-d{align-self:center;font-size:11.5px;font-weight:600;color:var(--mut);background:var(--tint);border:1px solid var(--ln);padding:3px 13px;border-radius:99px;margin:8px 0 4px}\n.sc-sy{align-self:center;font-size:12px;color:var(--mut);background:var(--tint);border:1px dashed var(--ln);padding:6px 14px;border-radius:99px;margin:6px 0;text-align:center}\n.sc-r{display:flex;align-items:flex-end;gap:8px}.sc-r.me{flex-direction:row-reverse}\n.sc-b{max-width:80%;padding:9px 13px 6px;border-radius:18px;font-size:14.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 1px 2px #0002}\n.sc-r.ag .sc-b{background:var(--card);border:1px solid var(--ln);color:var(--tx);border-bottom-left-radius:5px}\n.sc-r.me .sc-b{background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;border-bottom-right-radius:5px}\n.sc-n{display:block;font-size:11px;font-weight:800;opacity:.85;margin-bottom:2px}\n.sc-t{display:block;text-align:right;font-size:10.5px;opacity:.72;margin-top:3px}\n.sc-f{display:flex;align-items:flex-end;gap:9px;padding:10px 12px;border-top:1px solid var(--ln);background:var(--card)}\n.sc-f form{display:flex;align-items:flex-end;gap:9px;flex:1;min-width:0;margin:0}\n.sc-f textarea{flex:1;width:auto;min-width:0;resize:none;max-height:130px;min-height:46px;margin:0;padding:12px 16px;border-radius:24px;border:1px solid var(--ln);background:var(--fld);color:var(--tx);font:inherit;font-size:15px;line-height:1.35;overflow-y:auto}\n.sc-f textarea:focus{outline:none;border-color:var(--b);box-shadow:0 0 0 3px var(--glow)}\n.sc-send{width:48px;height:48px;min-width:48px;border-radius:50%;border:0;padding:0;margin:0;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-size:21px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px #0b8f69}\n.sc-send:active{transform:scale(.94)}.sc-send:disabled{opacity:.5}\n.sc-cl{padding:18px 16px;text-align:center;border-top:1px solid var(--ln);background:var(--card)}.sc-cl b{display:block;margin-bottom:4px}\n.sc-go{display:inline-block;margin-top:12px;padding:12px 22px;border-radius:99px;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-weight:800;font-size:14.5px;text-decoration:none;border:0;cursor:pointer;box-shadow:0 8px 18px -8px #0b8f69}\n.sc-new{text-align:center;padding:22px 16px}.sc-new .big{font-size:44px;line-height:1}.sc-new h2{margin:10px 0 4px}.sc-new form{text-align:left;margin-top:14px}\n.sc-li{display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--ln);color:var(--tx);text-decoration:none}.sc-li:last-child{border-bottom:0}\n.sc-li:active{background:var(--tint)}.sc-li .sc-av{background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-li .mid{flex:1;min-width:0}.sc-li .mid b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-li .mid span{display:block;font-size:12.5px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}\n.sc-li .end{text-align:right;flex:none;font-size:11.5px;color:var(--mut)}\n.sc-badge{display:inline-block;margin-top:4px;min-width:20px;padding:2px 7px;border-radius:99px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;text-align:center}\n.sc-li.un .mid b{color:var(--tx)}.sc-li.un .mid span{color:var(--tx);font-weight:600}\n.sc-sec{font-size:12.5px;font-weight:800;color:var(--mut);margin:16px 4px 8px;letter-spacing:.2px}\n@media(max-width:520px){.sc-body{height:62vh;height:min(62dvh,560px)}.sc-b{max-width:86%}}\n</style>'
-SC_JS = "<script>(function(){var b=document.getElementById('scb');if(b)b.scrollTop=b.scrollHeight;\nvar t=document.getElementById('sct'),f=document.getElementById('scf');\nif(t){var g=function(){t.style.height='auto';t.style.height=Math.min(t.scrollHeight,130)+'px'};t.addEventListener('input',g);g();\nt.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&window.matchMedia('(pointer:fine)').matches){e.preventDefault();if(t.value.trim()&&f.requestSubmit)f.requestSubmit()}})}\nif(f)f.addEventListener('submit',function(e){var s=f.querySelector('.sc-send');if(!t.value.trim()){e.preventDefault();return}if(s){setTimeout(function(){s.disabled=true},0)}})})()</script>"
+SC_CSS = '<style>\n.sc{background:var(--card);border:1px solid var(--ln);border-radius:20px;overflow:hidden;box-shadow:0 10px 28px -16px #0007;margin-bottom:14px}\n.sc-h{display:flex;align-items:center;gap:11px;padding:13px 14px;background:linear-gradient(100deg,var(--b),var(--b2));color:#fff}\n.sc-h .sc-hi{min-width:0;flex:1}.sc-h b{display:block;max-width:100%;font-size:15.5px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-h small{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.92;margin-top:2px;overflow:hidden;white-space:nowrap}\n.sc-av{width:42px;height:42px;border-radius:50%;background:#ffffff2b;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;flex:none;color:#fff}\n.sc-av.sm{width:30px;height:30px;font-size:15px;background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-dot{width:8px;height:8px;border-radius:50%;background:#3df59b;box-shadow:0 0 0 3px #3df59b40;flex:none}.sc-dot.off{background:#c3ccd4;box-shadow:none}\n.sc-st{font-size:11px;font-weight:800;padding:5px 11px;border-radius:99px;background:#ffffff2b;white-space:nowrap}\n.sc-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:9px 12px;border-bottom:1px solid var(--ln);background:var(--tint)}\n.sc-bar form{margin:0}.sc-bar a,.sc-bar button{font-size:13px;font-weight:700;padding:8px 14px;border-radius:99px;border:1px solid var(--ln);background:var(--card);color:var(--tx);width:auto;margin:0;cursor:pointer;text-decoration:none;display:inline-block;box-shadow:none;line-height:1.2}\n.sc-bar button.ok{background:linear-gradient(135deg,#14c08f,#0b8f69);border-color:transparent;color:#fff}\n.sc.chat{display:flex;flex-direction:column;height:calc(100vh - 250px);height:calc(100dvh - 250px);min-height:340px;max-height:900px}\n.sc.chat>*{flex:none}\n.sc.chat>.sc-body{flex:1 1 auto;min-height:0;height:auto;overflow-y:auto;overflow-x:hidden;padding:14px 12px;background:var(--bg);display:flex;flex-direction:column;gap:7px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scroll-behavior:auto}\n.sc-body>:first-child{margin-top:auto}\n.sc-r{flex:none}.sc-new-pill{position:absolute;left:50%;transform:translateX(-50%);bottom:84px;z-index:3;border:0;border-radius:99px;padding:8px 16px;font-size:12.5px;font-weight:800;background:#0b8f69;color:#fff;box-shadow:0 8px 18px -8px #000a;cursor:pointer;width:auto;margin:0}\n.sc.chat{position:relative}\n.sc-bar{flex-shrink:0}.sc-err{display:none;padding:7px 14px;font-size:12.5px;color:#fff;background:#ef4444}\n.sc-s{display:flex;gap:8px;margin:0 0 10px}.sc-s input{flex:1;min-width:0;margin:0}.sc-s button{width:auto;margin:0;padding:0 18px}\n.sc-chips{display:flex;gap:8px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}.sc-chips a{white-space:nowrap}\n.sc-d{align-self:center;font-size:11.5px;font-weight:600;color:var(--mut);background:var(--tint);border:1px solid var(--ln);padding:3px 13px;border-radius:99px;margin:8px 0 4px}\n.sc-sy{align-self:center;font-size:12px;color:var(--mut);background:var(--tint);border:1px dashed var(--ln);padding:6px 14px;border-radius:99px;margin:6px 0;text-align:center}\n.sc-r{display:flex;align-items:flex-end;gap:8px}.sc-r.me{flex-direction:row-reverse}\n.sc-b{max-width:80%;padding:9px 13px 6px;border-radius:18px;font-size:14.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 1px 2px #0002}\n.sc-r.ag .sc-b{background:var(--card);border:1px solid var(--ln);color:var(--tx);border-bottom-left-radius:5px}\n.sc-r.me .sc-b{background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;border-bottom-right-radius:5px}\n.sc-n{display:block;font-size:11px;font-weight:800;opacity:.85;margin-bottom:2px}\n.sc-t{display:block;text-align:right;font-size:10.5px;opacity:.72;margin-top:3px}\n.sc-f{display:flex;align-items:flex-end;gap:9px;padding:10px 12px;border-top:1px solid var(--ln);background:var(--card)}\n.sc-f form{display:flex;align-items:flex-end;gap:9px;flex:1;min-width:0;margin:0}\n.sc-f textarea{flex:1;width:auto;min-width:0;resize:none;max-height:130px;min-height:46px;margin:0;padding:12px 16px;border-radius:24px;border:1px solid var(--ln);background:var(--fld);color:var(--tx);font:inherit;font-size:15px;line-height:1.35;overflow-y:auto}\n.sc-f textarea:focus{outline:none;border-color:var(--b);box-shadow:0 0 0 3px var(--glow)}\n.sc-send{width:48px;height:48px;min-width:48px;border-radius:50%;border:0;padding:0;margin:0;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-size:21px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px #0b8f69}\n.sc-send:active{transform:scale(.94)}.sc-send:disabled{opacity:.5}\n.sc-cl{padding:18px 16px;text-align:center;border-top:1px solid var(--ln);background:var(--card)}.sc-cl b{display:block;margin-bottom:4px}\n.sc-go{display:inline-block;margin-top:12px;padding:12px 22px;border-radius:99px;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-weight:800;font-size:14.5px;text-decoration:none;border:0;cursor:pointer;box-shadow:0 8px 18px -8px #0b8f69}\n.sc-new{text-align:center;padding:22px 16px}.sc-new .big{font-size:44px;line-height:1}.sc-new h2{margin:10px 0 4px}.sc-new form{text-align:left;margin-top:14px}\n.sc-li{display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--ln);color:var(--tx);text-decoration:none}.sc-li:last-child{border-bottom:0}\n.sc-li:active{background:var(--tint)}.sc-li .sc-av{background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-li .mid{flex:1;min-width:0}.sc-li .mid b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-li .mid span{display:block;font-size:12.5px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}\n.sc-li .end{text-align:right;flex:none;font-size:11.5px;color:var(--mut)}\n.sc-badge{display:inline-block;margin-top:4px;min-width:20px;padding:2px 7px;border-radius:99px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;text-align:center}\n.sc-li.un .mid b{color:var(--tx)}.sc-li.un .mid span{color:var(--tx);font-weight:600}\n.sc-sec{font-size:12.5px;font-weight:800;color:var(--mut);margin:16px 4px 8px;letter-spacing:.2px}\n@media(max-width:520px){.sc-b{max-width:86%}.sc-h{padding:10px 12px}.sc-av{width:38px;height:38px}}\n</style>'
+SC_JS = """<script>(function(){
+var b=document.getElementById('scb');if(!b)return;
+var card=b.closest('.sc'),t=document.getElementById('sct'),f=document.getElementById('scf');
+function fit(){if(!card||!card.classList.contains('chat'))return;
+var vv=window.visualViewport,vh=vv?vv.height:window.innerHeight;
+var top=card.getBoundingClientRect().top+window.scrollY;var nav=document.querySelector('.nav');
+var res=(nav&&nav.offsetHeight?nav.offsetHeight:0)+14;
+var h=Math.max(320,Math.min(vh-(top-window.scrollY)-res,900));card.style.height=h+'px'}
+function atBottom(){return b.scrollHeight-b.scrollTop-b.clientHeight<80}
+function down(){b.scrollTop=b.scrollHeight}
+window.scrollTo(0,0);fit();down();var rf=function(){var k=atBottom();fit();if(k)down()};setTimeout(rf,60);setTimeout(rf,400);window.addEventListener('load',rf);
+var pill=null;
+function showPill(){if(pill)return;pill=document.createElement('button');pill.type='button';pill.className='sc-new-pill';pill.textContent='↓ নতুন বার্তা';pill.onclick=function(){down();hide()};card.appendChild(pill)}
+function hide(){if(pill){pill.remove();pill=null}}
+b.addEventListener('scroll',function(){if(atBottom())hide()},{passive:true});
+var rz=function(){var k=atBottom();fit();if(k)down()};
+window.addEventListener('resize',rz);if(window.visualViewport)window.visualViewport.addEventListener('resize',rz);
+if(t){var g=function(){t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px';rz()};t.addEventListener('input',g);g();
+t.addEventListener('focus',function(){setTimeout(function(){fit();down()},300)});
+t.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&window.matchMedia('(pointer:fine)').matches){e.preventDefault();if(t.value.trim()&&f.requestSubmit)f.requestSubmit()}})}
+var pu=b.getAttribute('data-poll'),sig=b.getAttribute('data-sig'),busy=false,alive=true;
+function poll(){if(!alive||!pu||busy||document.hidden)return;busy=true;
+fetch(pu+(pu.indexOf('?')<0?'?':'&')+'sig='+encodeURIComponent(sig),{credentials:'same-origin',headers:{'X-Requested-With':'fetch'}}).then(function(r){return r.ok?r.json():null}).then(function(d){busy=false;
+if(!d||d.same)return;if(d.reload){alive=false;location.reload();return}
+var k=atBottom();b.innerHTML=d.html;sig=d.sig;if(k)down();else showPill()}).catch(function(){busy=false})}
+var iv=setInterval(function(){if(!document.getElementById('scb')){clearInterval(iv);alive=false;return}poll()},4000);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)poll()});
+if(f)f.addEventListener('submit',function(e){e.preventDefault();var v=t.value.trim();if(!v)return;
+var s=f.querySelector('.sc-send'),er=card.querySelector('.sc-err');if(s)s.disabled=true;
+var fd=new FormData(f),tk=fd.get('_csrf');
+fetch(f.action,{method:'POST',body:fd,credentials:'same-origin',headers:{'X-CSRF':tk,'X-Requested-With':'fetch'}}).then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
+if(s)s.disabled=false;
+if(d&&d.csrf){var h=f.querySelector('[name=_csrf]');if(h)h.value=d.csrf}
+if(d&&d.ok){t.value='';g();if(er)er.style.display='none';busy=false;fetch(pu+'&sig=x',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(x){if(x&&x.html){b.innerHTML=x.html;sig=x.sig;down()}if(x&&x.reload)location.reload()});t.focus()}
+else{if(d&&d.reload){location.reload();return}if(er){er.textContent=(d&&d.error)||'পাঠানো যায়নি, আবার চেষ্টা করুন।';er.style.display='block'}}
+}).catch(function(){if(s)s.disabled=false;if(er){er.textContent='নেটওয়ার্ক সমস্যা, আবার চেষ্টা করুন।';er.style.display='block'}})})
+})()</script>"""
 
 
 def _bd(ts):
@@ -2679,6 +2715,30 @@ def _chat_items(msgs, mine):
     return out
 
 
+def _thread_sig(t):
+    n = q1("SELECT COUNT(*) c, COALESCE(MAX(id),0) m FROM ticket_messages WHERE ticket_id=?", (t["id"],))
+    return "%s:%s:%s:%s" % (t["status"], n["c"], n["m"], 1 if t["reply"] else 0)
+
+
+def _fetch_req():
+    return request.headers.get("X-Requested-With") == "fetch" or bool(request.headers.get("X-CSRF"))
+
+
+def _flash_text():
+    from flask import get_flashed_messages
+    return " ".join(m for c, m in get_flashed_messages(with_categories=True))[:200]
+
+
+def _poll_payload(t, mine, av, shownames, expect_status):
+    sig = _thread_sig(t)
+    if request.args.get("sig") == sig:
+        return jsonify(same=True)
+    if expect_status and t["status"] != expect_status:
+        return jsonify(reload=True)
+    items = _chat_items(_ticket_threads([t])[t["id"]], mine)
+    return jsonify(sig=sig, html=render_str(SC_THREAD, items=items, av=av, shownames=shownames))
+
+
 SC_THREAD = """{% for it in items %}{% if it.sep %}<div class="sc-d">{{it.sep}}</div>{% elif it.cls=='sy' %}<div class="sc-sy">🔒 {{it.body}} · {{it.hm}}</div>{% else %}<div class="sc-r {{it.cls}}">{% if it.cls=='ag' %}<div class="sc-av sm">{{av}}</div>{% endif %}<div class="sc-b">{% if shownames and it.name %}<span class="sc-n">{{it.name}}</span>{% endif %}{{it.body}}<span class="sc-t">{{it.hm}}</span></div></div>{% endif %}{% endfor %}"""
 
 
@@ -2712,10 +2772,10 @@ def support():
     others = [dict(id=r["id"], subject=r["subject"], closed=r["status"] == "closed", un=(r["user_unread"] or 0) > 0,
                    when=_short_time(r["last_activity"] or r["created"])) for r in rows if not cur or r["id"] != cur["id"]]
     return page(SC_CSS + """{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
-{% if cur %}<div class="sc"><div class="sc-h"><div class="sc-av">🎧</div><div class="sc-hi"><b>{{cur['subject']}}</b>
+{% if cur %}<div class="sc chat"><div class="sc-h"><div class="sc-av">🎧</div><div class="sc-hi"><b>{{cur['subject']}}</b>
 <small><i class="sc-dot{{' off' if cur['status']=='closed' else ''}}"></i>সাপোর্ট টিম · #{{cur['id']}}</small></div>
 <span class="sc-st">{{'বন্ধ' if cur['status']=='closed' else 'চলমান'}}</span></div>
-<div class="sc-body" id="scb">""" + SC_THREAD + """</div>
+<div class="sc-body" id="scb" data-poll="/support/{{cur['id']}}/poll?x=1" data-sig="{{sig}}">""" + SC_THREAD + """</div><div class="sc-err" role="alert"></div>
 {% if cur['status']=='closed' %}<div class="sc-cl"><b>🔒 এই কনভারসেশন বন্ধ করা হয়েছে</b><span class="k">নতুন কোনো সমস্যা হলে নতুন কনভারসেশন শুরু করতে পারেন।</span>
 {% if not active %}<br><a class="sc-go" href="/support?new=1">➕ নতুন কনভারসেশন শুরু করুন</a>{% endif %}</div>
 {% else %}<div class="sc-f"><form method="post" action="/support/{{cur['id']}}/reply" id="scf"><input type="hidden" name="_csrf" value="{{csrf_token}}">
@@ -2727,7 +2787,20 @@ def support():
 {% if rows %}<a class="k" href="/support" style="display:inline-block;margin-top:12px">← ফিরে যান</a>{% endif %}</div></div>{% endif %}
 {% if others %}<div class="sc-sec">আগের কনভারসেশন</div><div class="sc">{% for o in others %}<a class="sc-li{{' un' if o.un else ''}}" href="/support?c={{o.id}}"><div class="sc-av">{{'🔒' if o.closed else '💬'}}</div>
 <div class="mid"><b>{{o.subject}}</b><span>#{{o.id}} · {{'বন্ধ' if o.closed else 'চলমান'}}</span></div><div class="end">{{o.when}}{% if o.un %}<br><span class="sc-badge">নতুন</span>{% endif %}</div></a>{% endfor %}</div>{% endif %}
-""" + SC_JS, active="/account", rows=rows, cur=cur, items=items, active_t=active, others=others, av="🎧", shownames=False)
+""" + SC_JS, active="/account", rows=rows, cur=cur, items=items, sig=(_thread_sig(cur) if cur else ""), active_t=active, others=others, av="🎧", shownames=False)
+
+
+@app.route("/support/<int:tid>/poll")
+@customer_required
+def support_poll(tid):
+    u = me()
+    t = q1("SELECT * FROM tickets WHERE id=? AND user_id=?", (tid, u["id"]))
+    if not t:
+        abort(404)
+    if (t["user_unread"] or 0) > 0 and request.args.get("sig") != "x":
+        db().execute("UPDATE tickets SET user_unread=0 WHERE id=? AND user_id=?", (tid, u["id"]))
+        user_seen(lambda link, title, ts: _user_badge_key(link, title) == "/support")
+    return _poll_payload(t, "user", "🎧", False, None)
 
 
 @app.route("/support/<int:tid>/reply", methods=["POST"])
@@ -2735,10 +2808,12 @@ def support():
 def support_reply(tid):
     u = me()
     m = request.form.get("message", "").strip()[:1000]
+    fj = _fetch_req()
+    back = redirect("/support?c=%d" % tid)
     if not m:
-        err("বার্তা লিখুন।"); return redirect("/support?c=%d" % tid)
+        err("বার্তা লিখুন।"); return jsonify(ok=False, error=_flash_text()) if fj else back
     if rate_hit("sp:%d" % u["id"], 40, 3600):
-        err("অনেক রিকোয়েস্ট হয়েছে, পরে চেষ্টা করুন।"); return redirect("/support?c=%d" % tid)
+        err("অনেক রিকোয়েস্ট হয়েছে, পরে চেষ্টা করুন।"); return jsonify(ok=False, error=_flash_text()) if fj else back
     with atomic():
         t = q1("SELECT * FROM tickets WHERE id=? AND user_id=?", (tid, u["id"]))
         if not t:
@@ -2747,10 +2822,11 @@ def support_reply(tid):
         c = db().execute("UPDATE tickets SET status='open', admin_unread=1, last_activity=? WHERE id=? AND user_id=? AND status!='closed'",
                          (ts, tid, u["id"]))
         if not c.rowcount:
-            err("এই কনভারসেশন বন্ধ হয়ে গেছে, আর বার্তা পাঠানো যাবে না।"); return redirect("/support?c=%d" % tid)
+            err("এই কনভারসেশন বন্ধ হয়ে গেছে, আর বার্তা পাঠানো যাবে না।")
+            return jsonify(ok=False, reload=True, error=_flash_text()) if fj else back
         db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)", (tid, "user", None, m, ts))
         alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], (t["subject"] or "")[:60]), "/admin/tickets", "tickets")
-    return redirect("/support?c=%d" % tid)
+    return jsonify(ok=True) if fj else back
 
 
 ACCOUNT_SOON = {"kyc": ("🪪", "KYC যাচাই"), "vip": ("👑", "VIP লেভেল"), "language": ("🌐", "ভাষা")}
@@ -4309,7 +4385,23 @@ def _admin_send_reply(tid, rep):
 @staff_required("tickets")
 def admin_ticket_reply(tid):
     _admin_send_reply(tid, request.form.get("reply", "").strip()[:1000])
+    if _fetch_req():
+        e = _flash_text()
+        return jsonify(ok=not e, error=e, reload=bool(e))
     return redirect("/admin/tickets/%d" % tid)
+
+
+@app.route("/admin/tickets/<int:tid>/poll")
+@staff_required("tickets")
+def admin_ticket_poll(tid):
+    t = q1("SELECT * FROM tickets WHERE id=?", (tid,))
+    if not t:
+        abort(404)
+    if (t["admin_unread"] or 0) > 0 and request.args.get("sig") != "x":
+        db().execute("UPDATE tickets SET admin_unread=0 WHERE id=?", (tid,))
+        if not _tickets_pending():
+            alerts_done("/admin/tickets")
+    return _poll_payload(t, "admin", (q1("SELECT name FROM users WHERE id=?", (t["user_id"],)) or {"name": "?"})["name"][:1] or "?", True, None)
 
 
 @app.route("/admin/tickets/<int:tid>/close", methods=["POST"])
@@ -4344,17 +4436,17 @@ def admin_ticket_view(tid):
         db().execute("UPDATE tickets SET admin_unread=0 WHERE id=?", (tid,))
         if not _tickets_pending():
             alerts_done("/admin/tickets")
-    return page(SC_CSS + """<div class="sc"><div class="sc-h"><div class="sc-av">{{(t['name'] or '?')[:1]}}</div><div class="sc-hi"><b>{{t['name']}} · #{{t['member_id']}}</b>
+    return page(SC_CSS + """<div class="sc chat"><div class="sc-h"><div class="sc-av">{{(t['name'] or '?')[:1]}}</div><div class="sc-hi"><b>{{t['name']}} · #{{t['member_id']}}</b>
 <small><i class="sc-dot{{' off' if t['status']=='closed' else ''}}"></i>{{t['subject']}} · #{{t['id']}}</small></div><span class="sc-st">{{'বন্ধ' if t['status']=='closed' else 'চলমান'}}</span></div>
 <div class="sc-bar"><a href="/admin/tickets{{'?view=closed' if t['status']=='closed' else ''}}">←</a>{% if can('users_view') %}<a href="/admin/users/{{t['user_id']}}">👤 ইউজার</a>{% endif %}
 {% if t['status']!='closed' %}<form method="post" action="/admin/tickets/{{t['id']}}/close" data-confirm="সমস্যা সমাধান হয়েছে? বন্ধ করলে ইউজার আর এই কনভারসেশনে বার্তা পাঠাতে পারবে না (ইতিহাস থাকবে)।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="ok">✅ Close Conversation</button></form>{% endif %}
 {% if main and t['status']=='open' %}<form method="post" action="/admin/tickets/{{t['id']}}/pass" data-confirm="এই টিকিট পাস করবেন? এটি সক্রিয় তালিকা থেকে সরে পাস করা টিকিটে যাবে (মুছবে না)।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button>⏭ Pass</button></form>{% endif %}
 {% if main and t['status']=='passed' %}<form method="post" action="/admin/tickets/{{t['id']}}/reopen" data-confirm="টিকিট আবার খুলবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button>↩ আবার খুলুন</button></form>{% endif %}</div>
-<div class="sc-body" id="scb">""" + SC_THREAD + """</div>
+<div class="sc-body" id="scb" data-poll="/admin/tickets/{{t['id']}}/poll?x=1" data-sig="{{sig}}">""" + SC_THREAD + """</div><div class="sc-err" role="alert"></div>
 {% if t['status']=='open' %}<div class="sc-f"><form method="post" action="/admin/tickets/{{t['id']}}/reply" id="scf"><input type="hidden" name="_csrf" value="{{csrf_token}}">
 <textarea name="reply" id="sct" rows="1" required maxlength="1000" placeholder="উত্তর লিখুন"></textarea><button class="sc-send" aria-label="Send">➤</button></form></div>
 {% elif t['status']=='closed' %}<div class="sc-cl"><b>🔒 এই কনভারসেশন বন্ধ করা হয়েছে</b><span class="k">{{t['closed_by'] or ''}}</span></div>{% endif %}</div>""" + SC_JS,
-                active="/admin/tickets", t=t, items=items, av=(t["name"] or "?")[:1], shownames=True, main=is_main_admin())
+                active="/admin/tickets", t=t, items=items, sig=_thread_sig(t), av=(t["name"] or "?")[:1], shownames=True, main=is_main_admin())
 
 
 @app.route("/admin/tickets", methods=["GET", "POST"])
@@ -4371,9 +4463,18 @@ def admin_tickets():
     cnt = q1("SELECT SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) o, SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) c, "
              "SUM(CASE WHEN status='passed' THEN 1 ELSE 0 END) p FROM tickets")
     t0 = now()
-    rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status=? "
-              "ORDER BY (COALESCE(t.admin_unread,0)>0) DESC, COALESCE(t.last_activity,t.created) DESC, t.id DESC LIMIT 60", (view,))
-    if view == "open":
+    qs = request.args.get("q", "").strip()[:60]
+    onlyun = request.args.get("un") == "1"
+    where, args = "t.status=?", [view]
+    if qs:
+        like = "%" + qs.lower().replace("%", "").replace("_", "") + "%"
+        where += " AND (LOWER(u.name) LIKE ? OR LOWER(u.member_id) LIKE ? OR u.phone LIKE ? OR LOWER(t.subject) LIKE ? OR CAST(t.id AS TEXT)=?)"
+        args += [like, like, like, like, qs.lstrip("#")]
+    if onlyun:
+        where += " AND COALESCE(t.admin_unread,0)>0"
+    rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE " + where +
+              " ORDER BY (COALESCE(t.admin_unread,0)>0) DESC, COALESCE(t.last_activity,t.created) DESC, t.id DESC LIMIT 60", tuple(args))
+    if view == "open" and not qs and not onlyun:
         _seen_list("/admin/tickets", rows, 60, {"p": 1}, t0)
     th = _ticket_threads(rows)
     lst = []
@@ -4383,9 +4484,11 @@ def admin_tickets():
         lst.append(dict(id=r["id"], name=r["name"], mid=r["member_id"], subject=r["subject"], un=(r["admin_unread"] or 0) > 0,
                         pre=("↪ " if last["who"] == "admin" else "") + pre, when=_short_time(r["last_activity"] or r["created"]), ini=(r["name"] or "?")[:1]))
     return page(SC_CSS + """<div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap"><a class="btn {{'' if view=='open' else 's'}}" href="/admin/tickets">খোলা ({{nopen}})</a><a class="btn {{'' if view=='closed' else 's'}}" href="/admin/tickets?view=closed">বন্ধ ({{nclosed}})</a>{% if main %}<a class="btn {{'' if view=='passed' else 's'}}" href="/admin/tickets?view=passed">⏭ পাস ({{npass}})</a>{% endif %}</div>
-{% if not lst %}<div class="card empty">{{'কোনো পাস করা টিকিট নেই' if view=='passed' else ('কোনো বন্ধ কনভারসেশন নেই' if view=='closed' else 'কোনো টিকিট নেই')}}</div>{% else %}<div class="sc">{% for c in lst %}<a class="sc-li{{' un' if c.un else ''}}" href="/admin/tickets/{{c.id}}"><div class="sc-av">{{c.ini}}</div>
+<form class="sc-s" method="get" action="/admin/tickets"><input type="hidden" name="view" value="{{view}}"><input name="q" value="{{qs}}" placeholder="🔍 নাম, ID, ফোন বা বিষয় দিয়ে খুঁজুন" maxlength="60" enterkeyhint="search">{% if onlyun %}<input type="hidden" name="un" value="1">{% endif %}<button>খুঁজুন</button></form>
+<div class="sc-chips"><a class="btn {{'' if not onlyun else 's'}}" href="/admin/tickets?view={{view}}{{'&q='~qs if qs}}">সব</a><a class="btn {{'' if onlyun else 's'}}" href="/admin/tickets?view={{view}}&un=1{{'&q='~qs if qs}}">🔴 অপঠিত</a>{% if qs or onlyun %}<a class="btn s" href="/admin/tickets?view={{view}}">✕ ক্লিয়ার</a>{% endif %}</div>
+{% if not lst %}<div class="card empty">{{'কোনো ফলাফল নেই' if (qs or onlyun) else 'কোনো পাস করা টিকিট নেই' if view=='passed' else ('কোনো বন্ধ কনভারসেশন নেই' if view=='closed' else 'কোনো টিকিট নেই')}}</div>{% else %}<div class="sc">{% for c in lst %}<a class="sc-li{{' un' if c.un else ''}}" href="/admin/tickets/{{c.id}}"><div class="sc-av">{{c.ini}}</div>
 <div class="mid"><b>{{c.name}} · #{{c.mid}}</b><span>{{c.subject}}: {{c.pre}}</span></div><div class="end">{{c.when}}{% if c.un %}<br><span class="sc-badge">নতুন</span>{% endif %}</div></a>{% endfor %}</div>{% endif %}""",
-                active="/admin/tickets", lst=lst, main=main, view=view, nopen=int(cnt["o"] or 0), nclosed=int(cnt["c"] or 0), npass=int(cnt["p"] or 0) if main else 0)
+                active="/admin/tickets", lst=lst, main=main, view=view, qs=qs, onlyun=onlyun, nopen=int(cnt["o"] or 0), nclosed=int(cnt["c"] or 0), npass=int(cnt["p"] or 0) if main else 0)
 
 
 ONOFF = [("1", "চালু"), ("0", "বন্ধ")]
