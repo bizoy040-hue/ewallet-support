@@ -484,6 +484,8 @@ V5_COLUMNS = [
     ("requests", "pay_type", "TEXT", "TEXT"), ("requests", "extra_commission", "REAL", "NUMERIC(14,2)"),
     ("users", "vip_level", "TEXT", "TEXT"), ("users", "vip_rate", "REAL", "NUMERIC(7,3)"), ("tx", "account_type", "TEXT", "TEXT"),
     ("requests", "cancel_fee", "REAL", "NUMERIC(14,2)"), ("requests", "cancel_by", "TEXT", "TEXT"),
+    ("tickets", "user_unread", "INTEGER DEFAULT 0", "INTEGER DEFAULT 0"), ("tickets", "admin_unread", "INTEGER DEFAULT 0", "INTEGER DEFAULT 0"),
+    ("tickets", "last_activity", "TEXT", "TEXT"), ("tickets", "closed_at", "TEXT", "TEXT"), ("tickets", "closed_by", "TEXT", "TEXT"),
     # @@COLUMNS
 ]
 # (name, CREATE TABLE template, [index statements], immutable?)  {ID}=primary key, {BIG}=integer ref, {NUM}=money
@@ -527,6 +529,10 @@ V5_TABLES = [
     ("vip_log",
      "CREATE TABLE IF NOT EXISTS vip_log(id {ID}, user_id {BIG} NOT NULL, action TEXT NOT NULL, old_level TEXT, new_level TEXT, rate {RATE}, "
      "reason TEXT, actor TEXT, actor_id {BIG}, created TEXT NOT NULL)", [], True),
+    ("ticket_messages",
+     "CREATE TABLE IF NOT EXISTS ticket_messages(id {ID}, ticket_id {BIG} NOT NULL REFERENCES tickets(id), sender TEXT NOT NULL, sender_name TEXT, "
+     "body TEXT NOT NULL, created TEXT NOT NULL)",
+     ["CREATE INDEX IF NOT EXISTS ix_tmsg_ticket ON ticket_messages(ticket_id)"], False),
     # @@TABLES
 ]
 V5_INDEXES = [
@@ -1727,6 +1733,17 @@ EN_PHRASES = {
     "বিষয় ও বার্তা দিন।": "Enter a subject and a message.", "টিকিট জমা হয়েছে।": "Ticket submitted.",
     "বিষয়": "Subject", "বার্তা": "Message", "টিকিট জমা দিন": "Submit ticket", "যাচাই": "Verify",
     "↳ সাপোর্ট:": "↳ Support:",
+    "সাপোর্ট টিম": "Support Team", "অনলাইন": "Online", "চলমান": "Active", "আজ": "Today", "গতকাল": "Yesterday",
+    "আপনাকে কীভাবে সাহায্য করতে পারি?": "How can we help you?",
+    "সমস্যা বা প্রশ্ন লিখে কনভারসেশন শুরু করুন। আমাদের টিম এখানেই উত্তর দেবে।": "Describe your issue to start a conversation. Our team will reply right here.",
+    "কনভারসেশন শুরু করুন": "Start conversation", "নতুন কনভারসেশন শুরু করুন": "Start New Conversation",
+    "আগের কনভারসেশন": "Previous conversations", "মেসেজ লিখুন…": "Type a message…", "নতুন": "New",
+    "এই কনভারসেশন বন্ধ করা হয়েছে": "This conversation has been closed",
+    "নতুন কোনো সমস্যা হলে নতুন কনভারসেশন শুরু করতে পারেন।": "For another issue, you can start a new conversation.",
+    "কনভারসেশন বন্ধ করা হয়েছে": "Conversation closed", "ফিরে যান": "Back",
+    "আগের কনভারসেশন চলমান আছে, সেখানেই রিপ্লাই করুন।": "Your previous conversation is still open. Please reply there.",
+    "বার্তা পাঠানো হয়েছে।": "Message sent.", "বার্তা লিখুন।": "Write a message.",
+    "এই কনভারসেশন বন্ধ হয়ে গেছে, আর বার্তা পাঠানো যাবে না।": "This conversation is closed; you can no longer send messages.",
     # account
     "ডার্ক মোড": "Dark mode", "নোটিফিকেশন সাউন্ড": "Notification sound", "ব্রাউজার নোটিফিকেশন": "Browser notifications", "📲 ব্রাউজার:": "📲 Browser:", "সেটিংস": "Settings",
     "পেমেন্ট নম্বর ব্যবস্থাপনা": "Manage payment numbers", "ফিডব্যাক": "Feedback", "আমাদের সম্পর্কে": "About us",
@@ -2614,6 +2631,57 @@ def referral():
                 active="/account", st=st, rows=rows, by=by, link=link, text=text, bonus=bonus)
 
 
+SC_CSS = '<style>\n.sc{background:var(--card);border:1px solid var(--ln);border-radius:20px;overflow:hidden;box-shadow:0 10px 28px -16px #0007;margin-bottom:14px}\n.sc-h{display:flex;align-items:center;gap:11px;padding:13px 14px;background:linear-gradient(100deg,var(--b),var(--b2));color:#fff}\n.sc-h .sc-hi{min-width:0;flex:1}.sc-h b{display:block;font-size:15.5px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-h small{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.92;margin-top:2px;overflow:hidden;white-space:nowrap}\n.sc-av{width:42px;height:42px;border-radius:50%;background:#ffffff2b;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;flex:none;color:#fff}\n.sc-av.sm{width:30px;height:30px;font-size:15px;background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-dot{width:8px;height:8px;border-radius:50%;background:#3df59b;box-shadow:0 0 0 3px #3df59b40;flex:none}.sc-dot.off{background:#c3ccd4;box-shadow:none}\n.sc-st{font-size:11px;font-weight:800;padding:5px 11px;border-radius:99px;background:#ffffff2b;white-space:nowrap}\n.sc-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:9px 12px;border-bottom:1px solid var(--ln);background:var(--tint)}\n.sc-bar form{margin:0}.sc-bar a,.sc-bar button{font-size:13px;font-weight:700;padding:8px 14px;border-radius:99px;border:1px solid var(--ln);background:var(--card);color:var(--tx);width:auto;margin:0;cursor:pointer;text-decoration:none;display:inline-block;box-shadow:none;line-height:1.2}\n.sc-bar button.ok{background:linear-gradient(135deg,#14c08f,#0b8f69);border-color:transparent;color:#fff}\n.sc-body{height:420px;height:min(58vh,540px);min-height:300px;overflow-y:auto;padding:14px 12px;background:var(--bg);display:flex;flex-direction:column;gap:7px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}\n.sc-d{align-self:center;font-size:11.5px;font-weight:600;color:var(--mut);background:var(--tint);border:1px solid var(--ln);padding:3px 13px;border-radius:99px;margin:8px 0 4px}\n.sc-sy{align-self:center;font-size:12px;color:var(--mut);background:var(--tint);border:1px dashed var(--ln);padding:6px 14px;border-radius:99px;margin:6px 0;text-align:center}\n.sc-r{display:flex;align-items:flex-end;gap:8px}.sc-r.me{flex-direction:row-reverse}\n.sc-b{max-width:80%;padding:9px 13px 6px;border-radius:18px;font-size:14.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 1px 2px #0002}\n.sc-r.ag .sc-b{background:var(--card);border:1px solid var(--ln);color:var(--tx);border-bottom-left-radius:5px}\n.sc-r.me .sc-b{background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;border-bottom-right-radius:5px}\n.sc-n{display:block;font-size:11px;font-weight:800;opacity:.85;margin-bottom:2px}\n.sc-t{display:block;text-align:right;font-size:10.5px;opacity:.72;margin-top:3px}\n.sc-f{display:flex;align-items:flex-end;gap:9px;padding:10px 12px;border-top:1px solid var(--ln);background:var(--card)}\n.sc-f form{display:flex;align-items:flex-end;gap:9px;flex:1;min-width:0;margin:0}\n.sc-f textarea{flex:1;width:auto;min-width:0;resize:none;max-height:130px;min-height:46px;margin:0;padding:12px 16px;border-radius:24px;border:1px solid var(--ln);background:var(--fld);color:var(--tx);font:inherit;font-size:15px;line-height:1.35;overflow-y:auto}\n.sc-f textarea:focus{outline:none;border-color:var(--b);box-shadow:0 0 0 3px var(--glow)}\n.sc-send{width:48px;height:48px;min-width:48px;border-radius:50%;border:0;padding:0;margin:0;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-size:21px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px #0b8f69}\n.sc-send:active{transform:scale(.94)}.sc-send:disabled{opacity:.5}\n.sc-cl{padding:18px 16px;text-align:center;border-top:1px solid var(--ln);background:var(--card)}.sc-cl b{display:block;margin-bottom:4px}\n.sc-go{display:inline-block;margin-top:12px;padding:12px 22px;border-radius:99px;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-weight:800;font-size:14.5px;text-decoration:none;border:0;cursor:pointer;box-shadow:0 8px 18px -8px #0b8f69}\n.sc-new{text-align:center;padding:22px 16px}.sc-new .big{font-size:44px;line-height:1}.sc-new h2{margin:10px 0 4px}.sc-new form{text-align:left;margin-top:14px}\n.sc-li{display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--ln);color:var(--tx);text-decoration:none}.sc-li:last-child{border-bottom:0}\n.sc-li:active{background:var(--tint)}.sc-li .sc-av{background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-li .mid{flex:1;min-width:0}.sc-li .mid b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-li .mid span{display:block;font-size:12.5px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}\n.sc-li .end{text-align:right;flex:none;font-size:11.5px;color:var(--mut)}\n.sc-badge{display:inline-block;margin-top:4px;min-width:20px;padding:2px 7px;border-radius:99px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;text-align:center}\n.sc-li.un .mid b{color:var(--tx)}.sc-li.un .mid span{color:var(--tx);font-weight:600}\n.sc-sec{font-size:12.5px;font-weight:800;color:var(--mut);margin:16px 4px 8px;letter-spacing:.2px}\n@media(max-width:520px){.sc-body{height:62vh;height:min(62dvh,560px)}.sc-b{max-width:86%}}\n</style>'
+SC_JS = "<script>(function(){var b=document.getElementById('scb');if(b)b.scrollTop=b.scrollHeight;\nvar t=document.getElementById('sct'),f=document.getElementById('scf');\nif(t){var g=function(){t.style.height='auto';t.style.height=Math.min(t.scrollHeight,130)+'px'};t.addEventListener('input',g);g();\nt.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&window.matchMedia('(pointer:fine)').matches){e.preventDefault();if(t.value.trim()&&f.requestSubmit)f.requestSubmit()}})}\nif(f)f.addEventListener('submit',function(e){var s=f.querySelector('.sc-send');if(!t.value.trim()){e.preventDefault();return}if(s){setTimeout(function(){s.disabled=true},0)}})})()</script>"
+
+
+def _bd(ts):
+    """UTC timestamp string -> Bangladesh datetime (display only), or None."""
+    try:
+        return datetime.strptime(str(ts)[:19], "%Y-%m-%d %H:%M:%S") + BD_OFFSET
+    except ValueError:
+        return None
+
+
+def _short_time(ts):
+    d = _bd(ts)
+    if not d:
+        return ""
+    return d.strftime("%H:%M") if d.date() == (datetime.utcnow() + BD_OFFSET).date() else d.strftime("%d-%m-%Y")
+
+
+def _ticket_threads(rows):
+    """{ticket id: [messages in chronological order]}. A ticket's original message and any legacy single reply come first,
+    later turns come from ticket_messages. Nothing existing is rewritten."""
+    th = {}
+    for t in rows:
+        l = [dict(who="user", body=t["message"] or "", ts=str(t["created"] or ""), name="")]
+        if t["reply"]:
+            l.append(dict(who="admin", body=t["reply"], ts=str(t["replied_at"] or t["created"] or ""), name=t["replied_by"] or ""))
+        th[t["id"]] = l
+    ids = [t["id"] for t in rows]
+    if ids:
+        for m in qa("SELECT * FROM ticket_messages WHERE ticket_id IN (%s) ORDER BY id" % ",".join("?" * len(ids)), tuple(ids)):
+            th[m["ticket_id"]].append(dict(who=m["sender"], body=m["body"] or "", ts=str(m["created"] or ""), name=m["sender_name"] or ""))
+    return th
+
+
+def _chat_items(msgs, mine):
+    """Flat list for the chat window: day separators + bubbles. `mine` = sender shown on the right ('user' for customers, 'admin' for staff)."""
+    out, last, today = [], None, (datetime.utcnow() + BD_OFFSET).date()
+    for m in msgs:
+        d = _bd(m["ts"])
+        if d and d.date() != last:
+            last = d.date()
+            out.append(dict(sep="আজ" if last == today else ("গতকাল" if last == today - timedelta(days=1) else last.strftime("%d-%m-%Y"))))
+        out.append(dict(body=m["body"], hm=d.strftime("%H:%M") if d else "", name=m["name"],
+                        cls="sy" if m["who"] == "system" else ("me" if m["who"] == mine else "ag")))
+    return out
+
+
+SC_THREAD = """{% for it in items %}{% if it.sep %}<div class="sc-d">{{it.sep}}</div>{% elif it.cls=='sy' %}<div class="sc-sy">🔒 {{it.body}} · {{it.hm}}</div>{% else %}<div class="sc-r {{it.cls}}">{% if it.cls=='ag' %}<div class="sc-av sm">{{av}}</div>{% endif %}<div class="sc-b">{% if shownames and it.name %}<span class="sc-n">{{it.name}}</span>{% endif %}{{it.body}}<span class="sc-t">{{it.hm}}</span></div></div>{% endif %}{% endfor %}"""
+
+
 @app.route("/support", methods=["GET", "POST"])
 @customer_required
 def support():
@@ -2621,17 +2689,68 @@ def support():
     if request.method == "POST":
         s, m = request.form.get("subject", "").strip()[:100], request.form.get("message", "").strip()[:1000]
         if not s or not m:
-            err("বিষয় ও বার্তা দিন।"); return redirect("/support")
-        db().execute("INSERT INTO tickets(user_id,subject,message,created) VALUES(?,?,?,?)", (u["id"], s, m, now()))
-        alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], s), "/admin/tickets", "tickets")
+            err("বিষয় ও বার্তা দিন।"); return redirect("/support?new=1")
+        with atomic():
+            if q1("SELECT 1 FROM tickets WHERE user_id=? AND status!='closed'", (u["id"],)):
+                err("আগের কনভারসেশন চলমান আছে, সেখানেই রিপ্লাই করুন।"); return redirect("/support")
+            ts = now()
+            db().execute("INSERT INTO tickets(user_id,subject,message,created,last_activity,admin_unread,user_unread) VALUES(?,?,?,?,?,1,0)",
+                         (u["id"], s, m, ts, ts))
+            alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], s), "/admin/tickets", "tickets")
         flash("টিকিট জমা হয়েছে।"); return redirect("/support")
-    rows = qa("SELECT * FROM tickets WHERE user_id=? ORDER BY id DESC LIMIT 30", (u["id"],))
+    rows = qa("SELECT * FROM tickets WHERE user_id=? ORDER BY (status!='closed') DESC, COALESCE(last_activity,created) DESC, id DESC LIMIT 40", (u["id"],))
+    active = next((r for r in rows if r["status"] != "closed"), None)
+    want = request.args.get("c", type=int)
+    new_mode = bool(request.args.get("new")) and not active
+    cur = None if (new_mode or not rows) else (next((r for r in rows if r["id"] == want), None) or rows[0])
+    items = None
+    if cur:
+        items = _chat_items(_ticket_threads([cur])[cur["id"]], "user")
+        if (cur["user_unread"] or 0) > 0:
+            db().execute("UPDATE tickets SET user_unread=0 WHERE id=? AND user_id=?", (cur["id"], u["id"]))
     user_seen(lambda link, title, ts: _user_badge_key(link, title) == "/support")
-    return page("""<div class="card"><h2>সাপোর্ট</h2>{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
+    others = [dict(id=r["id"], subject=r["subject"], closed=r["status"] == "closed", un=(r["user_unread"] or 0) > 0,
+                   when=_short_time(r["last_activity"] or r["created"])) for r in rows if not cur or r["id"] != cur["id"]]
+    return page(SC_CSS + """{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
+{% if cur %}<div class="sc"><div class="sc-h"><div class="sc-av">🎧</div><div class="sc-hi"><b>{{cur['subject']}}</b>
+<small><i class="sc-dot{{' off' if cur['status']=='closed' else ''}}"></i>সাপোর্ট টিম · #{{cur['id']}}</small></div>
+<span class="sc-st">{{'বন্ধ' if cur['status']=='closed' else 'চলমান'}}</span></div>
+<div class="sc-body" id="scb">""" + SC_THREAD + """</div>
+{% if cur['status']=='closed' %}<div class="sc-cl"><b>🔒 এই কনভারসেশন বন্ধ করা হয়েছে</b><span class="k">নতুন কোনো সমস্যা হলে নতুন কনভারসেশন শুরু করতে পারেন।</span>
+{% if not active %}<br><a class="sc-go" href="/support?new=1">➕ নতুন কনভারসেশন শুরু করুন</a>{% endif %}</div>
+{% else %}<div class="sc-f"><form method="post" action="/support/{{cur['id']}}/reply" id="scf"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<textarea name="message" id="sct" rows="1" required maxlength="1000" placeholder="মেসেজ লিখুন…"></textarea><button class="sc-send" aria-label="Send">➤</button></form></div>{% endif %}</div>
+{% else %}<div class="sc"><div class="sc-new"><div class="big">💬</div><h2>আপনাকে কীভাবে সাহায্য করতে পারি?</h2>
+<div class="k">সমস্যা বা প্রশ্ন লিখে কনভারসেশন শুরু করুন। আমাদের টিম এখানেই উত্তর দেবে।</div>
 <form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>বিষয়</label><input name="subject" required maxlength="100">
-<label>বার্তা</label><textarea name="message" rows="3" required maxlength="1000"></textarea><button style="width:100%">টিকিট জমা দিন</button></form></div>
-{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{'open' if t['status']=='passed' else t['status']}}</span>
-<div>{{t['message']}}</div>{% if t['reply'] %}<div class="k" style="margin-top:8px">↳ সাপোর্ট: {{t['reply']}}</div>{% endif %}</div>{% endfor %}""", active="/account", rows=rows)
+<label>বার্তা</label><textarea name="message" rows="4" required maxlength="1000"></textarea><button style="width:100%;margin-top:10px">কনভারসেশন শুরু করুন</button></form>
+{% if rows %}<a class="k" href="/support" style="display:inline-block;margin-top:12px">← ফিরে যান</a>{% endif %}</div></div>{% endif %}
+{% if others %}<div class="sc-sec">আগের কনভারসেশন</div><div class="sc">{% for o in others %}<a class="sc-li{{' un' if o.un else ''}}" href="/support?c={{o.id}}"><div class="sc-av">{{'🔒' if o.closed else '💬'}}</div>
+<div class="mid"><b>{{o.subject}}</b><span>#{{o.id}} · {{'বন্ধ' if o.closed else 'চলমান'}}</span></div><div class="end">{{o.when}}{% if o.un %}<br><span class="sc-badge">নতুন</span>{% endif %}</div></a>{% endfor %}</div>{% endif %}
+""" + SC_JS, active="/account", rows=rows, cur=cur, items=items, active_t=active, others=others, av="🎧", shownames=False)
+
+
+@app.route("/support/<int:tid>/reply", methods=["POST"])
+@customer_required
+def support_reply(tid):
+    u = me()
+    m = request.form.get("message", "").strip()[:1000]
+    if not m:
+        err("বার্তা লিখুন।"); return redirect("/support?c=%d" % tid)
+    if rate_hit("sp:%d" % u["id"], 40, 3600):
+        err("অনেক রিকোয়েস্ট হয়েছে, পরে চেষ্টা করুন।"); return redirect("/support?c=%d" % tid)
+    with atomic():
+        t = q1("SELECT * FROM tickets WHERE id=? AND user_id=?", (tid, u["id"]))
+        if not t:
+            abort(404)
+        ts = now()
+        c = db().execute("UPDATE tickets SET status='open', admin_unread=1, last_activity=? WHERE id=? AND user_id=? AND status!='closed'",
+                         (ts, tid, u["id"]))
+        if not c.rowcount:
+            err("এই কনভারসেশন বন্ধ হয়ে গেছে, আর বার্তা পাঠানো যাবে না।"); return redirect("/support?c=%d" % tid)
+        db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)", (tid, "user", None, m, ts))
+        alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], (t["subject"] or "")[:60]), "/admin/tickets", "tickets")
+    return redirect("/support?c=%d" % tid)
 
 
 ACCOUNT_SOON = {"kyc": ("🪪", "KYC যাচাই"), "vip": ("👑", "VIP লেভেল"), "language": ("🌐", "ভাষা")}
@@ -2706,7 +2825,7 @@ def feedback():
             err("আপনার মতামত লিখুন।"); return redirect("/feedback")
         if rate_hit("fb:%d" % u["id"], 5, 3600):
             err("অনেক রিকোয়েস্ট হয়েছে, পরে চেষ্টা করুন।"); return redirect("/feedback")
-        db().execute("INSERT INTO tickets(user_id,subject,message,created) VALUES(?,?,?,?)", (u["id"], "ফিডব্যাক", m, now()))
+        db().execute("INSERT INTO tickets(user_id,subject,message,created,last_activity,admin_unread) VALUES(?,?,?,?,?,1)", (u["id"], "ফিডব্যাক", m, now(), now()))
         alert_admins("নতুন ফিডব্যাক", "#%s %s" % (u["member_id"], u["name"]), "/admin/tickets", "tickets")
         flash("ধন্যবাদ! আপনার ফিডব্যাক পাঠানো হয়েছে।"); return redirect("/account")
     return page("""<div class="card"><h2>ফিডব্যাক</h2><p class="k">আমাদের সেবা কেমন লাগছে বা কী উন্নতি করা যায়, জানান।</p>
@@ -4146,7 +4265,7 @@ def admin_ticket_pass(tid, act):
                 err("শুধু খোলা টিকিট পাস করা যায়।"); return redirect("/admin/tickets")
             db().execute("UPDATE tickets SET status='passed' WHERE id=? AND status='open'", (tid,))
             audit("ticket_pass", "ticket#%d user#%s" % (tid, t["user_id"]))
-            if not q1("SELECT 1 FROM tickets WHERE status='open'"):
+            if not _tickets_pending():
                 alerts_done("/admin/tickets")
             flash("টিকিট পাস করা হয়েছে। পাস করা টিকিটে দেখা যাবে।")
             return redirect("/admin/tickets")
@@ -4159,38 +4278,114 @@ def admin_ticket_pass(tid, act):
     return redirect("/admin/tickets")
 
 
+def _tickets_pending():
+    """True while any OPEN conversation still has a customer message that no staff member has seen yet."""
+    if not q1("SELECT 1 FROM meta WHERE k='tkt_unread_v1'"):  # one-time: pre-existing unanswered tickets count as unread
+        db().execute("UPDATE tickets SET admin_unread=1 WHERE status='open' AND reply IS NULL AND COALESCE(admin_unread,0)=0")
+        db().execute("INSERT OR IGNORE INTO meta VALUES('tkt_unread_v1',?)", (now(),))
+    return bool(q1("SELECT 1 FROM tickets WHERE status='open' AND COALESCE(admin_unread,0)>0"))
+
+
+def _admin_send_reply(tid, rep):
+    a = me()
+    with atomic():
+        t = q1("SELECT * FROM tickets WHERE id=?", (tid,)) if tid else None
+        if not t:
+            abort(404)
+        if not rep:
+            err("বার্তা লিখুন।"); return
+        ts, who = now(), "%s (%s)" % (a["name"], a["member_id"])
+        c = db().execute("UPDATE tickets SET replied_by=?, replied_at=?, admin_unread=0, user_unread=COALESCE(user_unread,0)+1, last_activity=? "
+                         "WHERE id=? AND status='open'", (who, ts, ts, tid))
+        if not c.rowcount:
+            err("এই কনভারসেশনে এখন উত্তর দেওয়া যাবে না।"); return
+        db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)", (tid, "admin", who, rep, ts))
+        notify(t["user_id"], "সাপোর্ট উত্তর", rep[:300], "/support"); audit("ticket_reply", "ticket#%s" % tid)
+        if not _tickets_pending():
+            alerts_done("/admin/tickets")
+
+
+@app.route("/admin/tickets/<int:tid>/reply", methods=["POST"])
+@staff_required("tickets")
+def admin_ticket_reply(tid):
+    _admin_send_reply(tid, request.form.get("reply", "").strip()[:1000])
+    return redirect("/admin/tickets/%d" % tid)
+
+
+@app.route("/admin/tickets/<int:tid>/close", methods=["POST"])
+@staff_required("tickets")
+def admin_ticket_close(tid):
+    a = me()
+    with atomic():
+        t = q1("SELECT * FROM tickets WHERE id=?", (tid,))
+        if not t:
+            abort(404)
+        ts, who = now(), "%s (%s)" % (a["name"], a["member_id"])
+        c = db().execute("UPDATE tickets SET status='closed', closed_at=?, closed_by=?, admin_unread=0, user_unread=COALESCE(user_unread,0)+1, last_activity=? "
+                         "WHERE id=? AND status IN ('open','passed')", (ts, who, ts, tid))
+        if c.rowcount:
+            db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)",
+                         (tid, "system", who, "কনভারসেশন বন্ধ করা হয়েছে", ts))
+            notify(t["user_id"], "সাপোর্ট কনভারসেশন বন্ধ", "আপনার সাপোর্ট কনভারসেশন বন্ধ করা হয়েছে। নতুন সমস্যায় নতুন কনভারসেশন শুরু করুন।", "/support")
+            audit("ticket_close", "ticket#%d user#%s" % (tid, t["user_id"])); flash("কনভারসেশন বন্ধ হয়েছে।")
+            if not _tickets_pending():
+                alerts_done("/admin/tickets")
+    return redirect("/admin/tickets/%d" % tid)
+
+
+@app.route("/admin/tickets/<int:tid>")
+@staff_required("tickets")
+def admin_ticket_view(tid):
+    t = q1("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.id=?", (tid,))
+    if not t:
+        abort(404)
+    items = _chat_items(_ticket_threads([t])[tid], "admin")
+    if (t["admin_unread"] or 0) > 0:  # opening the conversation marks the customer's messages as seen
+        db().execute("UPDATE tickets SET admin_unread=0 WHERE id=?", (tid,))
+        if not _tickets_pending():
+            alerts_done("/admin/tickets")
+    return page(SC_CSS + """<div class="sc"><div class="sc-h"><div class="sc-av">{{(t['name'] or '?')[:1]}}</div><div class="sc-hi"><b>{{t['name']}} · #{{t['member_id']}}</b>
+<small><i class="sc-dot{{' off' if t['status']=='closed' else ''}}"></i>{{t['subject']}} · #{{t['id']}}</small></div><span class="sc-st">{{'বন্ধ' if t['status']=='closed' else 'চলমান'}}</span></div>
+<div class="sc-bar"><a href="/admin/tickets{{'?view=closed' if t['status']=='closed' else ''}}">←</a>{% if can('users_view') %}<a href="/admin/users/{{t['user_id']}}">👤 ইউজার</a>{% endif %}
+{% if t['status']!='closed' %}<form method="post" action="/admin/tickets/{{t['id']}}/close" data-confirm="সমস্যা সমাধান হয়েছে? বন্ধ করলে ইউজার আর এই কনভারসেশনে বার্তা পাঠাতে পারবে না (ইতিহাস থাকবে)।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="ok">✅ Close Conversation</button></form>{% endif %}
+{% if main and t['status']=='open' %}<form method="post" action="/admin/tickets/{{t['id']}}/pass" data-confirm="এই টিকিট পাস করবেন? এটি সক্রিয় তালিকা থেকে সরে পাস করা টিকিটে যাবে (মুছবে না)।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button>⏭ Pass</button></form>{% endif %}
+{% if main and t['status']=='passed' %}<form method="post" action="/admin/tickets/{{t['id']}}/reopen" data-confirm="টিকিট আবার খুলবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button>↩ আবার খুলুন</button></form>{% endif %}</div>
+<div class="sc-body" id="scb">""" + SC_THREAD + """</div>
+{% if t['status']=='open' %}<div class="sc-f"><form method="post" action="/admin/tickets/{{t['id']}}/reply" id="scf"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<textarea name="reply" id="sct" rows="1" required maxlength="1000" placeholder="উত্তর লিখুন"></textarea><button class="sc-send" aria-label="Send">➤</button></form></div>
+{% elif t['status']=='closed' %}<div class="sc-cl"><b>🔒 এই কনভারসেশন বন্ধ করা হয়েছে</b><span class="k">{{t['closed_by'] or ''}}</span></div>{% endif %}</div>""" + SC_JS,
+                active="/admin/tickets", t=t, items=items, av=(t["name"] or "?")[:1], shownames=True, main=is_main_admin())
+
+
 @app.route("/admin/tickets", methods=["GET", "POST"])
 @staff_required("tickets")
 def admin_tickets():
-    if request.method == "POST":
-        tid, rep = request.form.get("id", type=int), request.form.get("reply", "").strip()[:500]
-        a = me()
-        with atomic():
-            t = q1("SELECT * FROM tickets WHERE id=?", (tid,)) if tid else None
-            if t and rep and t["status"] == "open":
-                db().execute("UPDATE tickets SET reply=?, status='closed', replied_by=?, replied_at=? WHERE id=?",
-                             (rep, "%s (%s)" % (a["name"], a["member_id"]), now(), tid))
-                notify(t["user_id"], "সাপোর্ট উত্তর", rep); audit("ticket_reply", "ticket#%s" % tid); flash("উত্তর পাঠানো হয়েছে।")
-                if not q1("SELECT 1 FROM tickets WHERE status='open'"):
-                    alerts_done("/admin/tickets")
-        return redirect("/admin/tickets")
+    if request.method == "POST":  # kept for older forms: reply by id
+        tid = request.form.get("id", type=int)
+        _admin_send_reply(tid, request.form.get("reply", "").strip()[:1000])
+        return redirect("/admin/tickets/%d" % tid if tid else "/admin/tickets")
+    _tickets_pending()
     main = is_main_admin()
-    passed_view = main and request.args.get("view") == "passed"
-    npass = q1("SELECT COUNT(*) s FROM tickets WHERE status='passed'")["s"] if main else 0
+    view = request.args.get("view")
+    view = view if (view == "closed" or (view == "passed" and main)) else "open"
+    cnt = q1("SELECT SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) o, SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) c, "
+             "SUM(CASE WHEN status='passed' THEN 1 ELSE 0 END) p FROM tickets")
     t0 = now()
-    if passed_view:
-        rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status='passed' ORDER BY t.id DESC LIMIT 100")
-    else:
-        rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status!='passed' ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
-        _seen_list("/admin/tickets", rows, 50, {"p": 1}, t0)
-    return page("""{% if main %}<div class="row" style="margin-bottom:10px"><a class="btn {{'' if not pv else 's'}}" href="/admin/tickets">সক্রিয় টিকিট</a><a class="btn {{'s' if not pv else ''}}" href="/admin/tickets?view=passed">⏭ পাস করা টিকিট ({{npass}})</a></div>{% endif %}
-{% if not rows %}<div class="card empty">{{'কোনো পাস করা টিকিট নেই' if pv else 'কোনো টিকিট নেই'}}</div>{% endif %}{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
-<div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{t['created'][:16]}}</div><div>{{t['message']}}</div>
-{% if t['reply'] %}<div class="k">↳ {{t['reply']}}{% if t['replied_by'] %} — {{t['replied_by']}}{% endif %}</div>{% elif t['status']=='open' %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="id" value="{{t['id']}}">
-<input name="reply" placeholder="উত্তর লিখুন" required maxlength="500"><button class="btn sm">পাঠান</button></form>
-{% if main %}<form method="post" action="/admin/tickets/{{t['id']}}/pass" data-confirm="এই টিকিট পাস করবেন? এটি সক্রিয় তালিকা থেকে সরে পাস করা টিকিটে যাবে (মুছবে না)।" style="margin-top:6px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm s">⏭ Pass</button></form>{% endif %}
-{% elif t['status']=='passed' and main %}<form method="post" action="/admin/tickets/{{t['id']}}/reopen" data-confirm="টিকিট আবার খুলবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm">↩ আবার খুলুন</button></form>{% endif %}
-{% if can('users_view') %}<a class="k" href="/admin/users/{{t['user_id']}}">👤 ইউজার দেখুন</a>{% endif %}</div>{% endfor %}""", active="/admin/tickets", rows=rows, main=main, pv=passed_view, npass=npass)
+    rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status=? "
+              "ORDER BY (COALESCE(t.admin_unread,0)>0) DESC, COALESCE(t.last_activity,t.created) DESC, t.id DESC LIMIT 60", (view,))
+    if view == "open":
+        _seen_list("/admin/tickets", rows, 60, {"p": 1}, t0)
+    th = _ticket_threads(rows)
+    lst = []
+    for r in rows:
+        last = th[r["id"]][-1]
+        pre = last["body"].replace("\n", " ")[:80]
+        lst.append(dict(id=r["id"], name=r["name"], mid=r["member_id"], subject=r["subject"], un=(r["admin_unread"] or 0) > 0,
+                        pre=("↪ " if last["who"] == "admin" else "") + pre, when=_short_time(r["last_activity"] or r["created"]), ini=(r["name"] or "?")[:1]))
+    return page(SC_CSS + """<div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap"><a class="btn {{'' if view=='open' else 's'}}" href="/admin/tickets">খোলা ({{nopen}})</a><a class="btn {{'' if view=='closed' else 's'}}" href="/admin/tickets?view=closed">বন্ধ ({{nclosed}})</a>{% if main %}<a class="btn {{'' if view=='passed' else 's'}}" href="/admin/tickets?view=passed">⏭ পাস ({{npass}})</a>{% endif %}</div>
+{% if not lst %}<div class="card empty">{{'কোনো পাস করা টিকিট নেই' if view=='passed' else ('কোনো বন্ধ কনভারসেশন নেই' if view=='closed' else 'কোনো টিকিট নেই')}}</div>{% else %}<div class="sc">{% for c in lst %}<a class="sc-li{{' un' if c.un else ''}}" href="/admin/tickets/{{c.id}}"><div class="sc-av">{{c.ini}}</div>
+<div class="mid"><b>{{c.name}} · #{{c.mid}}</b><span>{{c.subject}}: {{c.pre}}</span></div><div class="end">{{c.when}}{% if c.un %}<br><span class="sc-badge">নতুন</span>{% endif %}</div></a>{% endfor %}</div>{% endif %}""",
+                active="/admin/tickets", lst=lst, main=main, view=view, nopen=int(cnt["o"] or 0), nclosed=int(cnt["c"] or 0), npass=int(cnt["p"] or 0) if main else 0)
 
 
 ONOFF = [("1", "চালু"), ("0", "বন্ধ")]
