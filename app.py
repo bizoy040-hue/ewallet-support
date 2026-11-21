@@ -484,6 +484,8 @@ V5_COLUMNS = [
     ("requests", "pay_type", "TEXT", "TEXT"), ("requests", "extra_commission", "REAL", "NUMERIC(14,2)"),
     ("users", "vip_level", "TEXT", "TEXT"), ("users", "vip_rate", "REAL", "NUMERIC(7,3)"), ("tx", "account_type", "TEXT", "TEXT"),
     ("requests", "cancel_fee", "REAL", "NUMERIC(14,2)"), ("requests", "cancel_by", "TEXT", "TEXT"),
+    ("tickets", "user_unread", "INTEGER DEFAULT 0", "INTEGER DEFAULT 0"), ("tickets", "admin_unread", "INTEGER DEFAULT 0", "INTEGER DEFAULT 0"),
+    ("tickets", "last_activity", "TEXT", "TEXT"), ("tickets", "closed_at", "TEXT", "TEXT"), ("tickets", "closed_by", "TEXT", "TEXT"),
     # @@COLUMNS
 ]
 # (name, CREATE TABLE template, [index statements], immutable?)  {ID}=primary key, {BIG}=integer ref, {NUM}=money
@@ -527,6 +529,10 @@ V5_TABLES = [
     ("vip_log",
      "CREATE TABLE IF NOT EXISTS vip_log(id {ID}, user_id {BIG} NOT NULL, action TEXT NOT NULL, old_level TEXT, new_level TEXT, rate {RATE}, "
      "reason TEXT, actor TEXT, actor_id {BIG}, created TEXT NOT NULL)", [], True),
+    ("ticket_messages",
+     "CREATE TABLE IF NOT EXISTS ticket_messages(id {ID}, ticket_id {BIG} NOT NULL REFERENCES tickets(id), sender TEXT NOT NULL, sender_name TEXT, "
+     "body TEXT NOT NULL, created TEXT NOT NULL)",
+     ["CREATE INDEX IF NOT EXISTS ix_tmsg_ticket ON ticket_messages(ticket_id)"], False),
     # @@TABLES
 ]
 V5_INDEXES = [
@@ -1727,6 +1733,13 @@ EN_PHRASES = {
     "বিষয় ও বার্তা দিন।": "Enter a subject and a message.", "টিকিট জমা হয়েছে।": "Ticket submitted.",
     "বিষয়": "Subject", "বার্তা": "Message", "টিকিট জমা দিন": "Submit ticket", "যাচাই": "Verify",
     "↳ সাপোর্ট:": "↳ Support:",
+    "নতুন কনভারসেশন শুরু করুন": "Start New Conversation", "কনভারসেশন জমা দিন": "Start conversation", "আপনি": "You",
+    "উত্তর লিখুন": "Write a reply", "পাঠান": "Send", "নতুন উত্তর": "New reply", "নতুন বার্তা": "New message",
+    "কনভারসেশন বন্ধ করা হয়েছে": "Conversation closed", "এই কনভারসেশন বন্ধ। নতুন সমস্যার জন্য নতুন কনভারসেশন শুরু করুন।": "This conversation is closed. Start a new conversation for another issue.",
+    "আগের কনভারসেশন চলমান আছে, সেখানেই রিপ্লাই করুন।": "Your previous conversation is still open. Please reply there.",
+    "বার্তা পাঠানো হয়েছে।": "Message sent.", "কনভারসেশন বন্ধ হয়েছে।": "Conversation closed.",
+    "এই কনভারসেশন বন্ধ হয়ে গেছে, আর বার্তা পাঠানো যাবে না।": "This conversation is closed; you can no longer send messages.",
+    "বার্তা লিখুন।": "Write a message.",
     # account
     "ডার্ক মোড": "Dark mode", "নোটিফিকেশন সাউন্ড": "Notification sound", "ব্রাউজার নোটিফিকেশন": "Browser notifications", "📲 ব্রাউজার:": "📲 Browser:", "সেটিংস": "Settings",
     "পেমেন্ট নম্বর ব্যবস্থাপনা": "Manage payment numbers", "ফিডব্যাক": "Feedback", "আমাদের সম্পর্কে": "About us",
@@ -2614,6 +2627,21 @@ def referral():
                 active="/account", st=st, rows=rows, by=by, link=link, text=text, bonus=bonus)
 
 
+def _ticket_threads(rows):
+    """{ticket id: [messages in chronological order]}. Legacy single message/reply are the first entries; later replies come from ticket_messages."""
+    th = {}
+    for t in rows:
+        l = [dict(who="user", body=t["message"] or "", ts=str(t["created"] or ""), name="")]
+        if t["reply"]:
+            l.append(dict(who="admin", body=t["reply"], ts=str(t["replied_at"] or t["created"] or ""), name=t["replied_by"] or ""))
+        th[t["id"]] = l
+    ids = [t["id"] for t in rows]
+    if ids:
+        for m in qa("SELECT * FROM ticket_messages WHERE ticket_id IN (%s) ORDER BY id" % ",".join("?" * len(ids)), tuple(ids)):
+            th[m["ticket_id"]].append(dict(who=m["sender"], body=m["body"] or "", ts=str(m["created"] or ""), name=m["sender_name"] or ""))
+    return th
+
+
 @app.route("/support", methods=["GET", "POST"])
 @customer_required
 def support():
@@ -2622,16 +2650,55 @@ def support():
         s, m = request.form.get("subject", "").strip()[:100], request.form.get("message", "").strip()[:1000]
         if not s or not m:
             err("বিষয় ও বার্তা দিন।"); return redirect("/support")
-        db().execute("INSERT INTO tickets(user_id,subject,message,created) VALUES(?,?,?,?)", (u["id"], s, m, now()))
-        alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], s), "/admin/tickets", "tickets")
+        with atomic():
+            if q1("SELECT 1 FROM tickets WHERE user_id=? AND status!='closed'", (u["id"],)):
+                err("আগের কনভারসেশন চলমান আছে, সেখানেই রিপ্লাই করুন।"); return redirect("/support")
+            ts = now()
+            db().execute("INSERT INTO tickets(user_id,subject,message,created,last_activity,admin_unread,user_unread) VALUES(?,?,?,?,?,1,0)",
+                         (u["id"], s, m, ts, ts))
+            alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], s), "/admin/tickets", "tickets")
         flash("টিকিট জমা হয়েছে।"); return redirect("/support")
-    rows = qa("SELECT * FROM tickets WHERE user_id=? ORDER BY id DESC LIMIT 30", (u["id"],))
+    rows = qa("SELECT * FROM tickets WHERE user_id=? ORDER BY (status!='closed') DESC, COALESCE(last_activity,created) DESC, id DESC LIMIT 40", (u["id"],))
+    th = _ticket_threads(rows)
+    if any((r["user_unread"] or 0) > 0 for r in rows):
+        db().execute("UPDATE tickets SET user_unread=0 WHERE user_id=? AND COALESCE(user_unread,0)>0", (u["id"],))
     user_seen(lambda link, title, ts: _user_badge_key(link, title) == "/support")
+    has_active = any(r["status"] != "closed" for r in rows)
     return page("""<div class="card"><h2>সাপোর্ট</h2>{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
+{% if not has_active %}{% if rows %}<details><summary class="btn" style="text-align:center;list-style:none;cursor:pointer">➕ নতুন কনভারসেশন শুরু করুন</summary>{% endif %}
 <form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>বিষয়</label><input name="subject" required maxlength="100">
-<label>বার্তা</label><textarea name="message" rows="3" required maxlength="1000"></textarea><button style="width:100%">টিকিট জমা দিন</button></form></div>
-{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{'open' if t['status']=='passed' else t['status']}}</span>
-<div>{{t['message']}}</div>{% if t['reply'] %}<div class="k" style="margin-top:8px">↳ সাপোর্ট: {{t['reply']}}</div>{% endif %}</div>{% endfor %}""", active="/account", rows=rows)
+<label>বার্তা</label><textarea name="message" rows="3" required maxlength="1000"></textarea><button style="width:100%">কনভারসেশন জমা দিন</button></form>{% if rows %}</details>{% endif %}{% endif %}</div>
+{% for t in rows %}{% set closed = t['status']=='closed' %}<div class="card">{% if closed %}<details{% if t['user_unread'] %} open{% endif %}><summary style="cursor:pointer">{% endif %}<b>{{t['subject']}}</b> <span class="pill {{'approved' if closed else 'pending'}}">{{'closed' if closed else 'open'}}</span>{% if t['user_unread'] %} <span class="pill pending">নতুন উত্তর</span>{% endif %}
+<span class="k"> · {{(t['created'] or '')[:16]}}</span>{% if closed %}</summary>{% endif %}
+{% for m in th[t['id']] %}<div style="margin:6px 0;padding:8px 10px;border-radius:10px;max-width:88%;{% if m.who=='user' %}margin-left:auto;background:rgba(127,127,127,.14){% elif m.who=='admin' %}background:rgba(37,99,235,.15){% else %}max-width:100%;text-align:center{% endif %}">
+<div style="white-space:pre-wrap;word-break:break-word">{{m.body}}</div><div class="k" style="font-size:11px;margin-top:2px">{% if m.who=='user' %}আপনি{% elif m.who=='admin' %}সাপোর্ট{% endif %}{% if m.who!='system' %} · {% endif %}{{m.ts[:16]}}</div></div>{% endfor %}
+{% if closed %}<div class="k" style="margin-top:8px">এই কনভারসেশন বন্ধ। নতুন সমস্যার জন্য নতুন কনভারসেশন শুরু করুন।</div></details>
+{% else %}<form method="post" action="/support/{{t['id']}}/reply" style="margin-top:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<textarea name="message" rows="2" required maxlength="1000" placeholder="উত্তর লিখুন"></textarea><button style="width:100%">পাঠান</button></form>{% endif %}</div>{% endfor %}""",
+                active="/account", rows=rows, th=th, has_active=has_active)
+
+
+@app.route("/support/<int:tid>/reply", methods=["POST"])
+@customer_required
+def support_reply(tid):
+    u = me()
+    m = request.form.get("message", "").strip()[:1000]
+    if not m:
+        err("বার্তা লিখুন।"); return redirect("/support")
+    if rate_hit("sp:%d" % u["id"], 40, 3600):
+        err("অনেক রিকোয়েস্ট হয়েছে, পরে চেষ্টা করুন।"); return redirect("/support")
+    with atomic():
+        t = q1("SELECT * FROM tickets WHERE id=? AND user_id=?", (tid, u["id"]))
+        if not t:
+            abort(404)
+        ts = now()
+        c = db().execute("UPDATE tickets SET status='open', admin_unread=1, last_activity=? WHERE id=? AND user_id=? AND status!='closed'",
+                         (ts, tid, u["id"]))
+        if not c.rowcount:
+            err("এই কনভারসেশন বন্ধ হয়ে গেছে, আর বার্তা পাঠানো যাবে না।"); return redirect("/support")
+        db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)", (tid, "user", None, m, ts))
+        alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], (t["subject"] or "")[:60]), "/admin/tickets", "tickets")
+    flash("বার্তা পাঠানো হয়েছে।"); return redirect("/support")
 
 
 ACCOUNT_SOON = {"kyc": ("🪪", "KYC যাচাই"), "vip": ("👑", "VIP লেভেল"), "language": ("🌐", "ভাষা")}
@@ -4146,7 +4213,7 @@ def admin_ticket_pass(tid, act):
                 err("শুধু খোলা টিকিট পাস করা যায়।"); return redirect("/admin/tickets")
             db().execute("UPDATE tickets SET status='passed' WHERE id=? AND status='open'", (tid,))
             audit("ticket_pass", "ticket#%d user#%s" % (tid, t["user_id"]))
-            if not q1("SELECT 1 FROM tickets WHERE status='open'"):
+            if not q1(_TICKET_PENDING):
                 alerts_done("/admin/tickets")
             flash("টিকিট পাস করা হয়েছে। পাস করা টিকিটে দেখা যাবে।")
             return redirect("/admin/tickets")
@@ -4159,264 +4226,77 @@ def admin_ticket_pass(tid, act):
     return redirect("/admin/tickets")
 
 
+_TICKET_PENDING = ("SELECT 1 FROM tickets t WHERE t.status='open' AND (COALESCE(t.admin_unread,0)>0 OR (t.reply IS NULL AND NOT EXISTS("
+                   "SELECT 1 FROM ticket_messages m WHERE m.ticket_id=t.id AND m.sender='admin')))")
+
+
+@app.route("/admin/tickets/<int:tid>/close", methods=["POST"])
+@staff_required("tickets")
+def admin_ticket_close(tid):
+    a = me()
+    with atomic():
+        t = q1("SELECT * FROM tickets WHERE id=?", (tid,))
+        if not t:
+            abort(404)
+        ts = now()
+        c = db().execute("UPDATE tickets SET status='closed', closed_at=?, closed_by=?, admin_unread=0, user_unread=COALESCE(user_unread,0)+1, last_activity=? "
+                         "WHERE id=? AND status IN ('open','passed')", (ts, "%s (%s)" % (a["name"], a["member_id"]), ts, tid))
+        if c.rowcount:
+            db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)",
+                         (tid, "system", "%s (%s)" % (a["name"], a["member_id"]), "কনভারসেশন বন্ধ করা হয়েছে", ts))
+            notify(t["user_id"], "সাপোর্ট কনভারসেশন বন্ধ", "কনভারসেশন বন্ধ করা হয়েছে", "/support")
+            audit("ticket_close", "ticket#%d user#%s" % (tid, t["user_id"])); flash("কনভারসেশন বন্ধ হয়েছে।")
+            if not q1(_TICKET_PENDING):
+                alerts_done("/admin/tickets")
+    return redirect("/admin/tickets")
+
+
 @app.route("/admin/tickets", methods=["GET", "POST"])
 @staff_required("tickets")
 def admin_tickets():
     if request.method == "POST":
-        tid, rep = request.form.get("id", type=int), request.form.get("reply", "").strip()[:500]
+        tid, rep = request.form.get("id", type=int), request.form.get("reply", "").strip()[:1000]
         a = me()
         with atomic():
             t = q1("SELECT * FROM tickets WHERE id=?", (tid,)) if tid else None
             if t and rep and t["status"] == "open":
-                db().execute("UPDATE tickets SET reply=?, status='closed', replied_by=?, replied_at=? WHERE id=?",
-                             (rep, "%s (%s)" % (a["name"], a["member_id"]), now(), tid))
-                notify(t["user_id"], "সাপোর্ট উত্তর", rep); audit("ticket_reply", "ticket#%s" % tid); flash("উত্তর পাঠানো হয়েছে।")
-                if not q1("SELECT 1 FROM tickets WHERE status='open'"):
+                ts, who = now(), "%s (%s)" % (a["name"], a["member_id"])
+                db().execute("UPDATE tickets SET replied_by=?, replied_at=?, admin_unread=0, user_unread=COALESCE(user_unread,0)+1, last_activity=? WHERE id=? AND status='open'",
+                             (who, ts, ts, tid))
+                db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)", (tid, "admin", who, rep, ts))
+                notify(t["user_id"], "সাপোর্ট উত্তর", rep[:300], "/support"); audit("ticket_reply", "ticket#%s" % tid); flash("উত্তর পাঠানো হয়েছে।")
+                if not q1(_TICKET_PENDING):
                     alerts_done("/admin/tickets")
         return redirect("/admin/tickets")
     main = is_main_admin()
-    passed_view = main and request.args.get("view") == "passed"
-    npass = q1("SELECT COUNT(*) s FROM tickets WHERE status='passed'")["s"] if main else 0
+    view = request.args.get("view")
+    view = view if view in ("closed", "passed") and (view == "closed" or main) else "open"
+    cnt = q1("SELECT SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) o, SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) c, "
+             "SUM(CASE WHEN status='passed' THEN 1 ELSE 0 END) p FROM tickets")
+    nopen, nclosed, npass = (cnt["o"] or 0), (cnt["c"] or 0), ((cnt["p"] or 0) if main else 0)
     t0 = now()
-    if passed_view:
-        rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status='passed' ORDER BY t.id DESC LIMIT 100")
-    else:
-        rows = qa("SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status!='passed' ORDER BY (t.status='open') DESC, t.id DESC LIMIT 50")
-        _seen_list("/admin/tickets", rows, 50, {"p": 1}, t0)
-    return page("""{% if main %}<div class="row" style="margin-bottom:10px"><a class="btn {{'' if not pv else 's'}}" href="/admin/tickets">সক্রিয় টিকিট</a><a class="btn {{'s' if not pv else ''}}" href="/admin/tickets?view=passed">⏭ পাস করা টিকিট ({{npass}})</a></div>{% endif %}
-{% if not rows %}<div class="card empty">{{'কোনো পাস করা টিকিট নেই' if pv else 'কোনো টিকিট নেই'}}</div>{% endif %}{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>
-<div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{t['created'][:16]}}</div><div>{{t['message']}}</div>
-{% if t['reply'] %}<div class="k">↳ {{t['reply']}}{% if t['replied_by'] %} — {{t['replied_by']}}{% endif %}</div>{% elif t['status']=='open' %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="id" value="{{t['id']}}">
-<input name="reply" placeholder="উত্তর লিখুন" required maxlength="500"><button class="btn sm">পাঠান</button></form>
+    base = "SELECT t.*,u.member_id,u.name,u.phone FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.status=? "
+    order = "ORDER BY (COALESCE(t.admin_unread,0)>0) DESC, COALESCE(t.last_activity,t.created) DESC, t.id DESC LIMIT 60"
+    rows = qa(base + order, (view,))
+    if view == "open":
+        _seen_list("/admin/tickets", rows, 60, {"p": 1}, t0)
+    th = _ticket_threads(rows)
+    unread = {r["id"]: (r["status"] == "open" and ((r["admin_unread"] or 0) > 0 or not any(m["who"] == "admin" for m in th[r["id"]]))) for r in rows}
+    return page("""<div class="row" style="margin-bottom:10px"><a class="btn {{'' if view=='open' else 's'}}" href="/admin/tickets">খোলা কনভারসেশন ({{nopen}})</a><a class="btn {{'' if view=='closed' else 's'}}" href="/admin/tickets?view=closed">বন্ধ কনভারসেশন ({{nclosed}})</a>{% if main %}<a class="btn {{'' if view=='passed' else 's'}}" href="/admin/tickets?view=passed">⏭ পাস করা টিকিট ({{npass}})</a>{% endif %}</div>
+{% if not rows %}<div class="card empty">{{'কোনো পাস করা টিকিট নেই' if view=='passed' else ('কোনো বন্ধ কনভারসেশন নেই' if view=='closed' else 'কোনো টিকিট নেই')}}</div>{% endif %}{% for t in rows %}<div class="card"><b>{{t['subject']}}</b> <span class="pill {{'approved' if t['status']=='closed' else 'pending'}}">{{t['status']}}</span>{% if unread[t['id']] %} <span class="pill pending">নতুন বার্তা</span>{% endif %}
+<div class="k">#{{t['member_id']}} {{t['name']}} · {{t['phone']}} · {{(t['created'] or '')[:16]}}</div>
+{% for m in th[t['id']] %}<div style="margin:6px 0;padding:8px 10px;border-radius:10px;max-width:88%;{% if m.who=='user' %}background:rgba(127,127,127,.14){% elif m.who=='admin' %}margin-left:auto;background:rgba(37,99,235,.15){% else %}max-width:100%;text-align:center{% endif %}">
+<div style="white-space:pre-wrap;word-break:break-word">{{m.body}}</div><div class="k" style="font-size:11px;margin-top:2px">{% if m.who=='user' %}{{t['name']}}{% elif m.who=='admin' %}{{m.name or 'সাপোর্ট'}}{% else %}{{m.name}}{% endif %} · {{m.ts[:16]}}</div></div>{% endfor %}
+{% if t['status']=='open' %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="id" value="{{t['id']}}">
+<textarea name="reply" rows="2" placeholder="উত্তর লিখুন" required maxlength="1000"></textarea><button class="btn sm">পাঠান</button></form>
+<form method="post" action="/admin/tickets/{{t['id']}}/close" data-confirm="সমস্যা সমাধান হয়েছে? বন্ধ করলে ইউজার আর এই কনভারসেশনে বার্তা পাঠাতে পারবে না (ইতিহাস থাকবে)।" style="margin-top:6px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm s">✅ Close Conversation</button></form>
 {% if main %}<form method="post" action="/admin/tickets/{{t['id']}}/pass" data-confirm="এই টিকিট পাস করবেন? এটি সক্রিয় তালিকা থেকে সরে পাস করা টিকিটে যাবে (মুছবে না)।" style="margin-top:6px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm s">⏭ Pass</button></form>{% endif %}
-{% elif t['status']=='passed' and main %}<form method="post" action="/admin/tickets/{{t['id']}}/reopen" data-confirm="টিকিট আবার খুলবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm">↩ আবার খুলুন</button></form>{% endif %}
-{% if can('users_view') %}<a class="k" href="/admin/users/{{t['user_id']}}">👤 ইউজার দেখুন</a>{% endif %}</div>{% endfor %}""", active="/admin/tickets", rows=rows, main=main, pv=passed_view, npass=npass)
+{% elif t['status']=='passed' %}<form method="post" action="/admin/tickets/{{t['id']}}/close" data-confirm="সমস্যা সমাধান হয়েছে? বন্ধ করলে ইউজার আর এই কনভারসেশনে বার্তা পাঠাতে পারবে না (ইতিহাস থাকবে)।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm s">✅ Close Conversation</button></form>
+{% if main %}<form method="post" action="/admin/tickets/{{t['id']}}/reopen" data-confirm="টিকিট আবার খুলবেন?" style="margin-top:6px"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="btn sm">↩ আবার খুলুন</button></form>{% endif %}{% endif %}
+{% if can('users_view') %}<a class="k" href="/admin/users/{{t['user_id']}}">👤 ইউজার দেখুন</a>{% endif %}</div>{% endfor %}""", active="/admin/tickets",
+                rows=rows, th=th, unread=unread, main=main, view=view, nopen=nopen, nclosed=nclosed, npass=npass)
 
 
-ONOFF = [("1", "চালু"), ("0", "বন্ধ")]
-# (id, title, fields, info) - field = (key, type, label[, options]); every field listed here is actually used by the app
-SET_SECTIONS = [
-    ("general", "⚙️ জেনারেল সেটিংস",
-     [("welcome", "textarea", "স্বাগত বার্তা (হোম পেজে দেখায়)"),
-      ("req_expiry_hours", "int", "ম্যানুয়াল রিকোয়েস্টের ডিফল্ট মেয়াদ (ঘণ্টা, ০ = মেয়াদ নেই)")], ""),
-    ("payment", "💳 পেমেন্ট সেটিংস",
-     [("bkash", "text", "bKash নম্বর"), ("nagad", "text", "Nagad নম্বর"), ("rocket", "text", "Rocket নম্বর")], ""),
-    ("deposit", "➕ ডিপোজিট সেটিংস", [("min_deposit", "money", "ন্যূনতম ডিপোজিট (৳)")], ""),
-    ("withdraw", "⬆ উইথড্র সেটিংস", [("min_withdraw", "money", "ন্যূনতম উইথড্র (৳)"), ("req_cancel_fee", "money", "ইউজার রিকোয়েস্ট বাতিল ফি (৳) — অ্যাডমিনের পাঠানো উইথড্র রিকোয়েস্ট ইউজার নিজে বাতিল করলে কাটা হবে")], ""),
-    ("commission", "💰 কমিশন সেটিংস", [],
-     "এই সিস্টেমে কমিশন স্বয়ংক্রিয় নয়। অ্যাডমিন কাজের কারণসহ ম্যানুয়ালি কমিশন দেন (কমিশন ট্যাব)। তাই এখানে কোনো হার সেট করার নেই।"),
-    ("referral", "🎁 রেফারেল সেটিংস", [],
-     "রেফারেল রিওয়ার্ডের পরিমাণ এখন আলাদা পেজ থেকে নিয়ন্ত্রণ করা হয় (নিচের বাটন)। রিওয়ার্ড শুধু রেফার করা ব্যক্তির প্রথম অনুমোদিত ডিপোজিটের পর, প্রতি ব্যক্তির জন্য একবার দেওয়া হয়।"),
-    ("user", "👤 ইউজার সেটিংস", [("signup_open", "sel", "নতুন সাইন আপ", ONOFF)], ""),
-    ("notification", "🔔 নোটিফিকেশন সেটিংস",
-     [("notif_sound", "sel", "নোটিফিকেশন সাউন্ড (ডিফল্ট; প্রতিটি ডিভাইসে ব্যবহারকারী নিজে বদলাতে পারেন)", ONOFF)], ""),
-    ("security", "🔒 নিরাপত্তা সেটিংস", [],
-     "• সেশন মেয়াদ ৭ দিন • ১৫ মিনিটে ৮ বার ভুল লগইন হলে সাময়িক লক • স্ক্রিনশট ≤২MB (JPG/PNG/WEBP, কনটেন্ট যাচাই সহ) • "
-     "সুপার অ্যাডমিনের পাসওয়ার্ড Render Environment-এর ADMIN_PASSWORD থেকে নিয়ন্ত্রিত।"),
-    ("support", "💬 সাপোর্ট সেটিংস", [("telegram_url", "text", "টেলিগ্রাম সাপোর্ট URL (https://…)")], ""),
-    ("appearance", "🎨 অ্যাপিয়ারেন্স সেটিংস",
-     [("site_name", "text", "সাইটের নাম"),
-      ("default_theme", "sel", "ডিফল্ট থিম (ব্যবহারকারী নিজে ডার্ক মোড বদলালে সেটিই চলবে)",
-       [("auto", "ডিভাইস অনুযায়ী"), ("light", "লাইট"), ("dark", "ডার্ক")])], ""),
-]
-SET_KEYS = [f[0] for sec in SET_SECTIONS for f in sec[2]]
-
-
-def _validate_section(v):
-    if "telegram_url" in v and v["telegram_url"] and not v["telegram_url"].startswith("https://"):
-        return "টেলিগ্রাম লিংক https:// দিয়ে শুরু হতে হবে।"
-    for k in ("min_deposit", "min_withdraw", "req_cancel_fee"):
-        if k in v and parse_amount(v[k]) <= 0:
-            return "পরিমাণ সঠিক দিন।"
-    if "req_expiry_hours" in v:
-        if not re.fullmatch(r"\d{1,3}", v["req_expiry_hours"]) or int(v["req_expiry_hours"]) > 720:
-            return "মেয়াদ ০ থেকে ৭২০ ঘণ্টার মধ্যে দিন।"
-    for k in ("signup_open", "notif_sound"):
-        if k in v and v[k] not in ("0", "1"):
-            return "অবৈধ মান।"
-    if "default_theme" in v and v["default_theme"] not in ("auto", "light", "dark"):
-        return "অবৈধ থিম।"
-    if "site_name" in v and not (1 <= len(v["site_name"]) <= 60):
-        return "সাইটের নাম ১–৬০ অক্ষরের হতে হবে।"
-    return None
-
-
-@app.route("/admin/settings", methods=["GET", "POST"])
-@staff_required("settings")
-def admin_settings():
-    if request.method == "POST":
-        sec = request.form.get("section", "")
-        spec = next((x for x in SET_SECTIONS if x[0] == sec and x[2]), None)
-        if not spec:
-            abort(400)
-        v = {f[0]: request.form.get(f[0], "").strip() for f in spec[2]}
-        e = _validate_section(v)
-        if e:
-            err(e); return redirect("/admin/settings?open=" + sec)
-        with atomic():
-            for k, val in v.items():
-                db().execute("INSERT OR REPLACE INTO settings VALUES(?,?)", (k, val[:2000]))
-            audit("settings", "updated: " + sec)
-        flash("সেভ হয়েছে।")
-        return redirect("/admin/settings?open=" + sec)
-    st = {k: setting(k) for k in SET_KEYS}
-    st.setdefault("default_theme", "auto")
-    for k, d in (("default_theme", "auto"), ("signup_open", "1"), ("notif_sound", "1"), ("req_expiry_hours", "24"), ("site_name", SITE), ("req_cancel_fee", "100")):
-        st[k] = st[k] or d
-    op = request.args.get("open", "general")
-    return page("""{% for sec in secs %}<details class="card set" {{'open' if op==sec[0]}} id="{{sec[0]}}"><summary>{{sec[1]}}</summary>
-{% if sec[3] %}<div class="k">{{sec[3]}}</div>{% endif %}{% if sec[0]=='referral' %}<a class="btn sm" style="margin-top:8px" href="/admin/referral-rewards">🎁 রেফারেল রিওয়ার্ড সেটিংস খুলুন</a>{% endif %}
-{% if sec[2] %}<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="section" value="{{sec[0]}}">
-{% for f in sec[2] %}<label>{{f[2]}}</label>
-{% if f[1]=='textarea' %}<textarea name="{{f[0]}}" rows="6">{{st[f[0]]}}</textarea>
-{% elif f[1]=='sel' %}<select name="{{f[0]}}">{% for ov,ol in f[3] %}<option value="{{ov}}" {{'selected' if st[f[0]]==ov}}>{{ol}}</option>{% endfor %}</select>
-{% elif f[1]=='money' %}<input name="{{f[0]}}" type="number" step="0.01" min="0.01" value="{{st[f[0]]}}">
-{% elif f[1]=='int' %}<input name="{{f[0]}}" type="number" step="1" min="0" max="720" value="{{st[f[0]]}}">
-{% else %}<input name="{{f[0]}}" value="{{st[f[0]]}}">{% endif %}{% endfor %}
-<button style="width:100%">সেভ</button></form>{% endif %}
-{% if sec[0]=='security' %}<div><p class="k">ডাটাবেস ব্যাকআপ — নিয়মিত ডাউনলোড করে নিরাপদ জায়গায় রাখুন।</p>
-<form method="post" action="/admin/backup"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="s" style="width:100%">⬇ ডাটাবেস ব্যাকআপ নামান</button></form>
-<p class="k" style="margin-top:14px">স্ক্রিনশট ব্যাকআপ — সব পেমেন্ট স্ক্রিনশট একটি ZIP-এ (সঙ্গে manifest.csv, SHA-256 সহ)।</p>
-<form method="post" action="/admin/backup/screenshots"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="s" style="width:100%">🖼 স্ক্রিনশট ZIP নামান</button></form></div>{% endif %}
-</details>{% endfor %}""", active="/admin/settings", st=st, secs=SET_SECTIONS, op=op)
-
-
-@app.route("/admin/audit")
-@staff_required("audit")
-def admin_audit():
-    rows = qa("SELECT * FROM audit ORDER BY id DESC LIMIT 150")
-    fails = qa("SELECT * FROM login_history WHERE ok=0 ORDER BY id DESC LIMIT 15")
-    return page("""<div class="card"><h2>অডিট লগ</h2><div class="tw"><table>{% for a in rows %}<tr><td>{{a['created'][:16]}}</td><td>{{a['actor']}}</td><td>{{a['action']}}</td><td>{{a['detail']}}</td></tr>{% endfor %}</table></div></div>
-<div class="card"><h3>ব্যর্থ লগইন</h3><div class="tw"><table>{% for h in fails %}<tr><td>{{h['created'][:16]}}</td><td>{{h['phone']}}</td><td>{{h['ip']}}</td></tr>{% endfor %}</table></div></div>""", active="/admin/audit", rows=rows, fails=fails)
-
-
-@app.route("/admin/backup", methods=["POST"])
-@staff_required("backup")
-def admin_backup():
-    import tempfile
-    if PG:  # no database file exists: export every table as CSV (+ manifest with row counts and SHA-256) in one ZIP
-        tmp = os.path.join(tempfile.gettempdir(), "ewallet-db-%s.zip" % datetime.utcnow().strftime("%Y%m%d-%H%M%S"))
-        export_tables_zip(db(), tmp)
-
-        @after_this_request
-        def _rm(resp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-            return resp
-        audit("backup_download", os.path.basename(tmp))
-        return send_file(tmp, as_attachment=True, mimetype="application/zip", download_name=os.path.basename(tmp))
-    tmp = os.path.join(tempfile.gettempdir(), "ewallet-backup-%s.db" % datetime.utcnow().strftime("%Y%m%d-%H%M%S"))
-    dst = sqlite3.connect(tmp)
-    db().backup(dst)
-    dst.close()
-    audit("backup_download", os.path.basename(tmp))
-    return send_file(tmp, as_attachment=True, download_name=os.path.basename(tmp))
-
-
-NULL_MARK = "\\N"
-
-
-def export_tables_zip(conn, path):
-    """Logical backup usable on any backend: <table>.csv (NULL written as \\N) + manifest.json (row counts, SHA-256, schema version).
-    Written inside one read transaction so all tables are from the same moment."""
-    import json
-    manifest = {"schema_version": SCHEMA_VERSION, "created": now(), "tables": {}}
-    conn.execute("BEGIN IMMEDIATE") if PG else None
-    try:
-        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-            for t in TABLES:
-                rows = conn.execute("SELECT * FROM %s ORDER BY 1" % t).fetchall() if t != "admin_alert_reads" else \
-                    conn.execute("SELECT * FROM admin_alert_reads ORDER BY alert_id, admin_id").fetchall()
-                cols = list(rows[0].keys()) if rows else [r[1] for r in conn.execute("PRAGMA table_info(%s)" % t)] if not PG else \
-                    [r["column_name"] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=? ORDER BY ordinal_position", (t,))]
-                buf = io.StringIO()
-                w = csv.writer(buf, lineterminator="\n")
-                w.writerow(cols)
-                for r in rows:
-                    w.writerow([NULL_MARK if v is None else v for v in r])
-                data = buf.getvalue().encode("utf-8")
-                z.writestr(t + ".csv", data)
-                manifest["tables"][t] = {"rows": len(rows), "sha256": hashlib.sha256(data).hexdigest()}
-            z.writestr("manifest.json", json.dumps(manifest, indent=1))
-    finally:
-        if PG:
-            conn.execute("COMMIT")
-
-
-# ---------------------------------------------------------------- screenshot ZIP backup (Super Admin)
-@app.route("/admin/backup/screenshots", methods=["POST"])
-@staff_required("backup")
-def admin_backup_screenshots():
-    """Streams every stored screenshot into one ZIP (+ manifest.csv with SHA-256 and the linked record)."""
-    try:
-        names = store_list()
-    except StorageError:
-        err("স্টোরেজ থেকে তালিকা আনা যায়নি। একটু পরে চেষ্টা করুন।"); return redirect("/admin/settings?open=security")
-    if not names:
-        err("ব্যাকআপ নেওয়ার মতো কোনো স্ক্রিনশট পাওয়া যায়নি।"); return redirect("/admin/settings?open=security")
-    links = {}
-    for r in qa("SELECT t.screenshot s, t.id i, u.member_id m FROM tx t JOIN users u ON u.id=t.user_id WHERE t.screenshot IS NOT NULL"):
-        links[r["s"]] = ("tx", r["i"], r["m"], "")
-    for r in qa("SELECT t.screenshot s, t.id i, u.member_id m, t.order_id o FROM requests t JOIN users u ON u.id=t.user_id WHERE t.screenshot IS NOT NULL"):
-        links[r["s"]] = ("request", r["i"], r["m"], r["o"])
-    tmp = tempfile.NamedTemporaryFile(prefix="ewallet-shots-", suffix=".zip", delete=False)
-    tmp.close()
-
-    @after_this_request
-    def _cleanup(resp):
-        try:
-            os.remove(tmp.name)
-        except OSError:
-            pass
-        return resp
-    man = io.StringIO()
-    w = csv.writer(man)
-    w.writerow(["file", "bytes", "sha256", "source", "record_id", "member_id", "order_id"])
-    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED) as z:
-        for n in names:
-            try:
-                blob = store_get(n)
-            except StorageError:
-                blob = None
-            if blob is None:
-                continue
-            h, size = hashlib.sha256(blob), len(blob)
-            z.writestr("screenshots/" + n, blob)
-            src = links.get(n, ("orphan", "", "", ""))
-            w.writerow([n, size, h.hexdigest(), src[0], src[1], src[2], src[3]])
-        z.writestr("manifest.csv", man.getvalue())
-    audit("backup_screenshots", "%d files" % len(names))
-    return send_file(tmp.name, as_attachment=True, mimetype="application/zip",
-                     download_name="ewallet-screenshots-%s.zip" % datetime.utcnow().strftime("%Y%m%d-%H%M%S"))
-
-
-# ================================================================ v4 additions
-# ---------------------------------------------------------------- admin alerts (staff notifications)
-def _alert_filter(u):
-    perms = [p for p in list(PERM_LABELS) + ["staff", "settings", "backup"] if has_perm(p, u)]
-    ph = ",".join("?" * len(perms)) or "NULL"
-    return "(a.perm IS NULL OR a.perm IN (%s))" % ph, perms
-
-
-def admin_unread(u):
-    f, pa = _alert_filter(u)
-    return q1("SELECT COUNT(*) c FROM admin_alerts a WHERE %s AND a.created>=? AND NOT EXISTS("
-              "SELECT 1 FROM admin_alert_reads r WHERE r.alert_id=a.id AND r.admin_id=?)" % f,
-              pa + [u["created"] or "", u["id"]])["c"]
-
-
-def alert_admins(title, body="", link="", perm=None):
-    """Staff notification; `perm` = permission a staff member needs to see it (None = every staff member). Never raises."""
-    try:
-        db().execute("INSERT INTO admin_alerts(title,body,link,perm,created) VALUES(?,?,?,?,?)",
-                     (title[:120], body[:300], link, perm, now()))
-    except DBERR:
-        pass
-
-
-# ---------------------------------------------------------------- per-feature unread badges + admin menu grid
 ADMIN_ICONS = {"/admin/alerts": "🔔", "/admin/requests": "📨", "/admin/deposits": "💰", "/admin/withdrawals": "🏧", "/admin/users": "👥", "/admin/kyc": "🪪",
                "/admin/payment-numbers": "💳", "/admin/referrals": "🎁", "/admin/vip": "👑", "/admin/commission": "💸", "/admin/pool": "🏦",
                "/admin/reports": "📊", "/admin/reconcile": "🧮", "/admin/staff": "🛡️", "/admin/tickets": "🎫", "/admin/notices": "📢",
