@@ -489,6 +489,7 @@ V5_COLUMNS = [
     ("requests", "cancel_fee", "REAL", "NUMERIC(14,2)"), ("requests", "cancel_by", "TEXT", "TEXT"),
     ("tickets", "user_unread", "INTEGER DEFAULT 0", "INTEGER DEFAULT 0"), ("tickets", "admin_unread", "INTEGER DEFAULT 0", "INTEGER DEFAULT 0"),
     ("tickets", "last_activity", "TEXT", "TEXT"), ("tickets", "closed_at", "TEXT", "TEXT"), ("tickets", "closed_by", "TEXT", "TEXT"),
+    ("ticket_messages", "image", "TEXT", "TEXT"),
     # @@COLUMNS
 ]
 # (name, CREATE TABLE template, [index statements], immutable?)  {ID}=primary key, {BIG}=integer ref, {NUM}=money
@@ -584,7 +585,8 @@ PG_DDL += "\n" + _v5_pg_ddl()
 
 def _v5_schema_sqlite(c):
     for t, col, sdecl, _p in V5_COLUMNS:
-        _addcol(c, t, col, sdecl)
+        if _cols(c, t):  # table may be created further below on a brand-new database
+            _addcol(c, t, col, sdecl)
     for name, ddl, idx, immutable in V5_TABLES:
         c.execute(_v5_tpl(ddl, False))
         for i in idx:
@@ -593,6 +595,8 @@ def _v5_schema_sqlite(c):
             for ev in ("update", "delete"):
                 c.execute("CREATE TRIGGER IF NOT EXISTS %s_no_%s BEFORE %s ON %s BEGIN SELECT RAISE(ABORT,'%s is immutable'); END"
                           % (name, ev, ev.upper(), name, name))
+    for t, col, sdecl, _p in V5_COLUMNS:  # second pass: columns of tables that were just created
+        _addcol(c, t, col, sdecl)
     for i in V5_INDEXES:
         c.execute(i)
 
@@ -2546,6 +2550,9 @@ def shot(name):
     else:  # screenshots of admin-sent manual requests
         t = q1("SELECT user_id FROM requests WHERE screenshot=?", (name,))
         staff_ok = has_perm("requests", u)
+        if not t:  # photos sent inside a support conversation: the ticket owner and support staff only
+            t = q1("SELECT t.user_id FROM ticket_messages m JOIN tickets t ON t.id=m.ticket_id WHERE m.image=?", (name,))
+            staff_ok = has_perm("tickets", u)
     if not t or (u["id"] != t["user_id"] and not staff_ok):
         abort(404)
     try:
@@ -2658,7 +2665,7 @@ def referral():
                 active="/account", st=st, rows=rows, by=by, link=link, text=text, bonus=bonus)
 
 
-SC_CSS = '<style>\n.sc{background:var(--card);border:1px solid var(--ln);border-radius:20px;overflow:hidden;box-shadow:0 10px 28px -16px #0007;margin-bottom:14px}\n.sc-h{display:flex;align-items:center;gap:11px;padding:13px 14px;background:linear-gradient(100deg,var(--b),var(--b2));color:#fff}\n.sc-h .sc-hi{min-width:0;flex:1}.sc-h b{display:block;max-width:100%;font-size:15.5px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-h small{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.92;margin-top:2px;overflow:hidden;white-space:nowrap}\n.sc-av{width:42px;height:42px;border-radius:50%;background:#ffffff2b;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;flex:none;color:#fff}\n.sc-av.sm{width:30px;height:30px;font-size:15px;background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-dot{width:8px;height:8px;border-radius:50%;background:#3df59b;box-shadow:0 0 0 3px #3df59b40;flex:none}.sc-dot.off{background:#c3ccd4;box-shadow:none}\n.sc-st{font-size:11px;font-weight:800;padding:5px 11px;border-radius:99px;background:#ffffff2b;white-space:nowrap}\n.sc-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:9px 12px;border-bottom:1px solid var(--ln);background:var(--tint)}\n.sc-bar form{margin:0}.sc-bar a,.sc-bar button{font-size:13px;font-weight:700;padding:8px 14px;border-radius:99px;border:1px solid var(--ln);background:var(--card);color:var(--tx);width:auto;margin:0;cursor:pointer;text-decoration:none;display:inline-block;box-shadow:none;line-height:1.2}\n.sc-bar button.ok{background:linear-gradient(135deg,#14c08f,#0b8f69);border-color:transparent;color:#fff}\n.sc.chat{display:flex;flex-direction:column;height:calc(100vh - 250px);height:calc(100dvh - 250px);min-height:340px;max-height:900px}\n.sc.chat>*{flex:none}\n.sc.chat>.sc-body{flex:1 1 auto;min-height:0;height:auto;overflow-y:auto;overflow-x:hidden;padding:14px 12px;background:var(--bg);display:flex;flex-direction:column;gap:7px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scroll-behavior:auto}\n.sc-body>:first-child{margin-top:auto}\n.sc-r{flex:none}.sc-new-pill{position:absolute;left:50%;transform:translateX(-50%);bottom:84px;z-index:3;border:0;border-radius:99px;padding:8px 16px;font-size:12.5px;font-weight:800;background:#0b8f69;color:#fff;box-shadow:0 8px 18px -8px #000a;cursor:pointer;width:auto;margin:0}\n.sc.chat{position:relative}\n.sc-bar{flex-shrink:0}.sc-err{display:none;padding:7px 14px;font-size:12.5px;color:#fff;background:#ef4444}\n.sc-s{display:flex;gap:8px;margin:0 0 10px}.sc-s input{flex:1;min-width:0;margin:0}.sc-s button{width:auto;margin:0;padding:0 18px}\n.sc-chips{display:flex;gap:8px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}.sc-chips a{white-space:nowrap}\n.sc-d{align-self:center;font-size:11.5px;font-weight:600;color:var(--mut);background:var(--tint);border:1px solid var(--ln);padding:3px 13px;border-radius:99px;margin:8px 0 4px}\n.sc-sy{align-self:center;font-size:12px;color:var(--mut);background:var(--tint);border:1px dashed var(--ln);padding:6px 14px;border-radius:99px;margin:6px 0;text-align:center}\n.sc-r{display:flex;align-items:flex-end;gap:8px}.sc-r.me{flex-direction:row-reverse}\n.sc-b{max-width:80%;padding:9px 13px 6px;border-radius:18px;font-size:14.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 1px 2px #0002}\n.sc-r.ag .sc-b{background:var(--card);border:1px solid var(--ln);color:var(--tx);border-bottom-left-radius:5px}\n.sc-r.me .sc-b{background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;border-bottom-right-radius:5px}\n.sc-n{display:block;font-size:11px;font-weight:800;opacity:.85;margin-bottom:2px}\n.sc-t{display:block;text-align:right;font-size:10.5px;opacity:.72;margin-top:3px}\n.sc-f{display:flex;align-items:flex-end;gap:9px;padding:10px 12px;border-top:1px solid var(--ln);background:var(--card)}\n.sc-f form{display:flex;align-items:flex-end;gap:9px;flex:1;min-width:0;margin:0}\n.sc-f textarea{flex:1;width:auto;min-width:0;resize:none;max-height:130px;min-height:46px;margin:0;padding:12px 16px;border-radius:24px;border:1px solid var(--ln);background:var(--fld);color:var(--tx);font:inherit;font-size:15px;line-height:1.35;overflow-y:auto}\n.sc-f textarea:focus{outline:none;border-color:var(--b);box-shadow:0 0 0 3px var(--glow)}\n.sc-send{width:48px;height:48px;min-width:48px;border-radius:50%;border:0;padding:0;margin:0;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-size:21px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px #0b8f69}\n.sc-send:active{transform:scale(.94)}.sc-send:disabled{opacity:.5}\n.sc-cl{padding:18px 16px;text-align:center;border-top:1px solid var(--ln);background:var(--card)}.sc-cl b{display:block;margin-bottom:4px}\n.sc-go{display:inline-block;margin-top:12px;padding:12px 22px;border-radius:99px;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-weight:800;font-size:14.5px;text-decoration:none;border:0;cursor:pointer;box-shadow:0 8px 18px -8px #0b8f69}\n.sc-new{text-align:center;padding:22px 16px}.sc-new .big{font-size:44px;line-height:1}.sc-new h2{margin:10px 0 4px}.sc-new form{text-align:left;margin-top:14px}\n.sc-li{display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--ln);color:var(--tx);text-decoration:none}.sc-li:last-child{border-bottom:0}\n.sc-li:active{background:var(--tint)}.sc-li .sc-av{background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-li .mid{flex:1;min-width:0}.sc-li .mid b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-li .mid span{display:block;font-size:12.5px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}\n.sc-li .end{text-align:right;flex:none;font-size:11.5px;color:var(--mut)}\n.sc-badge{display:inline-block;margin-top:4px;min-width:20px;padding:2px 7px;border-radius:99px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;text-align:center}\n.sc-li.un .mid b{color:var(--tx)}.sc-li.un .mid span{color:var(--tx);font-weight:600}\n.sc-sec{font-size:12.5px;font-weight:800;color:var(--mut);margin:16px 4px 8px;letter-spacing:.2px}\n@media(max-width:520px){.sc-b{max-width:86%}.sc-h{padding:10px 12px}.sc-av{width:38px;height:38px}}\n</style>'
+SC_CSS = '<style>\n.sc{background:var(--card);border:1px solid var(--ln);border-radius:20px;overflow:hidden;box-shadow:0 10px 28px -16px #0007;margin-bottom:14px}\n.sc-h{display:flex;align-items:center;gap:11px;padding:13px 14px;background:linear-gradient(100deg,var(--b),var(--b2));color:#fff}\n.sc-h .sc-hi{min-width:0;flex:1}.sc-h b{display:block;max-width:100%;font-size:15.5px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-h small{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.92;margin-top:2px;overflow:hidden;white-space:nowrap}\n.sc-av{width:42px;height:42px;border-radius:50%;background:#ffffff2b;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;flex:none;color:#fff}\n.sc-av.sm{width:30px;height:30px;font-size:15px;background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-dot{width:8px;height:8px;border-radius:50%;background:#3df59b;box-shadow:0 0 0 3px #3df59b40;flex:none}.sc-dot.off{background:#c3ccd4;box-shadow:none}\n.sc-st{font-size:11px;font-weight:800;padding:5px 11px;border-radius:99px;background:#ffffff2b;white-space:nowrap}\n.sc-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:9px 12px;border-bottom:1px solid var(--ln);background:var(--tint)}\n.sc-bar form{margin:0}.sc-bar a,.sc-bar button{font-size:13px;font-weight:700;padding:8px 14px;border-radius:99px;border:1px solid var(--ln);background:var(--card);color:var(--tx);width:auto;margin:0;cursor:pointer;text-decoration:none;display:inline-block;box-shadow:none;line-height:1.2}\n.sc-bar button.ok{background:linear-gradient(135deg,#14c08f,#0b8f69);border-color:transparent;color:#fff}\n.sc.chat{display:flex;flex-direction:column;height:calc(100vh - 250px);height:calc(100dvh - 250px);min-height:340px;max-height:900px}\n.sc.chat>*{flex:none}\n.sc.chat>.sc-body{flex:1 1 auto;min-height:0;height:auto;overflow-y:auto;overflow-x:hidden;padding:14px 12px;background:var(--bg);display:flex;flex-direction:column;gap:7px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scroll-behavior:auto}\n.sc-body>:first-child{margin-top:auto}\n.sc-r{flex:none}.sc-new-pill{position:absolute;left:50%;transform:translateX(-50%);bottom:84px;z-index:3;border:0;border-radius:99px;padding:8px 16px;font-size:12.5px;font-weight:800;background:#0b8f69;color:#fff;box-shadow:0 8px 18px -8px #000a;cursor:pointer;width:auto;margin:0}\n.sc.chat{position:relative}\n.sc-img{display:block;max-width:100%;max-height:260px;width:auto;height:auto;border-radius:12px;margin:2px 0 5px;object-fit:cover;background:var(--tint)}.sc-r.me .sc-b a{color:inherit}\n.sc-att{width:44px;height:44px;min-width:44px;border-radius:50%;border:1px solid var(--ln);background:var(--fld);padding:0;margin:0;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:none;color:var(--tx)}\n.sc-pv{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--ln);background:var(--card)}.sc-pv[hidden]{display:none}.sc-pv img{width:46px;height:46px;border-radius:10px;object-fit:cover}.sc-pv span{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sc-pv button{width:auto;margin:0;padding:6px 12px;border-radius:99px;background:var(--tint);color:var(--tx);border:1px solid var(--ln);box-shadow:none}\n.sc-bar{flex-shrink:0}.sc-err{display:none;padding:7px 14px;font-size:12.5px;color:#fff;background:#ef4444}\n.sc-s{display:flex;gap:8px;margin:0 0 10px}.sc-s input{flex:1;min-width:0;margin:0}.sc-s button{width:auto;margin:0;padding:0 18px}\n.sc-chips{display:flex;gap:8px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}.sc-chips a{white-space:nowrap}\n.sc-d{align-self:center;font-size:11.5px;font-weight:600;color:var(--mut);background:var(--tint);border:1px solid var(--ln);padding:3px 13px;border-radius:99px;margin:8px 0 4px}\n.sc-sy{align-self:center;font-size:12px;color:var(--mut);background:var(--tint);border:1px dashed var(--ln);padding:6px 14px;border-radius:99px;margin:6px 0;text-align:center}\n.sc-r{display:flex;align-items:flex-end;gap:8px}.sc-r.me{flex-direction:row-reverse}\n.sc-b{max-width:80%;padding:9px 13px 6px;border-radius:18px;font-size:14.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 1px 2px #0002}\n.sc-r.ag .sc-b{background:var(--card);border:1px solid var(--ln);color:var(--tx);border-bottom-left-radius:5px}\n.sc-r.me .sc-b{background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;border-bottom-right-radius:5px}\n.sc-n{display:block;font-size:11px;font-weight:800;opacity:.85;margin-bottom:2px}\n.sc-t{display:block;text-align:right;font-size:10.5px;opacity:.72;margin-top:3px}\n.sc-f{display:flex;align-items:flex-end;gap:9px;padding:10px 12px;border-top:1px solid var(--ln);background:var(--card)}\n.sc-f form{display:flex;align-items:flex-end;gap:9px;flex:1;min-width:0;margin:0}\n.sc-f textarea{flex:1;width:auto;min-width:0;resize:none;max-height:130px;min-height:46px;margin:0;padding:12px 16px;border-radius:24px;border:1px solid var(--ln);background:var(--fld);color:var(--tx);font:inherit;font-size:15px;line-height:1.35;overflow-y:auto}\n.sc-f textarea:focus{outline:none;border-color:var(--b);box-shadow:0 0 0 3px var(--glow)}\n.sc-send{width:48px;height:48px;min-width:48px;border-radius:50%;border:0;padding:0;margin:0;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-size:21px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px -6px #0b8f69}\n.sc-send:active{transform:scale(.94)}.sc-send:disabled{opacity:.5}\n.sc-cl{padding:18px 16px;text-align:center;border-top:1px solid var(--ln);background:var(--card)}.sc-cl b{display:block;margin-bottom:4px}\n.sc-go{display:inline-block;margin-top:12px;padding:12px 22px;border-radius:99px;background:linear-gradient(135deg,#14c08f,#0b8f69);color:#fff;font-weight:800;font-size:14.5px;text-decoration:none;border:0;cursor:pointer;box-shadow:0 8px 18px -8px #0b8f69}\n.sc-new{text-align:center;padding:22px 16px}.sc-new .big{font-size:44px;line-height:1}.sc-new h2{margin:10px 0 4px}.sc-new form{text-align:left;margin-top:14px}\n.sc-li{display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--ln);color:var(--tx);text-decoration:none}.sc-li:last-child{border-bottom:0}\n.sc-li:active{background:var(--tint)}.sc-li .sc-av{background:linear-gradient(135deg,var(--b),var(--b2))}\n.sc-li .mid{flex:1;min-width:0}.sc-li .mid b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\n.sc-li .mid span{display:block;font-size:12.5px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}\n.sc-li .end{text-align:right;flex:none;font-size:11.5px;color:var(--mut)}\n.sc-badge{display:inline-block;margin-top:4px;min-width:20px;padding:2px 7px;border-radius:99px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;text-align:center}\n.sc-li.un .mid b{color:var(--tx)}.sc-li.un .mid span{color:var(--tx);font-weight:600}\n.sc-sec{font-size:12.5px;font-weight:800;color:var(--mut);margin:16px 4px 8px;letter-spacing:.2px}\n@media(max-width:520px){.sc-b{max-width:86%}.sc-h{padding:10px 12px}.sc-av{width:38px;height:38px}}\n</style>'
 SC_JS = """<script>(function(){
 var b=document.getElementById('scb');if(!b)return;
 var card=b.closest('.sc'),t=document.getElementById('sct'),f=document.getElementById('scf');
@@ -2668,32 +2675,39 @@ var top=card.getBoundingClientRect().top+window.scrollY;var nav=document.querySe
 var res=(nav&&nav.offsetHeight?nav.offsetHeight:0)+14;
 var h=Math.max(320,Math.min(vh-(top-window.scrollY)-res,900));card.style.height=h+'px'}
 function atBottom(){return b.scrollHeight-b.scrollTop-b.clientHeight<80}
-function down(){b.scrollTop=b.scrollHeight}
+function down(){b.scrollTop=b.scrollHeight;stick=true}
+b.addEventListener('load',function(){if(stick)b.scrollTop=b.scrollHeight},true)
 window.scrollTo(0,0);fit();down();var rf=function(){var k=atBottom();fit();if(k)down()};setTimeout(rf,60);setTimeout(rf,400);window.addEventListener('load',rf);
 var pill=null;
 function showPill(){if(pill)return;pill=document.createElement('button');pill.type='button';pill.className='sc-new-pill';pill.textContent='↓ নতুন বার্তা';pill.onclick=function(){down();hide()};card.appendChild(pill)}
 function hide(){if(pill){pill.remove();pill=null}}
-b.addEventListener('scroll',function(){if(atBottom())hide()},{passive:true});
+b.addEventListener('scroll',function(){stick=atBottom();if(stick)hide()},{passive:true});
 var rz=function(){var k=atBottom();fit();if(k)down()};
 window.addEventListener('resize',rz);if(window.visualViewport)window.visualViewport.addEventListener('resize',rz);
+var fi=document.getElementById('scp'),pv=document.getElementById('scpv'),ab=card.querySelector('.sc-att');
+function clearPv(){if(fi)fi.value='';if(pv){pv.hidden=true;pv.innerHTML='';rz()}}
+if(fi&&ab){ab.addEventListener('click',function(){fi.click()});fi.addEventListener('change',function(){var x=fi.files[0],er=card.querySelector('.sc-err');if(!x){clearPv();return}
+if(x.size>2*1024*1024||x.type.indexOf('image/')!==0){clearPv();if(er){er.textContent='শুধু ছবি দিন (JPG/PNG/WEBP), সর্বোচ্চ ২MB।';er.style.display='block'}return}
+if(er)er.style.display='none';pv.innerHTML='';var im=document.createElement('img');im.src=URL.createObjectURL(x);var sp=document.createElement('span');sp.textContent=x.name;var cb=document.createElement('button');cb.type='button';cb.textContent='✕';cb.onclick=clearPv;pv.appendChild(im);pv.appendChild(sp);pv.appendChild(cb);pv.hidden=false;rz();down();t.focus()})}
 if(t){var g=function(){t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px';rz()};t.addEventListener('input',g);g();
 t.addEventListener('focus',function(){setTimeout(function(){fit();down()},300)});
-t.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&window.matchMedia('(pointer:fine)').matches){e.preventDefault();if(t.value.trim()&&f.requestSubmit)f.requestSubmit()}})}
-var pend=0,pu=b.getAttribute('data-poll'),sig=b.getAttribute('data-sig'),busy=false,alive=true;
+t.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey&&window.matchMedia('(pointer:fine)').matches){e.preventDefault();if((t.value.trim()||(fi&&fi.files[0]))&&f.requestSubmit)f.requestSubmit()}})}
+var stick=true,pend=0,pu=b.getAttribute('data-poll'),sig=b.getAttribute('data-sig'),busy=false,alive=true;
 function poll(){if(!alive||!pu||busy||document.hidden||pend>0)return;busy=true;
 fetch(pu+(pu.indexOf('?')<0?'?':'&')+'sig='+encodeURIComponent(sig),{credentials:'same-origin',headers:{'X-Requested-With':'fetch'}}).then(function(r){return r.ok?r.json():null}).then(function(d){busy=false;
 if(!d||d.same)return;if(d.reload){alive=false;location.reload();return}
 var k=atBottom();b.innerHTML=d.html;sig=d.sig;if(k)down();else showPill()}).catch(function(){busy=false})}
 var iv=setInterval(function(){if(!document.getElementById('scb')){clearInterval(iv);alive=false;return}poll()},4000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)poll()});
-if(f)f.addEventListener('submit',function(e){e.preventDefault();var v=t.value.trim();if(!v)return;
+if(f)f.addEventListener('submit',function(e){e.preventDefault();var v=t.value.trim(),pf=fi&&fi.files[0]||null;if(!v&&!pf)return;
 var er=card.querySelector('.sc-err');if(er)er.style.display='none';
 var fd=new FormData(f),tk=fd.get('_csrf');
 var d0=new Date(),hm=('0'+d0.getHours()).slice(-2)+':'+('0'+d0.getMinutes()).slice(-2);
 var row=document.createElement('div');row.className='sc-r me';var bb=document.createElement('div');bb.className='sc-b';bb.style.opacity='.7';
+var pu2=null;if(pf){pu2=URL.createObjectURL(pf);var pi=document.createElement('img');pi.className='sc-img';pi.src=pu2;bb.appendChild(pi)}
 bb.appendChild(document.createTextNode(v));var tm=document.createElement('span');tm.className='sc-t';tm.textContent=hm+' ⏳';bb.appendChild(tm);row.appendChild(bb);b.appendChild(row);
-t.value='';g();down();hide();t.focus();pend++;
-function fail(msg,rl){pend--;row.remove();if(rl){location.reload();return}if(!t.value)t.value=v;g();if(er){er.textContent=msg||'পাঠানো যায়নি, আবার চেষ্টা করুন।';er.style.display='block'}}
+t.value='';g();clearPv();down();hide();t.focus();pend++;
+function fail(msg,rl){pend--;row.remove();if(rl){location.reload();return}if(!t.value)t.value=v;g();if(pf&&fi){try{var dt=new DataTransfer();dt.items.add(pf);fi.files=dt.files;fi.dispatchEvent(new Event('change'))}catch(x){}}if(er){er.textContent=msg||'পাঠানো যায়নি, আবার চেষ্টা করুন।';er.style.display='block'}}
 fetch(f.action,{method:'POST',body:fd,credentials:'same-origin',headers:{'X-CSRF':tk,'X-Requested-With':'fetch'}}).then(function(r){return r.json().catch(function(){return{}})}).then(function(d){
 if(d&&d.csrf){var h=f.querySelector('[name=_csrf]');if(h)h.value=d.csrf}
 if(d&&d.ok){pend--;bb.style.opacity='1';tm.textContent=hm+' ✓';
@@ -2723,14 +2737,14 @@ def _ticket_threads(rows):
     later turns come from ticket_messages. Nothing existing is rewritten."""
     th = {}
     for t in rows:
-        l = [dict(who="user", body=t["message"] or "", ts=str(t["created"] or ""), name="")]
+        l = [dict(who="user", body=t["message"] or "", ts=str(t["created"] or ""), name="", img="")]
         if t["reply"]:
-            l.append(dict(who="admin", body=t["reply"], ts=str(t["replied_at"] or t["created"] or ""), name=t["replied_by"] or ""))
+            l.append(dict(who="admin", body=t["reply"], ts=str(t["replied_at"] or t["created"] or ""), name=t["replied_by"] or "", img=""))
         th[t["id"]] = l
     ids = [t["id"] for t in rows]
     if ids:
         for m in qa("SELECT * FROM ticket_messages WHERE ticket_id IN (%s) ORDER BY id" % ",".join("?" * len(ids)), tuple(ids)):
-            th[m["ticket_id"]].append(dict(who=m["sender"], body=m["body"] or "", ts=str(m["created"] or ""), name=m["sender_name"] or ""))
+            th[m["ticket_id"]].append(dict(who=m["sender"], body=m["body"] or "", ts=str(m["created"] or ""), name=m["sender_name"] or "", img=m["image"] or ""))
     return th
 
 
@@ -2742,9 +2756,14 @@ def _chat_items(msgs, mine):
         if d and d.date() != last:
             last = d.date()
             out.append(dict(sep="আজ" if last == today else ("গতকাল" if last == today - timedelta(days=1) else last.strftime("%d-%m-%Y"))))
-        out.append(dict(body=m["body"], hm=d.strftime("%H:%M") if d else "", name=m["name"],
+        out.append(dict(body=m["body"], img=m.get("img", ""), hm=d.strftime("%H:%M") if d else "", name=m["name"],
                         cls="sy" if m["who"] == "system" else ("me" if m["who"] == mine else "ag")))
     return out
+
+
+def _chat_photo():
+    """(stored name, error) for the optional photo of a support message."""
+    return save_shot(request.files.get("photo"))
 
 
 def _thread_sig(t):
@@ -2771,7 +2790,7 @@ def _poll_payload(t, mine, av, shownames, expect_status):
     return jsonify(sig=sig, html=render_str(SC_THREAD, items=items, av=av, shownames=shownames))
 
 
-SC_THREAD = """{% for it in items %}{% if it.sep %}<div class="sc-d">{{it.sep}}</div>{% elif it.cls=='sy' %}<div class="sc-sy">🔒 {{it.body}} · {{it.hm}}</div>{% else %}<div class="sc-r {{it.cls}}">{% if it.cls=='ag' %}<div class="sc-av sm">{{av}}</div>{% endif %}<div class="sc-b">{% if shownames and it.name %}<span class="sc-n">{{it.name}}</span>{% endif %}{{it.body}}<span class="sc-t">{{it.hm}}</span></div></div>{% endif %}{% endfor %}"""
+SC_THREAD = """{% for it in items %}{% if it.sep %}<div class="sc-d">{{it.sep}}</div>{% elif it.cls=='sy' %}<div class="sc-sy">🔒 {{it.body}} · {{it.hm}}</div>{% else %}<div class="sc-r {{it.cls}}">{% if it.cls=='ag' %}<div class="sc-av sm">{{av}}</div>{% endif %}<div class="sc-b">{% if shownames and it.name %}<span class="sc-n">{{it.name}}</span>{% endif %}{% if it.img %}<a href="/shot/{{it.img}}" target="_blank" rel="noopener"><img class="sc-img" src="/shot/{{it.img}}" alt="ছবি" loading="lazy"></a>{% endif %}{{it.body}}<span class="sc-t">{{it.hm}}</span></div></div>{% endif %}{% endfor %}"""
 
 
 @app.route("/support", methods=["GET", "POST"])
@@ -2782,12 +2801,18 @@ def support():
         s, m = request.form.get("subject", "").strip()[:100], request.form.get("message", "").strip()[:1000]
         if not s or not m:
             err("বিষয় ও বার্তা দিন।"); return redirect("/support?new=1")
+        img0, e0 = _chat_photo()
+        if e0:
+            err(e0); return redirect("/support?new=1")
         with atomic():
             if q1("SELECT 1 FROM tickets WHERE user_id=? AND status!='closed'", (u["id"],)):
+                store_delete(img0)
                 err("আগের কনভারসেশন চলমান আছে, সেখানেই রিপ্লাই করুন।"); return redirect("/support")
             ts = now()
-            db().execute("INSERT INTO tickets(user_id,subject,message,created,last_activity,admin_unread,user_unread) VALUES(?,?,?,?,?,1,0)",
-                         (u["id"], s, m, ts, ts))
+            cur0 = db().execute("INSERT INTO tickets(user_id,subject,message,created,last_activity,admin_unread,user_unread) VALUES(?,?,?,?,?,1,0)",
+                                (u["id"], s, m, ts, ts))
+            if img0:
+                db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created,image) VALUES(?,?,?,?,?,?)", (cur0.lastrowid, "user", None, "", ts, img0))
             alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], s), "/admin/tickets", "tickets")
         flash("টিকিট জমা হয়েছে।"); return redirect("/support")
     rows = qa("SELECT * FROM tickets WHERE user_id=? ORDER BY (status!='closed') DESC, COALESCE(last_activity,created) DESC, id DESC LIMIT 40", (u["id"],))
@@ -2810,12 +2835,13 @@ def support():
 <div class="sc-body" id="scb" data-poll="/support/{{cur['id']}}/poll?x=1" data-sig="{{sig}}">""" + SC_THREAD + """</div><div class="sc-err" role="alert"></div>
 {% if cur['status']=='closed' %}<div class="sc-cl"><b>🔒 এই কনভারসেশন বন্ধ করা হয়েছে</b><span class="k">নতুন কোনো সমস্যা হলে নতুন কনভারসেশন শুরু করতে পারেন।</span>
 {% if not active %}<br><a class="sc-go" href="/support?new=1">➕ নতুন কনভারসেশন শুরু করুন</a>{% endif %}</div>
-{% else %}<div class="sc-f"><form method="post" action="/support/{{cur['id']}}/reply" id="scf"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<textarea name="message" id="sct" rows="1" required maxlength="1000" placeholder="মেসেজ লিখুন…"></textarea><button class="sc-send" aria-label="Send">➤</button></form></div>{% endif %}</div>
+{% else %}<div class="sc-pv" id="scpv" hidden></div><div class="sc-f"><form method="post" enctype="multipart/form-data" action="/support/{{cur['id']}}/reply" id="scf"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button type="button" class="sc-att" aria-label="ছবি যোগ করুন" title="ছবি যোগ করুন">📎</button><input type="file" name="photo" id="scp" accept="image/jpeg,image/png,image/webp" hidden>
+<textarea name="message" id="sct" rows="1" maxlength="1000" placeholder="মেসেজ লিখুন…"></textarea><button class="sc-send" aria-label="Send">➤</button></form></div>{% endif %}</div>
 {% else %}<div class="sc"><div class="sc-new"><div class="big">💬</div><h2>আপনাকে কীভাবে সাহায্য করতে পারি?</h2>
 <div class="k">সমস্যা বা প্রশ্ন লিখে কনভারসেশন শুরু করুন। আমাদের টিম এখানেই উত্তর দেবে।</div>
-<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>বিষয়</label><input name="subject" required maxlength="100">
-<label>বার্তা</label><textarea name="message" rows="4" required maxlength="1000"></textarea><button style="width:100%;margin-top:10px">কনভারসেশন শুরু করুন</button></form>
+<form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf" value="{{csrf_token}}"><label>বিষয়</label><input name="subject" required maxlength="100">
+<label>বার্তা</label><textarea name="message" rows="4" required maxlength="1000"></textarea>
+<label>📷 ছবি (ঐচ্ছিক, JPG/PNG/WEBP, ≤২MB)</label><input type="file" name="photo" accept="image/*"><button style="width:100%;margin-top:10px">কনভারসেশন শুরু করুন</button></form>
 {% if rows %}<a class="k" href="/support" style="display:inline-block;margin-top:12px">← ফিরে যান</a>{% endif %}</div></div>{% endif %}
 {% if others %}<div class="sc-sec">আগের কনভারসেশন</div><div class="sc">{% for o in others %}<a class="sc-li{{' un' if o.un else ''}}" href="/support?c={{o.id}}"><div class="sc-av">{{'🔒' if o.closed else '💬'}}</div>
 <div class="mid"><b>{{o.subject}}</b><span>#{{o.id}} · {{'বন্ধ' if o.closed else 'চলমান'}}</span></div><div class="end">{{o.when}}{% if o.un %}<br><span class="sc-badge">নতুন</span>{% endif %}</div></a>{% endfor %}</div>{% endif %}
@@ -2842,10 +2868,14 @@ def support_reply(tid):
     m = request.form.get("message", "").strip()[:1000]
     fj = _fetch_req()
     back = redirect("/support?c=%d" % tid)
-    if not m:
-        err("বার্তা লিখুন।"); return jsonify(ok=False, error=_flash_text()) if fj else back
+    has_file = bool(request.files.get("photo") and request.files["photo"].filename)
+    if not m and not has_file:
+        err("বার্তা লিখুন বা ছবি দিন।"); return jsonify(ok=False, error=_flash_text()) if fj else back
     if rate_hit("sp:%d" % u["id"], 40, 3600):
         err("অনেক রিকোয়েস্ট হয়েছে, পরে চেষ্টা করুন।"); return jsonify(ok=False, error=_flash_text()) if fj else back
+    img, e = _chat_photo()
+    if e:
+        err(e); return jsonify(ok=False, error=_flash_text()) if fj else back
     with atomic():
         t = q1("SELECT * FROM tickets WHERE id=? AND user_id=?", (tid, u["id"]))
         if not t:
@@ -2854,9 +2884,10 @@ def support_reply(tid):
         c = db().execute("UPDATE tickets SET status='open', admin_unread=1, last_activity=? WHERE id=? AND user_id=? AND status!='closed'",
                          (ts, tid, u["id"]))
         if not c.rowcount:
+            store_delete(img)
             err("এই কনভারসেশন বন্ধ হয়ে গেছে, আর বার্তা পাঠানো যাবে না।")
             return jsonify(ok=False, reload=True, error=_flash_text()) if fj else back
-        db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)", (tid, "user", None, m, ts))
+        db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created,image) VALUES(?,?,?,?,?,?)", (tid, "user", None, m, ts, img))
         alert_admins("নতুন সাপোর্ট বার্তা", "#%s %s: %s" % (u["member_id"], u["name"], (t["subject"] or "")[:60]), "/admin/tickets", "tickets")
     return jsonify(ok=True) if fj else back
 
@@ -4394,21 +4425,22 @@ def _tickets_pending():
     return bool(q1("SELECT 1 FROM tickets WHERE status='open' AND COALESCE(admin_unread,0)>0"))
 
 
-def _admin_send_reply(tid, rep):
+def _admin_send_reply(tid, rep, img=None):
     a = me()
     with atomic():
         t = q1("SELECT * FROM tickets WHERE id=?", (tid,)) if tid else None
         if not t:
             abort(404)
-        if not rep:
-            err("বার্তা লিখুন।"); return
+        if not rep and not img:
+            err("বার্তা লিখুন বা ছবি দিন।"); return
         ts, who = now(), "%s (%s)" % (a["name"], a["member_id"])
         c = db().execute("UPDATE tickets SET replied_by=?, replied_at=?, admin_unread=0, user_unread=COALESCE(user_unread,0)+1, last_activity=? "
                          "WHERE id=? AND status='open'", (who, ts, ts, tid))
         if not c.rowcount:
+            store_delete(img)
             err("এই কনভারসেশনে এখন উত্তর দেওয়া যাবে না।"); return
-        db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created) VALUES(?,?,?,?,?)", (tid, "admin", who, rep, ts))
-        notify(t["user_id"], "সাপোর্ট উত্তর", rep[:300], "/support"); audit("ticket_reply", "ticket#%s" % tid)
+        db().execute("INSERT INTO ticket_messages(ticket_id,sender,sender_name,body,created,image) VALUES(?,?,?,?,?,?)", (tid, "admin", who, rep, ts, img))
+        notify(t["user_id"], "সাপোর্ট উত্তর", rep[:300] if rep else "📷 ছবি পাঠানো হয়েছে", "/support"); audit("ticket_reply", "ticket#%s" % tid)
         if not _tickets_pending():
             alerts_done("/admin/tickets")
 
@@ -4416,7 +4448,11 @@ def _admin_send_reply(tid, rep):
 @app.route("/admin/tickets/<int:tid>/reply", methods=["POST"])
 @staff_required("tickets")
 def admin_ticket_reply(tid):
-    _admin_send_reply(tid, request.form.get("reply", "").strip()[:1000])
+    img, e = _chat_photo()
+    if e:
+        err(e)
+    else:
+        _admin_send_reply(tid, request.form.get("reply", "").strip()[:1000], img)
     if _fetch_req():
         e = _flash_text()
         return jsonify(ok=not e, error=e, reload=bool(e))
@@ -4475,8 +4511,8 @@ def admin_ticket_view(tid):
 {% if main and t['status']=='open' %}<form method="post" action="/admin/tickets/{{t['id']}}/pass" data-confirm="এই টিকিট পাস করবেন? এটি সক্রিয় তালিকা থেকে সরে পাস করা টিকিটে যাবে (মুছবে না)।"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button>⏭ Pass</button></form>{% endif %}
 {% if main and t['status']=='passed' %}<form method="post" action="/admin/tickets/{{t['id']}}/reopen" data-confirm="টিকিট আবার খুলবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button>↩ আবার খুলুন</button></form>{% endif %}</div>
 <div class="sc-body" id="scb" data-poll="/admin/tickets/{{t['id']}}/poll?x=1" data-sig="{{sig}}">""" + SC_THREAD + """</div><div class="sc-err" role="alert"></div>
-{% if t['status']=='open' %}<div class="sc-f"><form method="post" action="/admin/tickets/{{t['id']}}/reply" id="scf"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<textarea name="reply" id="sct" rows="1" required maxlength="1000" placeholder="উত্তর লিখুন"></textarea><button class="sc-send" aria-label="Send">➤</button></form></div>
+{% if t['status']=='open' %}<div class="sc-pv" id="scpv" hidden></div><div class="sc-f"><form method="post" enctype="multipart/form-data" action="/admin/tickets/{{t['id']}}/reply" id="scf"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button type="button" class="sc-att" aria-label="ছবি যোগ করুন" title="ছবি যোগ করুন">📎</button><input type="file" name="photo" id="scp" accept="image/jpeg,image/png,image/webp" hidden>
+<textarea name="reply" id="sct" rows="1" maxlength="1000" placeholder="উত্তর লিখুন"></textarea><button class="sc-send" aria-label="Send">➤</button></form></div>
 {% elif t['status']=='closed' %}<div class="sc-cl"><b>🔒 এই কনভারসেশন বন্ধ করা হয়েছে</b><span class="k">{{t['closed_by'] or ''}}</span></div>{% endif %}</div>""" + SC_JS,
                 active="/admin/tickets", t=t, items=items, sig=_thread_sig(t), av=(t["name"] or "?")[:1], shownames=True, main=is_main_admin())
 
@@ -4512,7 +4548,7 @@ def admin_tickets():
     lst = []
     for r in rows:
         last = th[r["id"]][-1]
-        pre = last["body"].replace("\n", " ")[:80]
+        pre = last["body"].replace("\n", " ")[:80] or ("📷 ছবি" if last.get("img") else "")
         lst.append(dict(id=r["id"], name=r["name"], mid=r["member_id"], subject=r["subject"], un=(r["admin_unread"] or 0) > 0,
                         pre=("↪ " if last["who"] == "admin" else "") + pre, when=_short_time(r["last_activity"] or r["created"]), ini=(r["name"] or "?")[:1]))
     return page(SC_CSS + """<div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap"><a class="btn {{'' if view=='open' else 's'}}" href="/admin/tickets">খোলা ({{nopen}})</a><a class="btn {{'' if view=='closed' else 's'}}" href="/admin/tickets?view=closed">বন্ধ ({{nclosed}})</a>{% if main %}<a class="btn {{'' if view=='passed' else 's'}}" href="/admin/tickets?view=passed">⏭ পাস ({{npass}})</a>{% endif %}</div>
