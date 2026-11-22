@@ -42,6 +42,9 @@ DB = os.environ.get("DATABASE_PATH", "ewallet.db")
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(DB)), "uploads"))
 SITE = "E-Wallet Support"
 METHODS = ("bKash", "Nagad", "Rocket")
+USDT_METHOD = "USDT (BEP20)"  # deposit-only method; shown to users only while the admin has saved a BEP20 address (settings key usdt_bep20)
+USDT_ADDR_RE = re.compile(r"0x[0-9a-fA-F]{40}")
+USDT_TXID_RE = re.compile(r"(?:0x)?[0-9a-fA-F]{64}")
 SCHEMA_VERSION = 7
 CODE_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -2269,9 +2272,16 @@ def deposit():
     mn = float(setting("min_deposit", "50") or 50)
     if request.method == "POST":
         m, amt = request.form.get("method"), parse_amount(request.form.get("amount"))
-        trx = request.form.get("trx", "").strip()[:40]
+        usdt_addr = (setting("usdt_bep20") or "").strip()
+        if m == USDT_METHOD:
+            trx = request.form.get("trx", "").strip()[:80]
+            if not usdt_addr or amt < mn or not USDT_TXID_RE.fullmatch(trx):
+                err("USDT (BEP20)-এর জন্য সঠিক পরিমাণ (ন্যূনতম ৳%s) ও ৬৪ অক্ষরের TXID (Transaction Hash) দিন।" % int(mn)); return redirect("/deposit")
+            trx = "0x" + trx[-64:].lower()  # one canonical form, so the same hash cannot be submitted twice with/without 0x or in another case
+        else:
+            trx = request.form.get("trx", "").strip()[:40]
         nt = norm_trx(trx)
-        if m not in METHODS or amt < mn or len(nt) < 6:
+        if (m not in METHODS and m != USDT_METHOD) or amt < mn or len(nt) < 6:
             err("মাধ্যম, সঠিক পরিমাণ (ন্যূনতম ৳%s) ও কমপক্ষে ৬ অক্ষরের TrxID দিন।" % int(mn)); return redirect("/deposit")
         if rate_hit("dp:%d" % u["id"], 10, 3600):
             err("অনেক রিকোয়েস্ট হয়েছে।"); return redirect("/deposit")
@@ -2289,14 +2299,31 @@ def deposit():
                 alert_admins("স্ক্রিনশট আপলোড", "#%s ডিপোজিটের স্ক্রিনশট দিয়েছেন" % u["member_id"], "/admin/deposits", "deposits")
         flash("ডিপোজিট রিকোয়েস্ট জমা হয়েছে। যাচাই করা হবে।"); return redirect("/history")
     nums = {m: setting(m.lower()) for m in METHODS}
+    usdt = (setting("usdt_bep20") or "").strip()
+    if not USDT_ADDR_RE.fullmatch(usdt):
+        usdt = ""  # not configured (or invalid) -> the USDT option is not offered
     return page("""<div class="card"><h2>ডিপোজিট</h2><p class="k">নিচের নম্বরে Send Money করে TrxID দিন।</p>
-{% for m,n in nums.items() %}<div class="row" style="margin-bottom:6px"><b>{{m}}</b><span>{{n or 'সেট করা হয়নি'}}</span></div>{% endfor %}</div>
+{% for m,n in nums.items() %}<div class="row" style="margin-bottom:6px"><b>{{m}}</b><span>{{n or 'সেট করা হয়নি'}}</span></div>{% endfor %}
+{% if usdt %}<div class="row" style="margin-bottom:6px"><b>USDT (BEP20)</b><span>নিচে দেখুন</span></div>{% endif %}</div>
+{% if usdt %}<div class="card" id="usdtbox" style="border:2px solid #f0b90b"><h3 style="margin-top:0">💵 USDT – BEP20 (BNB Smart Chain)</h3>
+<div class="k">নেটওয়ার্ক: <b>BEP20 (BNB Smart Chain)</b> · কয়েন: <b>USDT</b></div>
+<div style="margin:10px 0;padding:12px;border-radius:12px;background:var(--tint);border:1px dashed var(--ln);word-break:break-all;font-family:monospace;font-size:14px;font-weight:700" id="usdtaddr">{{usdt}}</div>
+<button type="button" id="usdtcp" class="s" style="width:100%">📋 অ্যাড্রেস কপি করুন</button>
+<div style="margin-top:12px;padding:11px 12px;border-radius:12px;background:#fff3cd;color:#664d03;border:1px solid #ffe69c;font-size:13.5px;line-height:1.55">⚠️ <b>সতর্কতা:</b> শুধুমাত্র <b>USDT (BEP20 – BNB Smart Chain)</b> নেটওয়ার্কে পাঠান। TRC20, ERC20 বা অন্য কোনো নেটওয়ার্কে পাঠালে টাকা হারিয়ে যাবে এবং তা গ্রহণ ও ফেরত দেওয়া হবে না। পাঠানোর পর TXID (Transaction Hash) নিচের ফর্মে দিন।</div></div>{% endif %}
 <div class="card"><form method="post" enctype="multipart/form-data" data-confirm="তথ্য ঠিক আছে? জমা দেবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
-<label>মাধ্যম</label><select name="method">{% for m in nums %}<option>{{m}}</option>{% endfor %}</select>
+<label>মাধ্যম</label><select name="method" id="dpm">{% for m in nums %}<option>{{m}}</option>{% endfor %}{% if usdt %}<option value="USDT (BEP20)">USDT (BEP20)</option>{% endif %}</select>
 <label>পরিমাণ (ন্যূনতম ৳{{mn|int}})</label><input name="amount" type="number" step="0.01" min="{{mn}}" required>
-<label>Transaction ID</label><input name="trx" required autocomplete="off">
+{% if usdt %}<div class="k" id="dpnote" hidden>USDT-এর ক্ষেত্রে পাঠানো পরিমাণের সমমূল্য টাকায় লিখুন।</div>{% endif %}
+<label id="dptl">Transaction ID</label><input name="trx" id="dpt" required autocomplete="off">
 <label>পেমেন্ট স্ক্রিনশট (ঐচ্ছিক, JPG/PNG/WEBP, ≤২MB)</label><input type="file" name="shot" accept="image/*">
-<button style="width:100%">জমা দিন</button></form></div>""", active="/deposit", nums=nums, mn=mn)
+<button style="width:100%">জমা দিন</button></form></div>
+{% if usdt %}<script>(function(){var sel=document.getElementById('dpm'),box=document.getElementById('usdtbox'),tl=document.getElementById('dptl'),t=document.getElementById('dpt'),nt=document.getElementById('dpnote');
+if(!sel||!box||!nt)return;function up(){var u=sel.value==='USDT (BEP20)';box.style.display=u?'':'none';nt.hidden=!u;tl.textContent=u?'TXID (Transaction Hash)':'Transaction ID';t.placeholder=u?'0x… (৬৪ অক্ষরের হ্যাশ)':'';t.maxLength=u?80:40;if(u)box.scrollIntoView({block:'nearest'})}
+sel.addEventListener('change',up);up();
+var b=document.getElementById('usdtcp'),a=document.getElementById('usdtaddr');
+b.addEventListener('click',function(){var v=a.textContent.trim(),done=function(){b.textContent='✅ কপি হয়েছে';setTimeout(function(){b.textContent='📋 অ্যাড্রেস কপি করুন'},1800)};
+if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(v).then(done,fb)}else fb();
+function fb(){var x=document.createElement('textarea');x.value=v;x.style.position='fixed';x.style.opacity='0';document.body.appendChild(x);x.select();try{document.execCommand('copy');done()}catch(e){}x.remove()}})})()</script>{% endif %}""", active="/deposit", nums=nums, mn=mn, usdt=usdt)
 
 
 @app.route("/withdraw", methods=["GET", "POST"])
@@ -4503,7 +4530,8 @@ SET_SECTIONS = [
      [("welcome", "textarea", "স্বাগত বার্তা (হোম পেজে দেখায়)"),
       ("req_expiry_hours", "int", "ম্যানুয়াল রিকোয়েস্টের ডিফল্ট মেয়াদ (ঘণ্টা, ০ = মেয়াদ নেই)")], ""),
     ("payment", "💳 পেমেন্ট সেটিংস",
-     [("bkash", "text", "bKash নম্বর"), ("nagad", "text", "Nagad নম্বর"), ("rocket", "text", "Rocket নম্বর")], ""),
+     [("bkash", "text", "bKash নম্বর"), ("nagad", "text", "Nagad নম্বর"), ("rocket", "text", "Rocket নম্বর"),
+      ("usdt_bep20", "text", "USDT (BEP20 – BNB Smart Chain) ওয়ালেট অ্যাড্রেস (0x…) — বদলাতে নতুন অ্যাড্রেস দিন, খালি রেখে সেভ করলে USDT অপশন ইউজারদের কাছ থেকে সরে যাবে")], ""),
     ("deposit", "➕ ডিপোজিট সেটিংস", [("min_deposit", "money", "ন্যূনতম ডিপোজিট (৳)")], ""),
     ("withdraw", "⬆ উইথড্র সেটিংস", [("min_withdraw", "money", "ন্যূনতম উইথড্র (৳)"), ("req_cancel_fee", "money", "ইউজার রিকোয়েস্ট বাতিল ফি (৳) — অ্যাডমিনের পাঠানো উইথড্র রিকোয়েস্ট ইউজার নিজে বাতিল করলে কাটা হবে")], ""),
     ("commission", "💰 কমিশন সেটিংস", [],
@@ -4528,6 +4556,8 @@ SET_KEYS = [f[0] for sec in SET_SECTIONS for f in sec[2]]
 def _validate_section(v):
     if "telegram_url" in v and v["telegram_url"] and not v["telegram_url"].startswith("https://"):
         return "টেলিগ্রাম লিংক https:// দিয়ে শুরু হতে হবে।"
+    if "usdt_bep20" in v and v["usdt_bep20"] and not USDT_ADDR_RE.fullmatch(v["usdt_bep20"]):
+        return "USDT BEP20 অ্যাড্রেস সঠিক নয়। এটি 0x দিয়ে শুরু হয়ে মোট ৪২ অক্ষরের (BNB Smart Chain) অ্যাড্রেস হতে হবে।"
     for k in ("min_deposit", "min_withdraw", "req_cancel_fee"):
         if k in v and parse_amount(v[k]) <= 0:
             return "পরিমাণ সঠিক দিন।"
