@@ -2697,7 +2697,7 @@ var stick=true,pend=0,pu=b.getAttribute('data-poll'),sig=b.getAttribute('data-si
 function poll(){if(!alive||!pu||busy||document.hidden||pend>0)return;busy=true;
 fetch(pu+(pu.indexOf('?')<0?'?':'&')+'sig='+encodeURIComponent(sig),{credentials:'same-origin',headers:{'X-Requested-With':'fetch'}}).then(function(r){return r.ok?r.json():null}).then(function(d){busy=false;
 if(!d||d.same)return;if(d.reload){alive=false;location.reload();return}
-var k=atBottom();b.innerHTML=d.html;sig=d.sig;if(k)down();else showPill()}).catch(function(){busy=false})}
+var k=atBottom();b.innerHTML=d.html;sig=d.sig;var ag=document.getElementById('scag');if(ag&&d.agent)ag.textContent=d.agent;if(k)down();else showPill()}).catch(function(){busy=false})}
 var iv=setInterval(function(){if(!document.getElementById('scb')){clearInterval(iv);alive=false;return}poll()},4000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)poll()});
 if(f)f.addEventListener('submit',function(e){e.preventDefault();var v=t.value.trim(),pf=fi&&fi.files[0]||null;if(!v&&!pf)return;
@@ -2762,6 +2762,19 @@ def _chat_items(msgs, mine):
     return out
 
 
+def _user_items(items):
+    """Customer view of a thread: agents appear by the display name they chose. Old messages that carry an admin's real name/ID are anonymised."""
+    for it in items:
+        if it.get("cls") == "ag" and "(" in (it.get("name") or ""):
+            it["name"] = ""
+    return items
+
+
+def _agent_label(items):
+    n = next((it["name"] for it in reversed(items) if it.get("cls") == "ag" and it.get("name")), "")
+    return ("%s-এর সাথে কথোপকথন" % n) if n else "সাপোর্ট টিম"
+
+
 def _agent_name(uid):
     """Display name a support agent chose for themselves (stored in settings, key agent_<admin id>)."""
     return (setting("agent_%d" % uid) or "").strip()
@@ -2793,7 +2806,9 @@ def _poll_payload(t, mine, av, shownames, expect_status):
     if expect_status and t["status"] != expect_status:
         return jsonify(reload=True)
     items = _chat_items(_ticket_threads([t])[t["id"]], mine)
-    return jsonify(sig=sig, html=render_str(SC_THREAD, items=items, av=av, shownames=shownames))
+    if mine == "user":
+        _user_items(items)
+    return jsonify(sig=sig, html=render_str(SC_THREAD, items=items, av=av, shownames=shownames), agent=_agent_label(items))
 
 
 SC_THREAD = """{% for it in items %}{% if it.sep %}<div class="sc-d">{{it.sep}}</div>{% elif it.cls=='sy' %}<div class="sc-sy">🔒 {{it.body}} · {{it.hm}}</div>{% else %}<div class="sc-r {{it.cls}}">{% if it.cls=='ag' %}<div class="sc-av sm">{{av}}</div>{% endif %}<div class="sc-b">{% if shownames and it.name %}<span class="sc-n">{{it.name}}</span>{% endif %}{% if it.img %}<a href="/shot/{{it.img}}" target="_blank" rel="noopener"><img class="sc-img" src="/shot/{{it.img}}" alt="ছবি" loading="lazy"></a>{% endif %}{{it.body}}<span class="sc-t">{{it.hm}}</span></div></div>{% endif %}{% endfor %}"""
@@ -2828,7 +2843,7 @@ def support():
     cur = None if (new_mode or not rows) else (next((r for r in rows if r["id"] == want), None) or rows[0])
     items = None
     if cur:
-        items = _chat_items(_ticket_threads([cur])[cur["id"]], "user")
+        items = _user_items(_chat_items(_ticket_threads([cur])[cur["id"]], "user"))
         if (cur["user_unread"] or 0) > 0:
             db().execute("UPDATE tickets SET user_unread=0 WHERE id=? AND user_id=?", (cur["id"], u["id"]))
     user_seen(lambda link, title, ts: _user_badge_key(link, title) == "/support")
@@ -2836,7 +2851,7 @@ def support():
                    when=_short_time(r["last_activity"] or r["created"])) for r in rows if not cur or r["id"] != cur["id"]]
     return page(SC_CSS + """{% if tg %}<a class="btn g" href="{{tg}}" target="_blank" rel="noopener" style="width:100%;margin-bottom:12px">✈ {{tg_label}}</a>{% endif %}
 {% if cur %}<div class="sc chat"><div class="sc-h"><div class="sc-av">🎧</div><div class="sc-hi"><b>{{cur['subject']}}</b>
-<small><i class="sc-dot{{' off' if cur['status']=='closed' else ''}}"></i>সাপোর্ট টিম · #{{cur['id']}}</small></div>
+<small><i class="sc-dot{{' off' if cur['status']=='closed' else ''}}"></i><span id="scag">{{ag_label}}</span> · #{{cur['id']}}</small></div>
 <span class="sc-st{{' off' if cur['status']=='closed' else ''}}">{{'বন্ধ' if cur['status']=='closed' else 'চলমান'}}</span></div>
 <div class="sc-body" id="scb" data-poll="/support/{{cur['id']}}/poll?x=1" data-sig="{{sig}}">""" + SC_THREAD + """</div><div class="sc-err" role="alert"></div>
 {% if cur['status']=='closed' %}<div class="sc-cl"><b>🔒 এই কনভারসেশন বন্ধ করা হয়েছে</b><span class="k">নতুন কোনো সমস্যা হলে নতুন কনভারসেশন শুরু করতে পারেন।</span>
@@ -2851,7 +2866,7 @@ def support():
 {% if rows %}<a class="k" href="/support" style="display:inline-block;margin-top:12px">← ফিরে যান</a>{% endif %}</div></div>{% endif %}
 {% if others %}<div class="sc-sec">আগের কনভারসেশন</div><div class="sc">{% for o in others %}<a class="sc-li{{' un' if o.un else ''}}" href="/support?c={{o.id}}"><div class="sc-av">{{'🔒' if o.closed else '💬'}}</div>
 <div class="mid"><b>{{o.subject}}</b><span>#{{o.id}} · {{'বন্ধ' if o.closed else 'চলমান'}}</span></div><div class="end">{{o.when}}{% if o.un %}<br><span class="sc-badge">নতুন</span>{% endif %}</div></a>{% endfor %}</div>{% endif %}
-""" + SC_JS, active="/account", rows=rows, cur=cur, items=items, sig=(_thread_sig(cur) if cur else ""), active_t=active, others=others, av="🎧", shownames=False)
+""" + SC_JS, active="/account", rows=rows, cur=cur, items=items, sig=(_thread_sig(cur) if cur else ""), ag_label=(_agent_label(items) if items else "সাপোর্ট টিম"), active_t=active, others=others, av="🎧", shownames=True)
 
 
 @app.route("/support/<int:tid>/poll")
@@ -2864,7 +2879,7 @@ def support_poll(tid):
     if (t["user_unread"] or 0) > 0 and request.args.get("sig") != "x":
         db().execute("UPDATE tickets SET user_unread=0 WHERE id=? AND user_id=?", (tid, u["id"]))
         user_seen(lambda link, title, ts: _user_badge_key(link, title) == "/support")
-    return _poll_payload(t, "user", "🎧", False, None)
+    return _poll_payload(t, "user", "🎧", True, None)
 
 
 @app.route("/support/<int:tid>/reply", methods=["POST"])
