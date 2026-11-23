@@ -1483,7 +1483,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
 <body class="{{'auth' if authpage}}{{' adm-on' if u and u['is_admin']}}"{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
 <div id="ld"></div>
-<div class="top"><b>{{site}}</b><button type="button" id="pwa-install" class="pwa-dl" aria-label="Download App" title="Download App">📲</button><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
+<div class="top"><b>{{site}}</b><a id="apk-dl" class="pwa-dl" href="/download/E-Wallet_Support.apk" download="E-Wallet_Support.apk" aria-label="Download App" title="Download App" style="color:#fff"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></a><a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
 {% if u and not u['is_admin'] %}<span><a class="bell" href="/notifications">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
@@ -7614,6 +7614,14 @@ def pwa_service_worker():
     r = Response(base_js + "\n" + SW_NOTIFY_JS, mimetype="application/javascript")
     r.headers["Cache-Control"] = "no-cache"
     r.headers["Service-Worker-Allowed"] = "/"
+    return r
+
+
+@app.route("/download/E-Wallet_Support.apk")
+def download_apk():  # permanent public APK URL (no login needed); file lives in static/E-Wallet_Support.apk
+    r = send_from_directory(PWA_DIR, "E-Wallet_Support.apk", mimetype="application/vnd.android.package-archive",
+                            as_attachment=True, download_name="E-Wallet_Support.apk", conditional=True)
+    r.headers["Cache-Control"] = "public, max-age=300"
     return r
 
 
