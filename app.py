@@ -2934,7 +2934,7 @@ def support_reply(tid):
     return jsonify(ok=True) if fj else back
 
 
-def avatar_svg(seed):
+def _avatar_person(seed):
     """Original cartoon-person avatar, generated deterministically from a seed (inline SVG)."""
     import random as _rnd, re as _re
     from markupsafe import Markup
@@ -3004,6 +3004,146 @@ def avatar_svg(seed):
            '<circle cx="36" cy="57" r="4" fill="#FF6B81" opacity=".25"/><circle cx="64" cy="57" r="4" fill="#FF6B81" opacity=".25"/>'
            '%s%s%s%s%s%s%s</svg>') % (gid, b1, b2, gid, back, shirt, skin, skin, skin, skin, skin, beard, e, brows, nose, m, front, extra)
     return Markup(svg)
+
+
+_AV_BGS = [("#FFD1DC", "#FF8FAE"), ("#BDE0FE", "#5AA9FF"), ("#C7F9CC", "#5CD07F"), ("#FFE5A0", "#FFB830"),
+           ("#E0C3FC", "#A678E8"), ("#FFD6A5", "#FF9055"), ("#B5EAEA", "#3FBFBF"), ("#FBC4AB", "#F28B82")]
+
+
+def _av_wrap(seed, inner):
+    import random as _rnd, re as _re
+    from markupsafe import Markup
+    b1, b2 = _rnd.Random("bg:" + str(seed)).choice(_AV_BGS)
+    gid = "ag" + _re.sub(r"\W", "", str(seed))
+    return Markup('<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" aria-hidden="true">'
+                  f'<defs><linearGradient id="{gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{b1}"/>'
+                  f'<stop offset="1" stop-color="{b2}"/></linearGradient></defs><rect width="100" height="100" fill="url(#{gid})"/>{inner}</svg>')
+
+
+def _avatar_face(seed):
+    """Emoji-style round expressive face."""
+    import random as _rnd
+    r = _rnd.Random("face:" + str(seed))
+    dk = "#4A2C12"
+    fc = r.choice(["#FFD43B", "#FFC93C", "#FFB84D", "#FFE066"])
+    ex = r.randrange(10)
+    heart = "M0 4 C-7 -2 -4 -8 0 -3 C4 -8 7 -2 0 4Z"
+    star = "0,-5.5 1.6,-1.8 5.5,-1.6 2.5,0.9 3.4,4.8 0,2.6 -3.4,4.8 -2.5,0.9 -5.5,-1.6 -1.6,-1.8"
+    dots = (f'<circle cx="38" cy="47" r="3.4" fill="{dk}"/><circle cx="62" cy="47" r="3.4" fill="{dk}"/>'
+            '<circle cx="39.2" cy="45.8" r="1.1" fill="#fff"/><circle cx="63.2" cy="45.8" r="1.1" fill="#fff"/>')
+    up = (f'<path d="M32 49 Q38 41 44 49" stroke="{dk}" stroke-width="3" fill="none" stroke-linecap="round"/>'
+          f'<path d="M56 49 Q62 41 68 49" stroke="{dk}" stroke-width="3" fill="none" stroke-linecap="round"/>')
+    smile = f'<path d="M35 60 Q50 74 65 60" stroke="{dk}" stroke-width="3.2" fill="none" stroke-linecap="round"/>'
+    openm = '<path d="M34 59 Q50 81 66 59Z" fill="#7A2222"/><ellipse cx="50" cy="67.5" rx="7" ry="3.2" fill="#FF7A8A"/>'
+    blush = 0.3
+    hat = ""
+    if ex == 0:
+        e = dots + openm
+    elif ex == 1:
+        e = up + openm
+    elif ex == 2:
+        e = "".join(f'<path transform="translate({x} 47) scale(1.35)" d="{heart}" fill="#E53935"/>' for x in (38, 62)) + smile
+    elif ex == 3:
+        e = ('<rect x="28" y="41" width="19" height="12" rx="4.5" fill="#1d1d1f"/><rect x="53" y="41" width="19" height="12" rx="4.5" fill="#1d1d1f"/>'
+             '<path d="M47 45 L53 45" stroke="#1d1d1f" stroke-width="2.2"/><path d="M31 44 L36 44 M56 44 L61 44" stroke="#fff" stroke-width="1.6" opacity=".5" stroke-linecap="round"/>'
+             f'<path d="M38 61 Q52 72 66 58" stroke="{dk}" stroke-width="3.2" fill="none" stroke-linecap="round"/>')
+    elif ex == 4:
+        e = (f'<circle cx="38" cy="47" r="3.4" fill="{dk}"/><circle cx="39.2" cy="45.8" r="1.1" fill="#fff"/>'
+             f'<path d="M56 48 Q62 41 68 48" stroke="{dk}" stroke-width="3" fill="none" stroke-linecap="round"/>'
+             f'<path d="M37 60 Q50 72 63 60" stroke="{dk}" stroke-width="3.2" fill="none" stroke-linecap="round"/>'
+             '<path d="M45 65.5 Q45 77 50 77 Q55 77 55 65.5Z" fill="#FF7A8A"/>')
+    elif ex == 5:
+        e = ("".join(f'<circle cx="{x}" cy="46" r="6" fill="#fff" stroke="{dk}" stroke-width="1.4"/><circle cx="{x}" cy="47" r="3" fill="{dk}"/>' for x in (38, 62)) +
+             f'<path d="M31 36 Q38 32 45 36 M55 36 Q62 32 69 36" stroke="{dk}" stroke-width="2.4" fill="none" stroke-linecap="round"/>'
+             f'<ellipse cx="50" cy="68" rx="5.5" ry="7.5" fill="#7A2222"/>')
+    elif ex == 6:
+        e = (f'<path d="M32 47 Q38 53 44 47 M56 47 Q62 53 68 47" stroke="{dk}" stroke-width="3" fill="none" stroke-linecap="round"/>'
+             f'<path d="M44 64 Q50 68 56 64" stroke="{dk}" stroke-width="3" fill="none" stroke-linecap="round"/>'
+             '<path d="M68 26 L78 26 L68 36 L78 36" stroke="#5B8DEF" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>')
+    elif ex == 7:
+        blush = 0.55
+        e = (f'<circle cx="38" cy="48" r="2.8" fill="{dk}"/><circle cx="62" cy="48" r="2.8" fill="{dk}"/>'
+             f'<path d="M42 62 Q50 68 58 62" stroke="{dk}" stroke-width="3" fill="none" stroke-linecap="round"/>')
+    elif ex == 8:
+        e = "".join(f'<polygon transform="translate({x} 47) scale(1.35)" points="{star}" fill="#FFB300" stroke="#E65100" stroke-width=".6"/>' for x in (38, 62)) + openm
+    else:
+        hc = r.choice(["#E53935", "#3F51B5", "#43A047", "#8E24AA"])
+        e = dots + openm
+        hat = (f'<path d="M50 4 L35 28 L65 28Z" fill="{hc}"/><path d="M43 17 L57 17" stroke="#fff" stroke-width="2.4" opacity=".7"/>'
+               '<circle cx="50" cy="5" r="3.6" fill="#FFD54F"/>')
+    return ('<circle cx="50" cy="55" r="35" fill="%s" stroke="#00000022" stroke-width="1.5"/>' % fc +
+            '<ellipse cx="36" cy="36" rx="10" ry="5" fill="#fff" opacity=".28" transform="rotate(-25 36 36)"/>' +
+            f'<circle cx="29" cy="60" r="5" fill="#FF6F61" opacity="{blush}"/><circle cx="71" cy="60" r="5" fill="#FF6F61" opacity="{blush}"/>' + e + hat)
+
+
+def _avatar_animal(seed):
+    """Cute animal face."""
+    import random as _rnd
+    r = _rnd.Random("an:" + str(seed))
+    dk = "#2B1B12"
+    kind = r.choice(["cat", "bear", "panda", "rabbit", "fox", "dog"])
+
+    def eyes(y):
+        return (f'<circle cx="39" cy="{y}" r="3.6" fill="{dk}"/><circle cx="61" cy="{y}" r="3.6" fill="{dk}"/>'
+                f'<circle cx="40.2" cy="{y - 1.2}" r="1.2" fill="#fff"/><circle cx="62.2" cy="{y - 1.2}" r="1.2" fill="#fff"/>')
+
+    def cheeks(y):
+        return f'<circle cx="31" cy="{y}" r="4.5" fill="#FF6F8E" opacity=".35"/><circle cx="69" cy="{y}" r="4.5" fill="#FF6F8E" opacity=".35"/>'
+    if kind == "cat":
+        c = r.choice(["#FFA85C", "#B8B8C0", "#F4F1EA", "#6B6B73"])
+        return (f'<path d="M22 46 L26 14 L46 29Z" fill="{c}"/><path d="M78 46 L74 14 L54 29Z" fill="{c}"/>'
+                '<path d="M28 38 L29 22 L40 30Z" fill="#FFB6C1"/><path d="M72 38 L71 22 L60 30Z" fill="#FFB6C1"/>'
+                f'<circle cx="50" cy="57" r="31" fill="{c}"/>' + eyes(54) + cheeks(63) +
+                '<path d="M47 61 L53 61 L50 65Z" fill="#FF8FA3"/>'
+                f'<path d="M50 65 Q50 70 45 70 M50 65 Q50 70 55 70" stroke="{dk}" stroke-width="1.8" fill="none" stroke-linecap="round"/>'
+                f'<path d="M16 57 L31 60 M16 65 L31 64 M84 57 L69 60 M84 65 L69 64" stroke="{dk}" stroke-width="1.2" opacity=".45" stroke-linecap="round"/>')
+    if kind == "bear":
+        c = r.choice(["#A9744F", "#8B5E3C", "#C99A6B", "#6F4E37"])
+        return (f'<circle cx="27" cy="30" r="10" fill="{c}"/><circle cx="73" cy="30" r="10" fill="{c}"/>'
+                '<circle cx="27" cy="30" r="5" fill="#E8B796"/><circle cx="73" cy="30" r="5" fill="#E8B796"/>'
+                f'<circle cx="50" cy="56" r="31" fill="{c}"/><ellipse cx="50" cy="66" rx="13" ry="10" fill="#F3DDC3"/>' + eyes(52) + cheeks(62) +
+                f'<ellipse cx="50" cy="61" rx="4.5" ry="3.2" fill="{dk}"/>'
+                f'<path d="M50 64 L50 68 M44 69 Q50 73 56 69" stroke="{dk}" stroke-width="1.8" fill="none" stroke-linecap="round"/>')
+    if kind == "panda":
+        return ('<circle cx="26" cy="30" r="10" fill="#222"/><circle cx="74" cy="30" r="10" fill="#222"/>'
+                '<circle cx="50" cy="56" r="31" fill="#fff" stroke="#00000018" stroke-width="1.2"/>'
+                '<ellipse cx="38" cy="54" rx="7" ry="9" fill="#222" transform="rotate(20 38 54)"/>'
+                '<ellipse cx="62" cy="54" rx="7" ry="9" fill="#222" transform="rotate(-20 62 54)"/>'
+                '<circle cx="38.5" cy="54" r="3.2" fill="#fff"/><circle cx="61.5" cy="54" r="3.2" fill="#fff"/>'
+                '<circle cx="38.5" cy="54" r="1.7" fill="#222"/><circle cx="61.5" cy="54" r="1.7" fill="#222"/>'
+                + cheeks(66) + '<ellipse cx="50" cy="63" rx="4.2" ry="3" fill="#222"/>'
+                '<path d="M50 66 L50 69 M44 70 Q50 74 56 70" stroke="#222" stroke-width="1.8" fill="none" stroke-linecap="round"/>')
+    if kind == "rabbit":
+        c = r.choice(["#F4F1EA", "#E6D5C3", "#C9C9D1", "#FFD9E3"])
+        return (f'<ellipse cx="36" cy="22" rx="8" ry="19" fill="{c}" transform="rotate(-8 36 22)"/><ellipse cx="64" cy="22" rx="8" ry="19" fill="{c}" transform="rotate(8 64 22)"/>'
+                '<ellipse cx="36" cy="23" rx="4" ry="13" fill="#FFB6C1" transform="rotate(-8 36 23)"/><ellipse cx="64" cy="23" rx="4" ry="13" fill="#FFB6C1" transform="rotate(8 64 23)"/>'
+                f'<circle cx="50" cy="62" r="28" fill="{c}" stroke="#00000012" stroke-width="1"/>' + eyes(58) + cheeks(67) +
+                '<ellipse cx="50" cy="65" rx="3" ry="2.2" fill="#FF8FA3"/>'
+                f'<path d="M50 67 Q50 71 46 71 M50 67 Q50 71 54 71" stroke="{dk}" stroke-width="1.6" fill="none" stroke-linecap="round"/>'
+                '<rect x="47" y="71" width="6" height="5" rx="1.2" fill="#fff" stroke="#ccc" stroke-width=".6"/>')
+    if kind == "fox":
+        c = r.choice(["#FF8A3D", "#E5703A", "#C96A3A"])
+        return (f'<path d="M20 36 L28 12 L44 28 Q50 26 56 28 L72 12 L80 36 Q82 70 50 86 Q18 70 20 36Z" fill="{c}"/>'
+                '<path d="M20 52 Q34 56 50 82 Q66 56 80 52 Q80 72 50 86 Q20 72 20 52Z" fill="#fff"/>'
+                f'<path d="M27 30 L29 20 L36 27Z M73 30 L71 20 L64 27Z" fill="#3b2418"/>' + eyes(52) +
+                f'<circle cx="50" cy="76" r="3.6" fill="{dk}"/>'
+                f'<path d="M50 79 L50 81 M45 82 Q50 85 55 82" stroke="{dk}" stroke-width="1.6" fill="none" stroke-linecap="round"/>')
+    c = r.choice(["#D2A06B", "#F1E4CF", "#8B6B4A", "#CFCFCF"])
+    ec = r.choice(["#6B4A2B", "#3D2B1F", "#B9855B"])
+    return (f'<ellipse cx="23" cy="48" rx="9" ry="17" fill="{ec}" transform="rotate(15 23 48)"/><ellipse cx="77" cy="48" rx="9" ry="17" fill="{ec}" transform="rotate(-15 77 48)"/>'
+            f'<circle cx="50" cy="56" r="29" fill="{c}"/><circle cx="62" cy="50" r="9" fill="{ec}" opacity=".55"/>'
+            '<ellipse cx="50" cy="67" rx="13" ry="10" fill="#FFF4E6"/>' + eyes(52) +
+            f'<ellipse cx="50" cy="61" rx="5.5" ry="4" fill="{dk}"/>'
+            f'<path d="M50 65 L50 69 M43 69 Q50 76 57 69" stroke="{dk}" stroke-width="1.8" fill="none" stroke-linecap="round"/>'
+            '<path d="M47 72 Q50 80 53 72Z" fill="#FF7A8A"/>')
+
+
+def avatar_svg(seed):
+    import random as _rnd
+    k = _rnd.Random("kind:" + str(seed)).randrange(10)
+    if k < 4:
+        return _avatar_person(seed)
+    return _av_wrap(seed, (_avatar_face if k < 7 else _avatar_animal)(seed))
 
 
 def avatar_view(av):
