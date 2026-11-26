@@ -1293,9 +1293,9 @@ a.li,button.li{position:relative;-webkit-tap-highlight-color:transparent;transit
 a.li:active,button.li:active,a.li.tap,button.li.tap{background:var(--tint);transform:scale(.97);border-radius:14px;box-shadow:inset 0 0 0 1px var(--ln)}
 a.li:active .ic,button.li:active .ic,a.li.tap .ic,button.li.tap .ic{transform:scale(.9)}
 .li .ic{transition:transform .12s ease}
-.hero2{position:relative}.avf{position:absolute;top:14px;right:14px;margin:0}
-.avb{width:58px;height:58px;border-radius:50%;padding:0;font-size:30px;line-height:1;display:flex;align-items:center;justify-content:center;background:#ffffff2e;border:2px solid #ffffff80;color:#fff;box-shadow:0 4px 12px #0003;position:relative;transition:transform .15s ease}
-.avb:active{transform:scale(.9) rotate(-12deg)}.avb small{position:absolute;right:-4px;bottom:-4px;font-size:13px;background:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px #0003}
+.hero2{position:relative}.avf{position:absolute;top:16px;right:16px;margin:0}
+.avb{width:50px;height:50px;border-radius:50%;padding:0;line-height:1;display:flex;align-items:center;justify-content:center;background:#ffffff2e;border:2px solid #ffffff80;color:#fff;box-shadow:0 4px 12px #0003;position:relative;transition:transform .15s ease}
+.avb:active{transform:scale(.9) rotate(-12deg)}.avi{display:block;width:100%;height:100%;border-radius:50%;overflow:hidden}.avb small{position:absolute;right:-5px;bottom:-5px;font-size:10px;background:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px #0003}
 
 """
 
@@ -1308,7 +1308,7 @@ document.addEventListener('touchstart',function(){},{passive:true});
 (function(){document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('.menu a.li');if(!a||a.hasAttribute('download')||a.target==='_blank')return;
  if(a._go){a._go=0;return}if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
  e.preventDefault();e.stopImmediatePropagation();a.classList.add('tap');if(navigator.vibrate){try{navigator.vibrate(12)}catch(x){}}
- setTimeout(function(){a._go=1;a.click();setTimeout(function(){a.classList.remove('tap')},400)},130)},true);
+ setTimeout(function(){a._go=1;a.click();setTimeout(function(){a.classList.remove('tap')},300)},55)},true);
  document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.menu button.li');if(!b)return;b.classList.add('tap');setTimeout(function(){b.classList.remove('tap')},180)},true)})();
 (function(){var S='a[href],button,summary,label.pmc,[data-do],.uc-main',el=null;
  function on(e){if(!document.body.classList.contains('adm-on'))return;var t=e.target.closest&&e.target.closest(S);if(!t||t.disabled)return;if(el)el.classList.remove('prs');el=t;t.classList.add('prs')}
@@ -2934,8 +2934,85 @@ def support_reply(tid):
     return jsonify(ok=True) if fj else back
 
 
-AVATARS = ["🦊", "🐼", "🦁", "🐯", "🐨", "🐸", "🐵", "🦄", "🐧", "🐶", "🐱", "🦉", "🐳", "🦋", "🐢", "🦅",
-           "🐙", "🦈", "🐝", "🐰", "🐻", "🦜", "🐬", "🦒", "😎", "🤖", "👽", "🧑‍🚀", "🦸", "🧙"]
+def avatar_svg(seed):
+    """Original cartoon-person avatar, generated deterministically from a seed (inline SVG)."""
+    import random as _rnd, re as _re
+    from markupsafe import Markup
+    r = _rnd.Random("av:" + str(seed))
+    skin = r.choice(["#FFDBB4", "#F5C28F", "#E0A370", "#C68642", "#8D5524", "#6B3E1F"])
+    hair = r.choice(["#1B1B1B", "#2B1A10", "#3B2314", "#6A3B1B", "#B5651D", "#E5B94E", "#C0392B", "#7D3C98", "#2E86C1"])
+    b1, b2 = r.choice([("#FFD1DC", "#FF8FAE"), ("#BDE0FE", "#5AA9FF"), ("#C7F9CC", "#5CD07F"), ("#FFE5A0", "#FFB830"),
+                       ("#E0C3FC", "#A678E8"), ("#FFD6A5", "#FF9055"), ("#B5EAEA", "#3FBFBF"), ("#FBC4AB", "#F28B82")])
+    shirt = r.choice(["#E74C3C", "#2980B9", "#27AE60", "#F39C12", "#8E44AD", "#16A085", "#34495E", "#EC407A"])
+    style, eyes, mouth, acc = r.randrange(6), r.randrange(3), r.randrange(3), r.randrange(4)
+    dk = "#2B1B12"
+    gid = "ag" + _re.sub(r"\W", "", str(seed))
+    back = front = ""
+    if style == 0:
+        front = '<path d="M30 45 Q28 19 50 19 Q72 19 70 45 Q66 31 50 30 Q34 31 30 45Z" fill="%s"/>' % hair
+    elif style == 1:
+        back = '<path d="M27 48 Q24 16 50 16 Q76 16 73 48 L76 84 L24 84Z" fill="%s"/>' % hair
+        front = '<path d="M30 44 Q34 22 50 22 Q66 22 70 44 Q60 32 50 34 Q40 32 30 44Z" fill="%s"/>' % hair
+    elif style == 2:
+        back = '<circle cx="50" cy="14" r="8" fill="%s"/>' % hair
+        front = '<path d="M30 45 Q28 19 50 19 Q72 19 70 45 Q66 31 50 30 Q34 31 30 45Z" fill="%s"/>' % hair
+    elif style == 3:
+        back = "".join('<circle cx="%d" cy="%d" r="%d" fill="%s"/>' % (x, y, rr, hair) for x, y, rr in
+                       ((30, 38, 10), (70, 38, 10), (38, 22, 11), (62, 22, 11), (50, 18, 11)))
+        front = '<path d="M31 41 Q50 24 69 41 Q60 31 50 31 Q40 31 31 41Z" fill="%s"/>' % hair
+    elif style == 4:
+        front = '<path d="M30 44 L31 24 L39 31 L44 16 L50 29 L57 16 L61 31 L69 24 L70 44 Q64 33 50 33 Q36 33 30 44Z" fill="%s"/>' % hair
+    else:
+        cap = r.choice(["#E74C3C", "#2980B9", "#27AE60", "#F39C12", "#34495E"])
+        front = ('<path d="M29 41 Q30 16 50 16 Q70 16 71 41Z" fill="%s"/><path d="M58 40 Q78 36 84 44 L58 45Z" fill="%s"/>'
+                 '<circle cx="50" cy="16" r="2.5" fill="#fff" opacity=".7"/>') % (cap, cap)
+    if eyes == 0:
+        e = ('<circle cx="41" cy="48" r="2.8" fill="%s"/><circle cx="59" cy="48" r="2.8" fill="%s"/>'
+             '<circle cx="42" cy="47" r=".9" fill="#fff"/><circle cx="60" cy="47" r=".9" fill="#fff"/>') % (dk, dk)
+    elif eyes == 1:
+        e = "".join('<ellipse cx="%d" cy="48" rx="5" ry="5.6" fill="#fff" stroke="%s" stroke-width=".8"/>'
+                    '<circle cx="%d" cy="49" r="3" fill="%s"/><circle cx="%d" cy="47.8" r="1.1" fill="#fff"/>' % (x, dk, x, dk, x + 1)
+                    for x in (41, 59))
+    else:
+        e = ('<path d="M36.5 49 Q41 42.5 45.5 49" stroke="%s" stroke-width="2.2" fill="none" stroke-linecap="round"/>'
+             '<path d="M54.5 49 Q59 42.5 63.5 49" stroke="%s" stroke-width="2.2" fill="none" stroke-linecap="round"/>') % (dk, dk)
+    brows = ('<path d="M36 40 Q41 37.5 46 40" stroke="%s" stroke-width="1.9" fill="none" stroke-linecap="round"/>'
+             '<path d="M54 40 Q59 37.5 64 40" stroke="%s" stroke-width="1.9" fill="none" stroke-linecap="round"/>') % (hair, hair)
+    nose = '<path d="M50 51 Q47.5 56.5 50.5 57.5" stroke="#000" stroke-opacity=".28" stroke-width="1.4" fill="none" stroke-linecap="round"/>'
+    if mouth == 0:
+        m = '<path d="M43 61 Q50 68 57 61" stroke="%s" stroke-width="2" fill="none" stroke-linecap="round"/>' % dk
+    elif mouth == 1:
+        m = ('<path d="M42 60 Q50 73 58 60Z" fill="#7B1E1E"/><path d="M44.5 60 Q50 63 55.5 60Z" fill="#fff"/>')
+    else:
+        m = '<path d="M44 62 Q51 66 58 60" stroke="%s" stroke-width="2" fill="none" stroke-linecap="round"/>' % dk
+    extra = ""
+    if acc == 1:
+        extra = ('<circle cx="41" cy="48" r="7.5" fill="#fff" fill-opacity=".18" stroke="%s" stroke-width="1.8"/>'
+                 '<circle cx="59" cy="48" r="7.5" fill="#fff" fill-opacity=".18" stroke="%s" stroke-width="1.8"/>'
+                 '<path d="M48.5 47 Q50 45.5 51.5 47" stroke="%s" stroke-width="1.8" fill="none"/>') % (dk, dk, dk)
+    elif acc == 3 and style != 5:
+        extra = '<path d="M30 38 Q50 28 70 38" stroke="%s" stroke-width="3.2" fill="none" stroke-linecap="round"/>' % shirt
+    beard = ('<path d="M30 54 Q30 77 50 78 Q70 77 70 54 Q66 67 50 67 Q34 67 30 54Z" fill="%s"/>' % hair) if acc == 2 else ""
+    svg = ('<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="100%%" height="100%%" aria-hidden="true">'
+           '<defs><linearGradient id="%s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="%s"/><stop offset="1" stop-color="%s"/></linearGradient></defs>'
+           '<rect width="100" height="100" fill="url(#%s)"/>%s'
+           '<path d="M16 100 Q18 76 50 74 Q82 76 84 100Z" fill="%s"/>'
+           '<rect x="44" y="62" width="12" height="16" fill="%s"/><rect x="44" y="62" width="12" height="16" fill="#000" opacity=".12"/>'
+           '<path d="M42 75 L50 86 L58 75Z" fill="%s"/>'
+           '<circle cx="30" cy="50" r="4" fill="%s"/><circle cx="70" cy="50" r="4" fill="%s"/>'
+           '<ellipse cx="50" cy="47" rx="20" ry="23" fill="%s"/>'
+           '<circle cx="36" cy="57" r="4" fill="#FF6B81" opacity=".25"/><circle cx="64" cy="57" r="4" fill="#FF6B81" opacity=".25"/>'
+           '%s%s%s%s%s%s%s</svg>') % (gid, b1, b2, gid, back, shirt, skin, skin, skin, skin, skin, beard, e, brows, nose, m, front, extra)
+    return Markup(svg)
+
+
+def new_avatar_seed(cur=None):
+    while True:
+        s = "v%d" % (secrets.randbelow(900000) + 100000)
+        if s != cur:
+            return s
+
+
 ACCOUNT_SOON = {"kyc": ("🪪", "KYC যাচাই"), "vip": ("👑", "VIP লেভেল"), "language": ("🌐", "ভাষা")}
 
 
@@ -2953,10 +3030,10 @@ def account():
     if request.method == "POST":
         return _change_password(u, "/account")
     av = u["avatar"]
-    if not av:
-        av = secrets.choice(AVATARS)
+    if not av or not str(av).startswith("v"):
+        av = new_avatar_seed()
         db().execute("UPDATE users SET avatar=? WHERE id=?", (av, u["id"]))
-    return page("""<div class="hero2"><form class="avf" method="post" action="/account/avatar"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="avb" aria-label="Change avatar">{{av}}<small>🎲</small></button></form><div style="font-size:21px;font-weight:700;padding-right:68px">{{u['name']}}</div>
+    return page("""<div class="hero2"><form class="avf" method="post" action="/account/avatar"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="avb" aria-label="Change avatar"><span class="avi">{{av_svg}}</span><small>🎲</small></button></form><div style="font-size:21px;font-weight:700;padding-right:58px">{{u['name']}}</div>
 <div style="opacity:.92;margin-top:4px">📱 {{u['phone']}} &nbsp;·&nbsp; 🆔 #{{u['member_id']}}</div>
 <div style="opacity:.92;margin-top:8px">ব্যালেন্স: <b>৳ {{money(u['balance'])}}</b></div></div>
 <div class="card menu">
@@ -2975,7 +3052,7 @@ def account():
 <a class="li" href="/feedback"><span class="ic">📝</span><span class="lt">ফিডব্যাক</span><span class="ch">›</span></a>
 <a class="li" href="/about"><span class="ic">ℹ️</span><span class="lt">আমাদের সম্পর্কে</span><span class="ch">›</span></a>
 <form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="li out"><span class="ic">🚪</span><span class="lt">লগআউট</span></button></form>
-</div>""", active="/account", av=av)
+</div>""", active="/account", av_svg=avatar_svg(av))
 
 
 @app.route("/account/avatar", methods=["POST"])
@@ -2983,7 +3060,7 @@ def account():
 def account_avatar():
     u = me()
     cur = u["avatar"]
-    new = secrets.choice([a for a in AVATARS if a != cur] or AVATARS)
+    new = new_avatar_seed(cur)
     db().execute("UPDATE users SET avatar=? WHERE id=?", (new, u["id"]))
     return redirect("/account")
 
