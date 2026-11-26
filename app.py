@@ -485,7 +485,7 @@ V5_COLUMNS = [
     ("requests", "flow", "TEXT", "TEXT"), ("requests", "commission", "REAL", "NUMERIC(14,2)"), ("requests", "commission_rate", "REAL", "NUMERIC(7,3)"),
     ("requests", "purpose", "TEXT", "TEXT"), ("requests", "purpose_en", "TEXT", "TEXT"), ("requests", "client_decided_at", "TEXT", "TEXT"),
     ("requests", "pay_type", "TEXT", "TEXT"), ("requests", "extra_commission", "REAL", "NUMERIC(14,2)"),
-    ("users", "vip_level", "TEXT", "TEXT"), ("users", "vip_rate", "REAL", "NUMERIC(7,3)"), ("tx", "account_type", "TEXT", "TEXT"),
+    ("users", "vip_level", "TEXT", "TEXT"), ("users", "avatar", "TEXT", "TEXT"), ("users", "vip_rate", "REAL", "NUMERIC(7,3)"), ("tx", "account_type", "TEXT", "TEXT"),
     ("requests", "cancel_fee", "REAL", "NUMERIC(14,2)"), ("requests", "cancel_by", "TEXT", "TEXT"),
     ("tickets", "user_unread", "INTEGER DEFAULT 0", "INTEGER DEFAULT 0"), ("tickets", "admin_unread", "INTEGER DEFAULT 0", "INTEGER DEFAULT 0"),
     ("tickets", "last_activity", "TEXT", "TEXT"), ("tickets", "closed_at", "TEXT", "TEXT"), ("tickets", "closed_by", "TEXT", "TEXT"),
@@ -1289,6 +1289,13 @@ details.cg{padding:12px 14px;margin-bottom:8px;box-shadow:none}details.cg summar
 .rc .nm{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.rc .pill{flex:none;white-space:nowrap}
 .rw{margin-bottom:6px}.rw .rq-acts{margin:-2px 0 4px;padding:0 2px}.rw .rq-acts .btn{flex:1;min-width:0;justify-content:center}
 @media(max-width:380px){.mg{grid-template-columns:1fr!important}}
+a.li,button.li{position:relative;-webkit-tap-highlight-color:transparent;transition:background .15s ease,transform .12s ease,box-shadow .15s ease}
+a.li:active,button.li:active,a.li.tap,button.li.tap{background:var(--tint);transform:scale(.97);border-radius:14px;box-shadow:inset 0 0 0 1px var(--ln)}
+a.li:active .ic,button.li:active .ic,a.li.tap .ic,button.li.tap .ic{transform:scale(.9)}
+.li .ic{transition:transform .12s ease}
+.hero2{position:relative}.avf{position:absolute;top:14px;right:14px;margin:0}
+.avb{width:58px;height:58px;border-radius:50%;padding:0;font-size:30px;line-height:1;display:flex;align-items:center;justify-content:center;background:#ffffff2e;border:2px solid #ffffff80;color:#fff;box-shadow:0 4px 12px #0003;position:relative;transition:transform .15s ease}
+.avb:active{transform:scale(.9) rotate(-12deg)}.avb small{position:absolute;right:-4px;bottom:-4px;font-size:13px;background:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px #0003}
 
 """
 
@@ -1298,6 +1305,11 @@ function ldShow(){var b=document.getElementById('ld');if(!b)return;clearTimeout(
  _ldT=setTimeout(function(){b.style.opacity='1';b.style.width='30%';_ldT=setTimeout(function(){b.style.width='70%'},300);setTimeout(function(){if(b.style.opacity==='1')b.style.width='88%'},1500)},180)}
 function ldHide(){var b=document.getElementById('ld');if(!b)return;clearTimeout(_ldT);if(b.style.opacity!=='1')return;b.style.width='100%';setTimeout(function(){b.style.opacity='0';setTimeout(function(){b.style.width='0'},250)},180)}
 document.addEventListener('touchstart',function(){},{passive:true});
+(function(){document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('.menu a.li');if(!a||a.hasAttribute('download')||a.target==='_blank')return;
+ if(a._go){a._go=0;return}if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+ e.preventDefault();e.stopImmediatePropagation();a.classList.add('tap');if(navigator.vibrate){try{navigator.vibrate(12)}catch(x){}}
+ setTimeout(function(){a._go=1;a.click();setTimeout(function(){a.classList.remove('tap')},400)},130)},true);
+ document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.menu button.li');if(!b)return;b.classList.add('tap');setTimeout(function(){b.classList.remove('tap')},180)},true)})();
 (function(){var S='a[href],button,summary,label.pmc,[data-do],.uc-main',el=null;
  function on(e){if(!document.body.classList.contains('adm-on'))return;var t=e.target.closest&&e.target.closest(S);if(!t||t.disabled)return;if(el)el.classList.remove('prs');el=t;t.classList.add('prs')}
  function off(){if(el){var t=el;el=null;setTimeout(function(){t.classList.remove('prs')},140)}}
@@ -2922,6 +2934,8 @@ def support_reply(tid):
     return jsonify(ok=True) if fj else back
 
 
+AVATARS = ["🦊", "🐼", "🦁", "🐯", "🐨", "🐸", "🐵", "🦄", "🐧", "🐶", "🐱", "🦉", "🐳", "🦋", "🐢", "🦅",
+           "🐙", "🦈", "🐝", "🐰", "🐻", "🦜", "🐬", "🦒", "😎", "🤖", "👽", "🧑‍🚀", "🦸", "🧙"]
 ACCOUNT_SOON = {"kyc": ("🪪", "KYC যাচাই"), "vip": ("👑", "VIP লেভেল"), "language": ("🌐", "ভাষা")}
 
 
@@ -2938,25 +2952,40 @@ def account():
     u = me()
     if request.method == "POST":
         return _change_password(u, "/account")
-    return page("""<div class="hero2"><div style="font-size:21px;font-weight:700">{{u['name']}}</div>
+    av = u["avatar"]
+    if not av:
+        av = secrets.choice(AVATARS)
+        db().execute("UPDATE users SET avatar=? WHERE id=?", (av, u["id"]))
+    return page("""<div class="hero2"><form class="avf" method="post" action="/account/avatar"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="avb" aria-label="Change avatar">{{av}}<small>🎲</small></button></form><div style="font-size:21px;font-weight:700;padding-right:68px">{{u['name']}}</div>
 <div style="opacity:.92;margin-top:4px">📱 {{u['phone']}} &nbsp;·&nbsp; 🆔 #{{u['member_id']}}</div>
 <div style="opacity:.92;margin-top:8px">ব্যালেন্স: <b>৳ {{money(u['balance'])}}</b></div></div>
 <div class="card menu">
 <a class="li" href="/kyc"><span class="ic">🪪</span><span class="lt">KYC যাচাই</span><span class="ch">›</span></a>
-<a class="li" href="/account/soon/vip"><span class="ic">👑</span><span class="lt">VIP লেভেল</span><span class="ch">›</span></a>
+<a class="li" href="/vip"><span class="ic">👑</span><span class="lt">VIP লেভেল</span><span class="ch">›</span></a>
 <a class="li" href="/referral"><span class="ic">🎁</span><span class="lt">ইনভাইট ও আর্ন</span><span class="bd" data-bd="/referral"{% if not nb('/referral') %} hidden{% endif %}>{{nb('/referral')}}</span><span class="ch">›</span></a>
 <button type="button" class="li" onclick="toggleTheme()"><span class="ic">🌙</span><span class="lt">ডার্ক মোড</span><span class="k" id="thv"></span></button>
 <a class="li" href="/notifications"><span class="ic">🔔</span><span class="lt">নোটিফিকেশন</span>{% if unread %}<span class="bd">{{unread}}</span>{% endif %}<span class="ch">›</span></a>
 <button type="button" class="li" onclick="setSnd(!sndOn())"><span class="ic">🔊</span><span class="lt">নোটিফিকেশন সাউন্ড</span><span class="k" id="sndv"></span></button>
 <button type="button" class="li" onclick="enableBrowserNotif()"><span class="ic">📲</span><span class="lt">ব্রাউজার নোটিফিকেশন</span><span class="k" id="bnv"></span></button>
 <a class="li" href="/lang/{{'bn' if lang=='en' else 'en'}}?next=/account"><span class="ic">🌐</span><span class="lt">ভাষা</span><span class="k">{{'বাংলা (Bangla)' if lang=='en' else 'English'}}</span><span class="ch">›</span></a>
+{% if 'com.example.ewalletsupport' not in request.headers.get('X-Requested-With','') and '; wv)' not in request.headers.get('User-Agent','') %}<a class="li" href="/download/E-Wallet_Support.apk" download="E-Wallet_Support.apk"><span class="ic">📥</span><span class="lt">অ্যাপ ডাউনলোড</span><span class="ch">›</span></a>{% endif %}
 <a class="li" href="/account/settings"><span class="ic">⚙️</span><span class="lt">সেটিংস</span><span class="ch">›</span></a>
 <a class="li" href="/payment-numbers"><span class="ic">💳</span><span class="lt">পেমেন্ট নম্বর ব্যবস্থাপনা</span><span class="bd" data-bd="/payment-numbers"{% if not nb('/payment-numbers') %} hidden{% endif %}>{{nb('/payment-numbers')}}</span><span class="ch">›</span></a>
 <a class="li" href="/support"><span class="ic">💬</span><span class="lt">সাপোর্ট</span><span class="bd" data-bd="/support"{% if not nb('/support') %} hidden{% endif %}>{{nb('/support')}}</span><span class="ch">›</span></a>
 <a class="li" href="/feedback"><span class="ic">📝</span><span class="lt">ফিডব্যাক</span><span class="ch">›</span></a>
 <a class="li" href="/about"><span class="ic">ℹ️</span><span class="lt">আমাদের সম্পর্কে</span><span class="ch">›</span></a>
 <form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="li out"><span class="ic">🚪</span><span class="lt">লগআউট</span></button></form>
-</div>""", active="/account")
+</div>""", active="/account", av=av)
+
+
+@app.route("/account/avatar", methods=["POST"])
+@customer_required
+def account_avatar():
+    u = me()
+    cur = u["avatar"]
+    new = secrets.choice([a for a in AVATARS if a != cur] or AVATARS)
+    db().execute("UPDATE users SET avatar=? WHERE id=?", (new, u["id"]))
+    return redirect("/account")
 
 
 @app.route("/account/settings", methods=["GET", "POST"])
