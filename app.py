@@ -1295,7 +1295,7 @@ a.li:active .ic,button.li:active .ic,a.li.tap .ic,button.li.tap .ic{transform:sc
 .li .ic{transition:transform .12s ease}
 .hero2{position:relative}.avf{position:absolute;top:16px;right:16px;margin:0}
 .avb{width:50px;height:50px;border-radius:50%;padding:0;line-height:1;display:flex;align-items:center;justify-content:center;background:#ffffff2e;border:2px solid #ffffff80;color:#fff;box-shadow:0 4px 12px #0003;position:relative;transition:transform .15s ease}
-.avb:active{transform:scale(.9) rotate(-12deg)}.avi{display:block;width:100%;height:100%;border-radius:50%;overflow:hidden}.avb small{position:absolute;right:-5px;bottom:-5px;font-size:10px;background:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px #0003}
+.avb:active{transform:scale(.9) rotate(-12deg)}.avi{display:block;width:100%;height:100%;border-radius:50%;overflow:hidden}.avi img{display:block;width:100%;height:100%;object-fit:cover}.avc{position:absolute;top:11px;right:11px;width:18px;height:18px;min-width:0;padding:0;margin:0;font-size:10px;line-height:1;border-radius:50%;background:#fff;border:0;box-shadow:0 2px 5px #0003;display:flex;align-items:center;justify-content:center;z-index:2}.avb small{position:absolute;right:-5px;bottom:-5px;font-size:10px;background:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px #0003}
 
 """
 
@@ -3006,6 +3006,13 @@ def avatar_svg(seed):
     return Markup(svg)
 
 
+def avatar_view(av):
+    from markupsafe import Markup, escape
+    if str(av).startswith("data:image/"):
+        return Markup('<img alt="" src="%s">' % escape(av))
+    return avatar_svg(av)
+
+
 def new_avatar_seed(cur=None):
     while True:
         s = "v%d" % (secrets.randbelow(900000) + 100000)
@@ -3030,10 +3037,10 @@ def account():
     if request.method == "POST":
         return _change_password(u, "/account")
     av = u["avatar"]
-    if not av or not str(av).startswith("v"):
+    if not av or not (str(av).startswith("v") or str(av).startswith("data:image/")):
         av = new_avatar_seed()
         db().execute("UPDATE users SET avatar=? WHERE id=?", (av, u["id"]))
-    return page("""<div class="hero2"><form class="avf" method="post" action="/account/avatar"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="avb" aria-label="Change avatar"><span class="avi">{{av_svg}}</span><small>🎲</small></button></form><div style="font-size:21px;font-weight:700;padding-right:58px">{{u['name']}}</div>
+    return page("""<div class="hero2"><form class="avf" method="post" action="/account/avatar"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="avb" aria-label="Change avatar"><span class="avi">{{av_svg}}</span><small>🎲</small></button></form><button type="button" class="avc" aria-label="Upload photo" onclick="document.getElementById('avfile').click()">📷</button><div style="font-size:21px;font-weight:700;padding-right:58px">{{u['name']}}</div>
 <div style="opacity:.92;margin-top:4px">📱 {{u['phone']}} &nbsp;·&nbsp; 🆔 #{{u['member_id']}}</div>
 <div style="opacity:.92;margin-top:8px">ব্যালেন্স: <b>৳ {{money(u['balance'])}}</b></div></div>
 <div class="card menu">
@@ -3052,7 +3059,12 @@ def account():
 <a class="li" href="/feedback"><span class="ic">📝</span><span class="lt">ফিডব্যাক</span><span class="ch">›</span></a>
 <a class="li" href="/about"><span class="ic">ℹ️</span><span class="lt">আমাদের সম্পর্কে</span><span class="ch">›</span></a>
 <form method="post" action="/logout"><input type="hidden" name="_csrf" value="{{csrf_token}}"><button class="li out"><span class="ic">🚪</span><span class="lt">লগআউট</span></button></form>
-</div>""", active="/account", av_svg=avatar_svg(av))
+</div>
+<form id="avup" method="post" action="/account/avatar/upload" hidden><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="img" id="avimg"></form>
+<input type="file" id="avfile" accept="image/*" hidden>
+<script>(function(){var f=document.getElementById('avfile');if(!f)return;f.onchange=function(){var file=f.files&&f.files[0];if(!file)return;var im=new Image(),u=URL.createObjectURL(file);
+im.onload=function(){var s=Math.min(im.width,im.height),c=document.createElement('canvas');c.width=c.height=192;c.getContext('2d').drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,192,192);URL.revokeObjectURL(u);
+document.getElementById('avimg').value=c.toDataURL('image/jpeg',0.82);document.getElementById('avup').submit()};im.onerror=function(){alert('ছবিটি পড়া যায়নি')};im.src=u}})();</script>""", active="/account", av_svg=avatar_view(av))
 
 
 @app.route("/account/avatar", methods=["POST"])
@@ -3063,6 +3075,26 @@ def account_avatar():
     new = new_avatar_seed(cur)
     db().execute("UPDATE users SET avatar=? WHERE id=?", (new, u["id"]))
     return redirect("/account")
+
+
+@app.route("/account/avatar/upload", methods=["POST"])
+@customer_required
+def account_avatar_upload():
+    import base64
+    u = me()
+    d = request.form.get("img", "")
+    pre = "data:image/jpeg;base64,"
+    ok = d.startswith(pre) and len(d) < 70000
+    if ok:
+        try:
+            raw = base64.b64decode(d[len(pre):], validate=True)
+            ok = raw[:3] == b"\xff\xd8\xff" and len(raw) < 50000
+        except Exception:
+            ok = False
+    if not ok:
+        err("ছবিটি আপলোড করা যায়নি। অন্য একটি ছবি দিয়ে চেষ্টা করুন।"); return redirect("/account")
+    db().execute("UPDATE users SET avatar=? WHERE id=?", (d, u["id"]))
+    flash("প্রোফাইল ছবি বদলেছে।"); return redirect("/account")
 
 
 @app.route("/account/settings", methods=["GET", "POST"])
