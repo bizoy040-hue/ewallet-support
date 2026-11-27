@@ -2496,18 +2496,18 @@ def history():
 .hxc.hy .hy-tt .pill.approved,.hxc.hy .hy-tt .pill.paid{background:#252525;color:#F5F4EF}
 .hxc.hy .hy-tt .pill.rejected{background:#4A1D24;color:#b91c1c}
 .hxc.hy .hy-tt .pill.expired,.hxc.hy .hy-tt .pill.cancelled{background:#252525;color:#F5F4EF}
-.hy-am{flex:none;font-size:17px;font-weight:800;line-height:1.2;white-space:nowrap;letter-spacing:-.2px}
+.hy-am{flex:none;font-size:14px;font-weight:700;line-height:1.2;white-space:nowrap;letter-spacing:-.2px}
 .hy-am.neg{color:#dc2626}.hy-am.pos{color:var(--okt)}
 .hy-g{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:10px;padding-top:9px;border-top:1px solid var(--ln)}
 .hy-g>div{min-width:0}
 .hy-g span{display:block;font-size:12px;color:var(--mut);margin-bottom:1px;font-weight:500}
 .hy-g b{display:block;font-size:14px;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
 .hy-g .na{color:var(--mut);font-weight:400}
-.hy-cm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;padding:7px 11px;border-radius:11px;background:#D4AF3712;border:1px solid #D4AF3726}
-.hy-cm>span{font-size:14px;font-weight:700;color:var(--bt);min-width:0}
-.hy-cm>b{flex:none;font-size:16px;font-weight:800;color:#F5F4EF;white-space:nowrap}
-.hy-cm>b.na{font-size:15px;color:var(--mut);font-weight:500}
-.hy-cm .gft{font-size:15px;margin-right:4px}
+.hy-cm{display:flex;align-items:center;justify-content:space-between;gap:10px;box-sizing:border-box;height:28px;margin-top:6px;padding:0 10px;border-radius:9px;background:#D4AF3712;border:1px solid #D4AF3726}
+.hy-cm>span{font-size:13px;font-weight:700;line-height:1;color:var(--bt);min-width:0;white-space:nowrap}
+.hy-cm>b{flex:none;font-size:13px;font-weight:800;line-height:1;color:#F5F4EF;white-space:nowrap}
+.hy-cm>b.na{font-size:13px;color:var(--mut);font-weight:500}
+.hy-cm .gft{font-size:13px;margin-right:4px}
 :root[data-theme=dark] .hy-cm>span{color:#D4AF37}
 :root[data-theme=dark] .hy-cm>b{color:#D4AF37}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hy-cm>span{color:#D4AF37}:root:not([data-theme=light]) .hy-cm>b{color:#D4AF37}}
@@ -2551,14 +2551,14 @@ def history():
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hy-full .hf-cm{background:linear-gradient(135deg,#252525 0%,#252525 100%);border-color:#3A3A3A;border-left-color:#D9B23F}:root:not([data-theme=light]) .hy-full .hf-cm>span{color:#D4AF37}:root:not([data-theme=light]) .hy-full .hf-cm>b{color:#D4AF37}}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hxc.hy.open{background:#2A2414;background-image:linear-gradient(180deg,#2E2816 0%,#252010 100%);border-color:#5A4A1E}:root:not([data-theme=light]) .hy-full .hf-h{color:#E3C877;border-color:#4A3E1C}:root:not([data-theme=light]) .hy-full .hf-r{border-color:#3F3519}:root:not([data-theme=light]) .hy-full .hf-r>span{color:#C9B77C}:root:not([data-theme=light]) .hy-full .hf-r>b{color:#F7EBC8}:root:not([data-theme=light]) .hy-full .hf-c{color:#BBA766}}
 /* compact card: only type, status, amount and time; everything else appears when opened */
-.hxc.hy:not(.open)>.hy-cm,.hxc.hy:not(.open)>.hy-more,.hxc.hy:not(.open)>.hxd,.hxc.hy:not(.open)>.hy-g>div:not(:last-child),.hxc.hy:not(.open)>.hy-g span:not(.na){display:none}
-.hxc.hy:not(.open)>.hy-g{display:block;position:absolute;right:13px;bottom:12px;margin:0;padding:0;border:0}
+.hxc.hy:not(.open)>.hy-more,.hxc.hy:not(.open)>.hxd,.hxc.hy:not(.open)>.hy-g>div:not(:last-child),.hxc.hy:not(.open)>.hy-g span:not(.na){display:none}
+.hxc.hy:not(.open)>.hy-g{display:block;position:absolute;right:13px;bottom:45px;margin:0;padding:0;border:0}
 .hxc.hy:not(.open)>.hy-g b{font-size:12px;font-weight:500;line-height:1.5;color:#6B6254;white-space:nowrap}
 :root[data-theme=dark] .hxc.hy:not(.open)>.hy-g b{color:#A7A7A7}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hxc.hy:not(.open)>.hy-g b{color:#A7A7A7}}
 .hxc.hy:not(.open) .hy-am{align-self:flex-start}
-@media(max-width:380px){.hxc.hy:not(.open)>.hy-g{right:11px;bottom:11px}}
-@media(max-width:380px){.hxc.hy{padding:10px 11px}.hy-ic{width:32px;height:32px;font-size:16px}.hy-tt b{font-size:15px}.hy-am{font-size:16px}.hy-g{gap:8px 8px}.hy-g b{font-size:13.5px}.hy-cm>b{font-size:15.5px}}
+@media(max-width:380px){.hxc.hy:not(.open)>.hy-g{right:11px;bottom:44px}}
+@media(max-width:380px){.hxc.hy{padding:10px 11px}.hy-ic{width:32px;height:32px;font-size:16px}.hy-tt b{font-size:15px}.hy-g{gap:8px 8px}.hy-g b{font-size:13.5px}}
 </style>
 <div class="hxt">{% for k,lb in tabs %}<a class="{{'on' if f==k}}" href="/history{{'' if k=='all' else '?f='+k}}">{{lb}}</a>{% endfor %}</div>
 {% if not items %}<div class="card"><div class="empty">কোনো লেনদেন নেই</div></div>{% endif %}
