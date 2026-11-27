@@ -1229,7 +1229,7 @@ details.more .kp>.card:nth-child(8){--gi:url("data:image/svg+xml,%3Csvg xmlns='h
 .hxt{display:flex;gap:6px;background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:4px;margin-bottom:12px}
 .hxt a{flex:1;text-align:center;padding:9px 4px;border-radius:11px;font-weight:600;font-size:14px;color:var(--mut)}
 .hxt a.on{background:linear-gradient(135deg,var(--b),var(--b2));color:#121212}
-.hxc{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:2px 12px;margin-bottom:9px;box-shadow:0 2px 8px #D4AF3712}
+.hxc{background:#FBF9F2;border:1px solid var(--ln);border-radius:14px;padding:2px 12px;margin-bottom:9px;box-shadow:0 2px 8px #D4AF3712}
 .hxr{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--ln);font-size:13px;line-height:1.35}
 .hxr:last-child{border-bottom:0}
 .hxr>span:first-child{color:var(--mut);flex-shrink:0;white-space:nowrap}
