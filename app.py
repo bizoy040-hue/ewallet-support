@@ -1371,7 +1371,7 @@ body.adm-on .sc-dot.off{background:#B9B09A!important}
 /* approve / paid / confirm button always on the right */
 button[data-do=approve],button[data-do=paid],button[name=act][value=approve],button[name=act][value=paid]{order:20;margin-left:auto}
 /* compact announcement ticker */
-.tkr{padding:2px 10px 2px 3px;margin:0 0 6px;border-radius:99px;gap:6px;min-height:0;line-height:1}
+.tkr{padding:2px 10px 2px 3px;margin:-9px 0 5px;border-radius:99px;gap:6px;min-height:0;line-height:1}
 .tkr-b{width:20px;height:20px;font-size:11px;line-height:1;box-shadow:none}
 .tkr-w{line-height:1;display:flex;align-items:center}
 .tkr-t{font-size:13px;line-height:20px;height:20px;padding-top:0;padding-bottom:0;margin:0;font-weight:600}
