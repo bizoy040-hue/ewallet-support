@@ -521,7 +521,7 @@ V5_TABLES = [
     ("user_warnings",
      "CREATE TABLE IF NOT EXISTS user_warnings(id {ID}, user_id {BIG} NOT NULL REFERENCES users(id), request_id {BIG}, message TEXT NOT NULL, "
      "admin_id {BIG}, admin TEXT, created TEXT NOT NULL)",
-     ["CREATE INDEX IF NOT EXISTS ix_warn_user ON user_warnings(user_id)", "CREATE INDEX IF NOT EXISTS ix_warn_req ON user_warnings(request_id)"], True),
+     ["CREATE INDEX IF NOT EXISTS ix_warn_user ON user_warnings(user_id)", "CREATE INDEX IF NOT EXISTS ix_warn_req ON user_warnings(request_id)"], False),
     ("vip_applications",
      "CREATE TABLE IF NOT EXISTS vip_applications(id {ID}, user_id {BIG} NOT NULL REFERENCES users(id), level TEXT NOT NULL, rate {RATE} NOT NULL, "
      "status TEXT NOT NULL DEFAULT 'pending', balance_at {NUM}, deposit_ids TEXT, note TEXT, admin TEXT, admin_id {BIG}, created TEXT NOT NULL, decided TEXT)",
@@ -573,6 +573,9 @@ def _v5_pg_ddl():
             out.append("CREATE TRIGGER %s_immutable BEFORE UPDATE OR DELETE ON %s FOR EACH ROW EXECUTE FUNCTION ewallet_forbid_change();" % (name, name))
             out.append("DROP TRIGGER IF EXISTS %s_no_truncate ON %s;" % (name, name))
             out.append("CREATE TRIGGER %s_no_truncate BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE FUNCTION ewallet_forbid_change();" % (name, name))
+    # warnings used to be locked; admins may now delete them
+    out.append("DROP TRIGGER IF EXISTS user_warnings_immutable ON user_warnings;")
+    out.append("DROP TRIGGER IF EXISTS user_warnings_no_truncate ON user_warnings;")
     out += [i + ";" for i in V5_INDEXES]
     out.append("DO $r2$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY[%s] LOOP "
                "EXECUTE format('ALTER TABLE public.%%I ENABLE ROW LEVEL SECURITY', t); END LOOP; END $r2$;"
@@ -584,6 +587,8 @@ PG_DDL += "\n" + _v5_pg_ddl()
 
 
 def _v5_schema_sqlite(c):
+    for ev in ("update", "delete"):  # warnings used to be locked; admins may now delete them
+        c.execute("DROP TRIGGER IF EXISTS user_warnings_no_%s" % ev)
     for t, col, sdecl, _p in V5_COLUMNS:
         if _cols(c, t):  # table may be created further below on a brand-new database
             _addcol(c, t, col, sdecl)
@@ -1332,6 +1337,45 @@ a.li:active .ic,button.li:active .ic,a.li.tap .ic,button.li.tap .ic{transform:sc
 :root[data-theme=light] body.adm-on .adm a.t{background:#FDFCF8;border-color:#EAE3D3;color:#29251D}:root[data-theme=light] body.adm-on .adm a.t.on{background:linear-gradient(135deg,#D4AF37,#D4AF37);border-color:#D4AF37;color:#29251D}:root[data-theme=light] body.adm-on .adm a.t.pri{background:#514A3D;border-color:#514A3D;color:#fff}:root[data-theme=light] body.adm-on .mt{background:linear-gradient(150deg,#FFFEFA 0%,#FDFCF8 60%,#F8F3E4 100%);border-color:#EAE3D3;color:#29251D;box-shadow:0 1px 2px #6B5A2A1F,0 10px 20px -14px #8A7541A6}:root[data-theme=light] body.adm-on .mt:hover{border-color:#D4AF37}:root[data-theme=light] body.adm-on .mt i,:root[data-theme=light] body.adm-on .li .ic{background:linear-gradient(135deg,#EBDDA9,#D4AF37)}:root[data-theme=light] body.adm-on .tkr{background:#FDFCF8;border-color:#EAE3D3;color:#29251D}:root[data-theme=light] body.adm-on .btn.g,:root[data-theme=light] body.adm-on .btn.s{background:linear-gradient(135deg,#514A3D,#514A3D);color:#fff}:root[data-theme=light] body.adm-on .pill.approved,:root[data-theme=light] body.adm-on .pill.paid{background:#514A3D;color:#F3E3A6}:root[data-theme=light] body.adm-on .pill.submitted{background:#514A3D;color:#F5F4EF}:root[data-theme=light] body.adm-on .pill.expired,:root[data-theme=light] body.adm-on .pill.cancelled{background:#8A8270;color:#fff}:root[data-theme=light] body.adm-on .copybox{background:#F4EEDD;border-color:#E3D9BE;color:#29251D}@media not all and (prefers-color-scheme:dark){:root:not([data-theme=dark]) body.adm-on .adm a.t{background:#FDFCF8;border-color:#EAE3D3;color:#29251D}:root:not([data-theme=dark]) body.adm-on .adm a.t.on{background:linear-gradient(135deg,#D4AF37,#D4AF37);border-color:#D4AF37;color:#29251D}:root:not([data-theme=dark]) body.adm-on .adm a.t.pri{background:#514A3D;border-color:#514A3D;color:#fff}:root:not([data-theme=dark]) body.adm-on .mt{background:linear-gradient(150deg,#FFFEFA 0%,#FDFCF8 60%,#F8F3E4 100%);border-color:#EAE3D3;color:#29251D;box-shadow:0 1px 2px #6B5A2A1F,0 10px 20px -14px #8A7541A6}:root:not([data-theme=dark]) body.adm-on .mt:hover{border-color:#D4AF37}:root:not([data-theme=dark]) body.adm-on .mt i,:root:not([data-theme=dark]) body.adm-on .li .ic{background:linear-gradient(135deg,#EBDDA9,#D4AF37)}:root:not([data-theme=dark]) body.adm-on .tkr{background:#FDFCF8;border-color:#EAE3D3;color:#29251D}:root:not([data-theme=dark]) body.adm-on .btn.g,:root:not([data-theme=dark]) body.adm-on .btn.s{background:linear-gradient(135deg,#514A3D,#514A3D);color:#fff}:root:not([data-theme=dark]) body.adm-on .pill.approved,:root:not([data-theme=dark]) body.adm-on .pill.paid{background:#514A3D;color:#F3E3A6}:root:not([data-theme=dark]) body.adm-on .pill.submitted{background:#514A3D;color:#F5F4EF}:root:not([data-theme=dark]) body.adm-on .pill.expired,:root:not([data-theme=dark]) body.adm-on .pill.cancelled{background:#8A8270;color:#fff}:root:not([data-theme=dark]) body.adm-on .copybox{background:#F4EEDD;border-color:#E3D9BE;color:#29251D}}
 /* history light polish */
 :root[data-theme=light] .hxt{gap:8px}:root[data-theme=light] .hxt a{background:linear-gradient(150deg,#FFFDF8 0%,#FCF9F1 100%);border:1px solid #EFE8D6;color:#7A7160;font-weight:700;box-shadow:0 1px 2px #6B5A2A0D,inset 0 1px 0 #FFFFFFB3}:root[data-theme=light] .hxt a.on{background:#D4AF3733;border-color:#D4AF3759;color:#29251D;box-shadow:0 4px 10px -6px #B8902C26,inset 0 1px 0 #FFFFFF99}:root[data-theme=light] .hxc.hy{background:#FDFCF8;background-image:none;border:1px solid #EAE5D9;color:#29251D;box-shadow:0 1px 2px #6B5A2A0A,0 4px 12px -8px #6B5A2A1F}:root[data-theme=light] .hxc.hy.open{background:#FDFCF8;background-image:none;border:1px solid #EAE5D9;box-shadow:0 1px 2px #6B5A2A0A,0 4px 12px -8px #6B5A2A1F}:root[data-theme=light] .hxc.hy::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--ac,#D4AF37);opacity:.7}:root[data-theme=light] .hxc.hy.hy-approved,:root[data-theme=light] .hxc.hy.hy-paid{--ac:#8FD0AC}:root[data-theme=light] .hxc.hy.hy-pending,:root[data-theme=light] .hxc.hy.hy-review,:root[data-theme=light] .hxc.hy.hy-processing,:root[data-theme=light] .hxc.hy.hy-submitted{--ac:#EFCB7C}:root[data-theme=light] .hxc.hy.hy-rejected{--ac:#E8A5A5}:root[data-theme=light] .hxc.hy.hy-expired,:root[data-theme=light] .hxc.hy.hy-cancelled{--ac:#D6CFBC}:root[data-theme=light] .hy-tt b,:root[data-theme=light] .hy-g b,:root[data-theme=light] .hy-full .hf-r>b{color:#29251D}:root[data-theme=light] .hy-g span,:root[data-theme=light] .hy-g .na,:root[data-theme=light] .hy-more,:root[data-theme=light] .hxc.hy .hxr>span:first-child,:root[data-theme=light] .hy-full .hf-r>span,:root[data-theme=light] .hy-full .hf-c{color:#6B6254}:root[data-theme=light] .hxc.hy .hy-g,:root[data-theme=light] .hxc.hy .hy-g .hxr,:root[data-theme=light] .hxc.hy .hxr,:root[data-theme=light] .hy .hxd .hxr:first-child,:root[data-theme=light] .hy-full .hf-r{border-color:#EAE3D3}:root[data-theme=light] .hy-full .hf-h{color:#6B6254;border-color:#EAE3D3}:root[data-theme=light] .hy-ic{background:linear-gradient(135deg,#FBF4DA,#F2E5B3);color:#29251D;box-shadow:inset 0 1px 0 #FFFFFF99,0 4px 8px -4px #8A6D1A59}:root[data-theme=light] .hy-ic.deposit{background:linear-gradient(135deg,#F2F9F5,#DDEFE5);color:#2E7D5A}:root[data-theme=light] .hy-ic:not(.deposit){background:linear-gradient(135deg,#FDF7E8,#F6E7C2);color:#8F5A0A}:root[data-theme=light] .hy-am.neg,:root[data-theme=light] .hy-full .hf-r>b.amt.neg{color:#C9524B}:root[data-theme=light] .hy-am.pos,:root[data-theme=light] .hy-full .hf-r>b.amt.pos{color:#2E8F63}:root[data-theme=light] .hxc.hy .hy-tt .pill,:root[data-theme=light] .hy-full .hf-r .pill{background:#F4F0E6;color:#6B6254;box-shadow:inset 0 0 0 1px #0000000F}:root[data-theme=light] .hxc.hy .hy-tt .pill.approved,:root[data-theme=light] .hy-full .hf-r .pill.approved{background:#F0F7F1;color:#2E7D5A}:root[data-theme=light] .hxc.hy .hy-tt .pill.paid,:root[data-theme=light] .hy-full .hf-r .pill.paid{background:#F0F7F1;color:#2E7D5A}:root[data-theme=light] .hxc.hy .hy-tt .pill.pending,:root[data-theme=light] .hy-full .hf-r .pill.pending{background:#FDF6E4;color:#8F5A0A}:root[data-theme=light] .hxc.hy .hy-tt .pill.review,:root[data-theme=light] .hy-full .hf-r .pill.review{background:#FDF6E4;color:#8F5A0A}:root[data-theme=light] .hxc.hy .hy-tt .pill.processing,:root[data-theme=light] .hy-full .hf-r .pill.processing{background:#FDF6E4;color:#8F5A0A}:root[data-theme=light] .hxc.hy .hy-tt .pill.submitted,:root[data-theme=light] .hy-full .hf-r .pill.submitted{background:#FDF6E4;color:#8F5A0A}:root[data-theme=light] .hxc.hy .hy-tt .pill.rejected,:root[data-theme=light] .hy-full .hf-r .pill.rejected{background:#FCEFED;color:#B94A44}:root[data-theme=light] .hxc.hy .hy-tt .pill.expired,:root[data-theme=light] .hy-full .hf-r .pill.expired{background:#F4F0E6;color:#7A7160}:root[data-theme=light] .hxc.hy .hy-tt .pill.cancelled,:root[data-theme=light] .hy-full .hf-r .pill.cancelled{background:#F4F0E6;color:#7A7160}:root[data-theme=light] .hxc.hy .hy-cm{background:#FDFBF6;border:1px solid #EAE3D3;box-shadow:none}:root[data-theme=light] .hy-cm>span{color:#6B6254}:root[data-theme=light] .hy-cm>b{color:#29251D}:root[data-theme=light] .hy-cm>b.na{color:#6B6254}:root[data-theme=light] .hy-full .hf-cm{background:#FDFBF6;border:1px solid #EAE3D3;border-left:4px solid #E8D58A;box-shadow:none}:root[data-theme=light] .hy-full .hf-cm>span{color:#6B6254}:root[data-theme=light] .hy-full .hf-cm>b{color:#29251D}@media not all and (prefers-color-scheme:dark){:root:not([data-theme=dark]) .hxt{gap:8px}:root:not([data-theme=dark]) .hxt a{background:linear-gradient(150deg,#FFFDF8 0%,#FCF9F1 100%);border:1px solid #EFE8D6;color:#7A7160;font-weight:700;box-shadow:0 1px 2px #6B5A2A0D,inset 0 1px 0 #FFFFFFB3}:root:not([data-theme=dark]) .hxt a.on{background:#D4AF3733;border-color:#D4AF3759;color:#29251D;box-shadow:0 4px 10px -6px #B8902C26,inset 0 1px 0 #FFFFFF99}:root:not([data-theme=dark]) .hxc.hy{background:#FDFCF8;background-image:none;border:1px solid #EAE5D9;color:#29251D;box-shadow:0 1px 2px #6B5A2A0A,0 4px 12px -8px #6B5A2A1F}:root:not([data-theme=dark]) .hxc.hy.open{background:#FDFCF8;background-image:none;border:1px solid #EAE5D9;box-shadow:0 1px 2px #6B5A2A0A,0 4px 12px -8px #6B5A2A1F}:root:not([data-theme=dark]) .hxc.hy::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--ac,#D4AF37);opacity:.7}:root:not([data-theme=dark]) .hxc.hy.hy-approved,:root:not([data-theme=dark]) .hxc.hy.hy-paid{--ac:#8FD0AC}:root:not([data-theme=dark]) .hxc.hy.hy-pending,:root:not([data-theme=dark]) .hxc.hy.hy-review,:root:not([data-theme=dark]) .hxc.hy.hy-processing,:root:not([data-theme=dark]) .hxc.hy.hy-submitted{--ac:#EFCB7C}:root:not([data-theme=dark]) .hxc.hy.hy-rejected{--ac:#E8A5A5}:root:not([data-theme=dark]) .hxc.hy.hy-expired,:root:not([data-theme=dark]) .hxc.hy.hy-cancelled{--ac:#D6CFBC}:root:not([data-theme=dark]) .hy-tt b,:root:not([data-theme=dark]) .hy-g b,:root:not([data-theme=dark]) .hy-full .hf-r>b{color:#29251D}:root:not([data-theme=dark]) .hy-g span,:root:not([data-theme=dark]) .hy-g .na,:root:not([data-theme=dark]) .hy-more,:root:not([data-theme=dark]) .hxc.hy .hxr>span:first-child,:root:not([data-theme=dark]) .hy-full .hf-r>span,:root:not([data-theme=dark]) .hy-full .hf-c{color:#6B6254}:root:not([data-theme=dark]) .hxc.hy .hy-g,:root:not([data-theme=dark]) .hxc.hy .hy-g .hxr,:root:not([data-theme=dark]) .hxc.hy .hxr,:root:not([data-theme=dark]) .hy .hxd .hxr:first-child,:root:not([data-theme=dark]) .hy-full .hf-r{border-color:#EAE3D3}:root:not([data-theme=dark]) .hy-full .hf-h{color:#6B6254;border-color:#EAE3D3}:root:not([data-theme=dark]) .hy-ic{background:linear-gradient(135deg,#FBF4DA,#F2E5B3);color:#29251D;box-shadow:inset 0 1px 0 #FFFFFF99,0 4px 8px -4px #8A6D1A59}:root:not([data-theme=dark]) .hy-ic.deposit{background:linear-gradient(135deg,#F2F9F5,#DDEFE5);color:#2E7D5A}:root:not([data-theme=dark]) .hy-ic:not(.deposit){background:linear-gradient(135deg,#FDF7E8,#F6E7C2);color:#8F5A0A}:root:not([data-theme=dark]) .hy-am.neg,:root:not([data-theme=dark]) .hy-full .hf-r>b.amt.neg{color:#C9524B}:root:not([data-theme=dark]) .hy-am.pos,:root:not([data-theme=dark]) .hy-full .hf-r>b.amt.pos{color:#2E8F63}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill,:root:not([data-theme=dark]) .hy-full .hf-r .pill{background:#F4F0E6;color:#6B6254;box-shadow:inset 0 0 0 1px #0000000F}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.approved,:root:not([data-theme=dark]) .hy-full .hf-r .pill.approved{background:#F0F7F1;color:#2E7D5A}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.paid,:root:not([data-theme=dark]) .hy-full .hf-r .pill.paid{background:#F0F7F1;color:#2E7D5A}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.pending,:root:not([data-theme=dark]) .hy-full .hf-r .pill.pending{background:#FDF6E4;color:#8F5A0A}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.review,:root:not([data-theme=dark]) .hy-full .hf-r .pill.review{background:#FDF6E4;color:#8F5A0A}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.processing,:root:not([data-theme=dark]) .hy-full .hf-r .pill.processing{background:#FDF6E4;color:#8F5A0A}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.submitted,:root:not([data-theme=dark]) .hy-full .hf-r .pill.submitted{background:#FDF6E4;color:#8F5A0A}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.rejected,:root:not([data-theme=dark]) .hy-full .hf-r .pill.rejected{background:#FCEFED;color:#B94A44}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.expired,:root:not([data-theme=dark]) .hy-full .hf-r .pill.expired{background:#F4F0E6;color:#7A7160}:root:not([data-theme=dark]) .hxc.hy .hy-tt .pill.cancelled,:root:not([data-theme=dark]) .hy-full .hf-r .pill.cancelled{background:#F4F0E6;color:#7A7160}:root:not([data-theme=dark]) .hxc.hy .hy-cm{background:#FDFBF6;border:1px solid #EAE3D3;box-shadow:none}:root:not([data-theme=dark]) .hy-cm>span{color:#6B6254}:root:not([data-theme=dark]) .hy-cm>b{color:#29251D}:root:not([data-theme=dark]) .hy-cm>b.na{color:#6B6254}:root:not([data-theme=dark]) .hy-full .hf-cm{background:#FDFBF6;border:1px solid #EAE3D3;border-left:4px solid #E8D58A;box-shadow:none}:root:not([data-theme=dark]) .hy-full .hf-cm>span{color:#6B6254}:root:not([data-theme=dark]) .hy-full .hf-cm>b{color:#29251D}}
+/* ===== v11 readability fix layer (keep last) ===== */
+:root{--bg:#F6F1E4;--card:#FDFCF8;--fld:#FFFFFF;--tint:#F6F1E4;--tx:#29251D;--mut:#5F5747;--ln:#E2D9C4;--aq:#FFF4CC;--aqs:#FFF8E1;--aq2:#D9C67F;--bt:#6F5200;--okt:#047857;--sbg:#FFFFFF;--sfg:#29251D;--sbd:#CDBB84;--ic:#F8EFD2;--okbg:#D1FAE5;--okfg:#065F46;--nobg:#FEE2E2;--nofg:#991B1B;--wtbg:#FEF0C7;--wtfg:#854D0E;--nebg:#EFE9DA;--nefg:#4A4334;--redt:#B91C1C;--ortx:#9A4D06;--qbg:#FFFDF6;--qfg:#29251D;--thf:#6F5200}
+:root[data-theme=dark]{--sbg:#303030;--sfg:#F5F4EF;--sbd:#5A5A5A;--ic:#303030;--okbg:#0F3D2E;--okfg:#86EFAC;--nobg:#4A1D24;--nofg:#FCA5A5;--wtbg:#4A3512;--wtfg:#FCD34D;--nebg:#3A3A3A;--nefg:#F5F4EF;--redt:#FCA5A5;--ortx:#FBBF24;--qbg:#252525;--qfg:#F5F4EF;--thf:#E8C766}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--sbg:#303030;--sfg:#F5F4EF;--sbd:#5A5A5A;--ic:#303030;--okbg:#0F3D2E;--okfg:#86EFAC;--nobg:#4A1D24;--nofg:#FCA5A5;--wtbg:#4A3512;--wtfg:#FCD34D;--nebg:#3A3A3A;--nefg:#F5F4EF;--redt:#FCA5A5;--ortx:#FBBF24;--qbg:#252525;--qfg:#F5F4EF;--thf:#E8C766}}
+.btn.s,button.btn.s,.btn.w,button.btn.w,.hero .btn.w{background:var(--sbg)!important;color:var(--sfg)!important;border:1px solid var(--sbd)!important;box-shadow:none}
+.btn.g,button.btn.g{background:#047857!important;color:#fff!important;box-shadow:none}
+.btn.r,button.btn.r{color:#fff!important}
+.btn.s.on{background:#D4AF37!important;border-color:#D4AF37!important;color:#1F1A0E!important}
+body.adm-on .adm a.t.pri,.adm a.t.pri{background:#047857!important;border-color:#047857!important;color:#fff!important}
+.pill{color:var(--nefg)}
+.pill.approved,.pill.paid,.hxc.hy .hy-tt .pill.approved,.hxc.hy .hy-tt .pill.paid,.hy-full .hf-r .pill.approved,.hy-full .hf-r .pill.paid,.ur-b.approved{background:var(--okbg)!important;color:var(--okfg)!important}
+.pill.rejected,.msg.error,.dm-err{background:var(--nobg)!important;color:var(--nofg)!important}
+.pill.pending,.pill.review,.pill.processing,.dm-warn{background:var(--wtbg)!important;color:var(--wtfg)!important}
+.pill.submitted,.pill.expired,.pill.cancelled,.hxc.hy .hy-tt .pill.expired,.hxc.hy .hy-tt .pill.cancelled,.ur-b,.ur-b.submitted,.ur-b.expired,.ur-b.cancelled,.rq-tag,.rq-tag.u,.rq-tag.dep,.sc-new-pill{background:var(--nebg)!important;color:var(--nefg)!important}
+.msg,.dm-note{color:var(--tx)}
+.mt i,.li .ic{background:var(--ic)!important;color:var(--tx)}
+.hxr .cmv{background:var(--wtbg)!important;color:var(--wtfg)!important}
+.tabs button:not(.on),.chips button:not(.on),.fb button:not(.on){background:var(--sbg)!important;color:var(--sfg)!important}
+.tabs button.on,.chips button.on,.fb button.on,.sg a.on{color:#1F1A0E!important}
+.tabs button i{color:var(--redt)}.tabs button.on i{background:#fff!important;color:#B91C1C!important}
+.qb{background:var(--qbg)!important;color:var(--qfg)!important;border-color:var(--sbd)!important}
+.qb .ql{color:var(--qfg)!important}
+.qi{background:var(--ic)!important;color:var(--qfg)!important}
+th{color:var(--thf)}
+.li.out,.li.out .lt,.hy-am.neg,.hxr .neg,button.k[style*="b91c1c"]{color:var(--redt)!important}
+.uc-o,.vreq .no{color:var(--ortx)!important}
+.vlkh{background:#3B2F0B!important;color:#FFF6CF!important;text-shadow:none!important}
+.cc-h{color:var(--tx)}
+.pmc span>b{color:var(--thf)!important}
+/* admin: no black / dark blocks */
+body.adm-on .dm{background:#6F520066}
+body.adm-on .sc-bar button.ok,body.adm-on .sc-r.me .sc-b,body.adm-on .sc-send,body.adm-on .sc-go{background:#047857!important;color:#fff!important}
+body.adm-on .sc-dot.off{background:#B9B09A!important}
+/* approve / paid / confirm button always on the right */
+button[data-do=approve],button[data-do=paid],button[name=act][value=approve],button[name=act][value=paid]{order:20;margin-left:auto}
+/* compact announcement ticker */
+.tkr{padding:3px 10px 3px 4px;margin-bottom:8px;border-radius:99px;gap:7px}
+.tkr-b{width:22px;height:22px;font-size:12px;box-shadow:none}
+.tkr-t{font-size:13px}
 """
 
 JS = """
@@ -1529,6 +1573,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap"></noscript>
 <link rel="stylesheet" href="/assets/app.css?v={{av}}">
 <script>try{var t=localStorage.getItem('theme')||'{{dtheme}}';if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script></head>
+{% if u and u['is_admin'] %}<script>document.documentElement.setAttribute('data-theme','light')</script>{% endif %}
 <body class="{{'auth' if authpage}}{{' adm-on' if u and u['is_admin']}}"{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
 <div id="ld"></div>
 <div class="top"><b>{{site}}</b>{% if 'com.example.ewalletsupport' not in request.headers.get('X-Requested-With','') and '; wv)' not in request.headers.get('User-Agent','') %}<a id="apk-dl" class="apk-btn" href="/download/E-Wallet_Support.apk" download="E-Wallet_Support.apk" aria-label="Download App" title="Download App"><i><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 20h14"/></svg></i><span>App</span></a>{% endif %}<a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
@@ -1680,6 +1725,12 @@ POPUP_TPL = """<style>
 .pn-t{font-size:20px;font-weight:700;line-height:1.3;margin:0 36px 8px 0;overflow-wrap:anywhere;color:#000}
 .pn-b{font-size:15.5px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;color:#000}
 @media(max-width:420px){.pn-box{padding:22px 16px 18px;border-radius:18px}.pn-t{font-size:18px}}
+.pn-box{max-width:330px;max-height:52vh;max-height:52dvh;border-radius:16px;padding:14px 14px 12px}
+.pn-ic{display:none}.pn-x{top:7px;right:7px;width:30px;height:30px;font-size:20px}
+.pn-t{font-size:15.5px;margin:0 36px 5px 0;min-height:24px}.pn-b{font-size:13.5px;line-height:1.5}
+.pn-i:first-of-type .pn-b:first-child{padding-right:34px}
+.pn-i+.pn-i{margin-top:10px;padding-top:10px}
+@media(max-width:420px){.pn-box{padding:14px 14px 12px;border-radius:16px}.pn-t{font-size:15.5px}}
 </style>
 <div class="pn-ov" id="pnov" role="dialog" aria-modal="true" aria-label="Notice" data-ids="{{ids}}" data-csrf="{{csrf_token}}"><div class="pn-box"><button type="button" class="pn-x" id="pnx" aria-label="Close">&times;</button>
 <div class="pn-ic">📢</div>{% for p in popups %}<div class="pn-i">{% if p['title'] %}<h3 class="pn-t">{{p['title']}}</h3>{% endif %}<div class="pn-b">{{p['body']}}</div></div>{% endfor %}
@@ -3848,7 +3899,8 @@ def admin_user(i):
 </div></details>{% endif %}
 {% if can('notices') or can('requests') %}<details class="dt"><summary>⚠ সতর্কবার্তা (Warning)</summary><div class="inn"><form method="post" action="/admin/warnings/new" data-confirm="সতর্কবার্তা ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" value="{{x['id']}}"><input type="hidden" name="next" value="/admin/users/{{x['id']}}">
 <textarea name="message" rows="3" required minlength="5" maxlength="500" placeholder="যেমন: Repeated cancellation of requests may result in temporary transaction restrictions."></textarea>
-<div class="k" style="margin-bottom:6px">ইউজার নোটিফিকেশন ও অনুরোধ পেজে দেখবেন। শুধু সতর্কবার্তায় কোনো লেনদেন সীমাবদ্ধ হয় না — ব্লক করতে আলাদা অ্যাকশন লাগে।</div><button style="width:100%">⚠ সতর্কবার্তা পাঠান</button></form></div></details>{% endif %}
+<div class="k" style="margin-bottom:6px">ইউজার নোটিফিকেশন ও অনুরোধ পেজে দেখবেন। শুধু সতর্কবার্তায় কোনো লেনদেন সীমাবদ্ধ হয় না — ব্লক করতে আলাদা অ্যাকশন লাগে।</div><button style="width:100%">⚠ সতর্কবার্তা পাঠান</button></form>
+{% for w in uwarns %}<div class="pf-act"><span>⚠</span><span style="flex:1;min-width:0;overflow-wrap:anywhere;white-space:pre-line">{{w['message']}}<br><span class="k">{{w['created'][:16]}}</span><form method="post" action="/admin/warnings/{{w['id']}}/delete" data-confirm="এই সতর্কবার্তা মুছে ফেলবেন?" style="margin:4px 0 0"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="next" value="/admin/users/{{x['id']}}"><button class="btn sm r">🗑 মুছুন</button></form></span></div>{% endfor %}</div></details>{% endif %}
 {% if can('reports') %}<a class="btn s" style="width:100%;margin-bottom:10px" href="/admin/reports/user/{{x['id']}}">📊 ইউজার রিপোর্ট</a>{% endif %}
 {% if can('referrals') %}<div class="card"><h3 style="margin-top:0">রেফারেল তথ্য {% if can('referrals') %}<a class="k" href="/admin/referrals/user/{{x['id']}}">বিস্তারিত →</a>{% endif %}</h3><p class="k">রেফার করেছেন: {{refs['n']}} (অনুমোদিত {{refs['a']}}){% if by %} · রেফারার: <a href="/admin/users/{{x['referred_by']}}">#{{by['member_id']}} {{by['name']}}</a> ({{(byrow['created'] or '')|bdd}}, {{byrow['status']}}){% else %} · কারও রেফারে আসেননি{% endif %}</p>
 {% if reffed %}<div class="tw"><table><tr><th>সদস্য</th><th>তারিখ</th><th>বোনাস</th><th>অবস্থা</th></tr>{% for r in reffed %}<tr><td><a href="/admin/users/{{r['referred_id']}}">#{{r['mid']}} {{r['nm']}}</a></td><td>{{r['created']|bdd}}</td><td>{{money(r['amount'])}}</td><td>{{r['status']}}</td></tr>{% endfor %}</table></div>{% endif %}</div>{% endif %}
@@ -3892,7 +3944,7 @@ function show(t,scroll){if(names.indexOf(t)<0)t='ov';tabs.querySelectorAll('butt
 tabs.addEventListener('click',function(e){var b=e.target.closest('button[data-t]');if(b)show(b.dataset.t,false)});
 w.addEventListener('click',function(e){var b=e.target.closest('[data-go]');if(b)show(b.dataset.go,true)});
 show(location.hash.slice(1),false)})()</script>""" + ACT_MODAL,
-                active="/admin/users", x=x, led=led, txs=txs, refs=refs, by=by, byrow=byrow, reffed=reffed, comm=comm, adjs=adjs, pg=pg,
+                active="/admin/users", uwarns=warnings_for(i, None, 50), x=x, led=led, txs=txs, refs=refs, by=by, byrow=byrow, reffed=reffed, comm=comm, adjs=adjs, pg=pg,
                 sm=user_summary(i), idem=secrets.token_hex(8), adj_cap=adjust_cap(me()), pns=pns, pn_logs=pn_logs,
                 open_reqs=open_reqs, a2u_reqs=a2u_reqs, u2a_reqs=u2a_reqs, acts=_user_activity(i), labels=REQ_LABEL,
                 ra=req_actions, rbtn=RQ_BTN, rnote=req_note, tnote=tx_note, txl=TX_LABEL, kinds=REQ_KIND, txacts=ACTIONS,
@@ -6899,7 +6951,7 @@ def admin_request_view(i):
 <form method="post" action="/admin/warnings/new" data-confirm="সতর্কবার্তা ইউজারকে পাঠাবেন?"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="uid" value="{{r['user_id']}}"><input type="hidden" name="request_id" value="{{r['id']}}"><input type="hidden" name="next" value="/admin/requests/{{r['id']}}">
 <textarea name="message" rows="3" required minlength="5" maxlength="500" placeholder="যেমন: Repeated cancellation of requests may result in temporary transaction restrictions."></textarea><button style="width:100%">⚠ সতর্কবার্তা পাঠান</button></form>
 <div class="k" style="margin-top:6px">সতর্কবার্তা ইউজার নোটিফিকেশনে ও অনুরোধের পেজে দেখবেন। শুধু সতর্কবার্তায় কোনো লেনদেন সীমাবদ্ধ হয় না — সীমাবদ্ধতার জন্য আলাদা অনুমোদিত অ্যাকশন (ইউজার ব্লক) লাগবে।</div>
-{% for w in warns %}<div class="pf-act"><span>⚠</span><span style="flex:1;min-width:0;overflow-wrap:anywhere;white-space:pre-line">{{w['message']}}<br><span class="k">{{w['admin']}} · {{'এই রিকোয়েস্ট' if w['request_id'] else 'ইউজার-লেভেল'}}</span></span><span class="k">{{w['created'][:16]}}</span></div>{% endfor %}</div>
+{% for w in warns %}<div class="pf-act"><span>⚠</span><span style="flex:1;min-width:0;overflow-wrap:anywhere;white-space:pre-line">{{w['message']}}<br><span class="k">{{w['admin']}} · {{'এই রিকোয়েস্ট' if w['request_id'] else 'ইউজার-লেভেল'}}</span>{% if can('requests') or can('notices') %}<form method="post" action="/admin/warnings/{{w['id']}}/delete" data-confirm="এই সতর্কবার্তা মুছে ফেলবেন?" style="margin:4px 0 0"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="next" value="/admin/requests/{{r['id']}}"><button class="btn sm r">🗑 মুছুন</button></form>{% endif %}</span><span class="k">{{w['created'][:16]}}</span></div>{% endfor %}</div>
 {% if can('payment_numbers') and not is_wd(r['kind'], r['flow']) %}<div class="card"><h3 style="margin-top:0">💳 {{r['name']}} এর নিবন্ধিত পেমেন্ট নম্বর</h3>{% if not pns %}<div class="k">কোনো নম্বর যোগ করা নেই</div>{% endif %}</div>
 {% set hl = r['pay_number'] %}{% set hm = r['method'] %}{% set send_uid = none %}""" + PM_CARDS_TPL + """{% endif %}
 <div class="row" style="gap:8px;margin-bottom:10px"><a class="btn sm s" href="/admin/users/{{r['user_id']}}">👤 ইউজার প্রোফাইল</a><a class="btn sm s" href="/admin/requests?tab=admin&q={{r['member_id']}}&status=all">📚 এই ইউজারের সব রিকোয়েস্ট</a>{% if not r['blocked'] %}<a class="btn sm" href="/admin/requests/new?uid={{r['user_id']}}">➕ নতুন রিকোয়েস্ট</a>{% endif %}</div>
@@ -7188,6 +7240,26 @@ def admin_warning_new():
         err(str(ex)); return redirect(back_to)
     flash("সতর্কবার্তা ইউজারকে পাঠানো হয়েছে (ইউজারের কোনো লেনদেন সীমাবদ্ধ করা হয়নি)।")
     return redirect(back_to)
+
+
+@app.route("/admin/warnings/<int:wid>/delete", methods=["POST"])
+@staff_required("requests", "notices")
+def admin_warning_delete(wid):
+    """Removes a warning and its in-app notification. The audit log keeps who deleted what."""
+    a = me()
+    with atomic():
+        w = q1("SELECT * FROM user_warnings WHERE id=?", (wid,))
+        if w:
+            db().execute("DELETE FROM user_warnings WHERE id=?", (wid,))
+            db().execute("DELETE FROM notifications WHERE id=(SELECT MAX(id) FROM notifications WHERE user_id=? AND title=? AND body=?)",
+                         (w["user_id"], "⚠ অ্যাডমিনের সতর্কবার্তা", w["message"]))
+            audit("warning_delete", "warning#%d user#%d admin_id=%d: %s" % (wid, w["user_id"], a["id"], w["message"][:300]))
+    if w:
+        flash("সতর্কবার্তা মুছে ফেলা হয়েছে।")
+    else:
+        err("সতর্কবার্তাটি পাওয়া যায়নি।")
+    nxt = (("/admin/requests/%d" % w["request_id"]) if w and w["request_id"] else ("/admin/users/%d" % w["user_id"]) if w else "/admin")
+    return redirect(_safe_next(request.form.get("next") or nxt))
 
 
 # ================================================================ Referral rewards: paid once per referred user, on their FIRST approved Add Money
