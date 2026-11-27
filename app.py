@@ -2550,6 +2550,14 @@ def history():
 :root[data-theme=dark] .hy-full .hf-cm>span{color:#D4AF37}:root[data-theme=dark] .hy-full .hf-cm>b{color:#D4AF37}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hy-full .hf-cm{background:linear-gradient(135deg,#252525 0%,#252525 100%);border-color:#3A3A3A;border-left-color:#D9B23F}:root:not([data-theme=light]) .hy-full .hf-cm>span{color:#D4AF37}:root:not([data-theme=light]) .hy-full .hf-cm>b{color:#D4AF37}}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hxc.hy.open{background:#2A2414;background-image:linear-gradient(180deg,#2E2816 0%,#252010 100%);border-color:#5A4A1E}:root:not([data-theme=light]) .hy-full .hf-h{color:#E3C877;border-color:#4A3E1C}:root:not([data-theme=light]) .hy-full .hf-r{border-color:#3F3519}:root:not([data-theme=light]) .hy-full .hf-r>span{color:#C9B77C}:root:not([data-theme=light]) .hy-full .hf-r>b{color:#F7EBC8}:root:not([data-theme=light]) .hy-full .hf-c{color:#BBA766}}
+/* compact card: only type, status, amount and time; everything else appears when opened */
+.hxc.hy:not(.open)>.hy-cm,.hxc.hy:not(.open)>.hy-more,.hxc.hy:not(.open)>.hxd,.hxc.hy:not(.open)>.hy-g>div:not(:last-child),.hxc.hy:not(.open)>.hy-g span:not(.na){display:none}
+.hxc.hy:not(.open)>.hy-g{display:block;position:absolute;right:13px;bottom:12px;margin:0;padding:0;border:0}
+.hxc.hy:not(.open)>.hy-g b{font-size:12px;font-weight:500;line-height:1.5;color:#6B6254;white-space:nowrap}
+:root[data-theme=dark] .hxc.hy:not(.open)>.hy-g b{color:#A7A7A7}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .hxc.hy:not(.open)>.hy-g b{color:#A7A7A7}}
+.hxc.hy:not(.open) .hy-am{align-self:flex-start}
+@media(max-width:380px){.hxc.hy:not(.open)>.hy-g{right:11px;bottom:11px}}
 @media(max-width:380px){.hxc.hy{padding:10px 11px}.hy-ic{width:32px;height:32px;font-size:16px}.hy-tt b{font-size:15px}.hy-am{font-size:16px}.hy-g{gap:8px 8px}.hy-g b{font-size:13.5px}.hy-cm>b{font-size:15.5px}}
 </style>
 <div class="hxt">{% for k,lb in tabs %}<a class="{{'on' if f==k}}" href="/history{{'' if k=='all' else '?f='+k}}">{{lb}}</a>{% endfor %}</div>
