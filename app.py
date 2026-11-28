@@ -58,8 +58,9 @@ PERM_LABELS = {
 PERM_LABELS.update({"requests": "ম্যানুয়াল রিকোয়েস্ট", "payment_numbers": "পেমেন্ট নম্বর দেখা", "pool_view": "কমিশন পুল দেখা",
                     "reports": "আর্থিক রিপোর্ট দেখা", "rates": "ইউজার কমিশন রেট বদলানো", "kyc": "KYC যাচাই",
                     "vip": "VIP অনুমোদন ও পরিবর্তন"})
+PERM_LABELS["predictions"] = "প্রেডিকশন ম্যানেজমেন্ট"   # Prediction Management (Super Admin always; Admin only when granted)
 ADMIN_ASSIGNABLE = tuple(PERM_LABELS)                       # what a Super Admin can grant to an "admin"
-ADMIN_DEFAULT = tuple(p for p in ADMIN_ASSIGNABLE if p not in ("adjust", "vip"))
+ADMIN_DEFAULT = tuple(p for p in ADMIN_ASSIGNABLE if p not in ("adjust", "vip", "predictions"))
 ROLE_FIXED = {"finance": frozenset({"dashboard_fin", "deposits", "withdrawals", "users_view", "referrals", "commissions"}),
               "support": frozenset({"tickets", "users_view"})}
 ROLE_FIXED["finance"] = ROLE_FIXED["finance"] | frozenset({"requests", "payment_numbers", "pool_view", "reports"})
@@ -537,6 +538,21 @@ V5_TABLES = [
      "CREATE TABLE IF NOT EXISTS ticket_messages(id {ID}, ticket_id {BIG} NOT NULL REFERENCES tickets(id), sender TEXT NOT NULL, sender_name TEXT, "
      "body TEXT NOT NULL, created TEXT NOT NULL)",
      ["CREATE INDEX IF NOT EXISTS ix_tmsg_ticket ON ticket_messages(ticket_id)"], False),
+    ("prediction_events",
+     "CREATE TABLE IF NOT EXISTS prediction_events(id {ID}, title_bn TEXT NOT NULL, title_en TEXT NOT NULL, desc_bn TEXT, desc_en TEXT, "
+     "yes_ratio {RATE} NOT NULL DEFAULT 50, no_ratio {RATE} NOT NULL DEFAULT 50, opens TEXT NOT NULL, closes TEXT NOT NULL, "
+     "active INTEGER NOT NULL DEFAULT 0, points INTEGER NOT NULL DEFAULT 10, result TEXT CHECK(result IN('yes','no','void')), result_source TEXT, "
+     "result_by TEXT, result_at TEXT, created_by TEXT, created TEXT NOT NULL, updated TEXT)",
+     ["CREATE INDEX IF NOT EXISTS ix_pred_active ON prediction_events(active,closes)"], False),
+    ("prediction_votes",
+     "CREATE TABLE IF NOT EXISTS prediction_votes(id {ID}, event_id {BIG} NOT NULL REFERENCES prediction_events(id), user_id {BIG} NOT NULL REFERENCES users(id), "
+     "choice TEXT NOT NULL CHECK(choice IN('yes','no')), points INTEGER NOT NULL DEFAULT 0, created TEXT NOT NULL, updated TEXT)",
+     ["CREATE UNIQUE INDEX IF NOT EXISTS ux_pvote_event_user ON prediction_votes(event_id,user_id)",
+      "CREATE INDEX IF NOT EXISTS ix_pvote_user ON prediction_votes(user_id)"], False),
+    ("prediction_log",
+     "CREATE TABLE IF NOT EXISTS prediction_log(id {ID}, event_id {BIG} NOT NULL REFERENCES prediction_events(id), action TEXT NOT NULL, detail TEXT, "
+     "actor TEXT, actor_id {BIG}, created TEXT NOT NULL)",
+     ["CREATE INDEX IF NOT EXISTS ix_plog_event ON prediction_log(event_id)"], True),
     # @@TABLES
 ]
 V5_INDEXES = [
@@ -1375,6 +1391,87 @@ button[data-do=approve],button[data-do=paid],button[name=act][value=approve],but
 .tkr-b{width:20px;height:20px;font-size:11px;line-height:1;box-shadow:none}
 .tkr-w{line-height:1;display:flex;align-items:center}
 .tkr-t{font-size:13px;line-height:20px;height:20px;padding-top:0;padding-bottom:0;margin:0;font-weight:600}
+/* ===== Hamburger + drawer + Prediction (additive) ===== */
+.top .hbg{position:relative;flex:none;width:36px;height:36px;margin:-3px 10px -3px -4px;padding:0;border:0;border-radius:12px;background:#ffffff33;box-shadow:none;color:#121212;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.top .hbg:active{background:#ffffff59}
+.hbg i{position:relative;display:block;width:18px;height:2px;border-radius:2px;background:#121212;font-style:normal}
+.hbg i::before,.hbg i::after{content:"";position:absolute;left:0;width:18px;height:2px;border-radius:2px;background:#121212}
+.hbg i::before{top:-6px}.hbg i::after{top:6px}
+html.drw-on{overflow:hidden}
+.drw-sc{position:fixed;inset:0;z-index:60;background:rgba(18,14,4,.52);opacity:0;visibility:hidden;touch-action:none;transition:opacity .22s ease,visibility 0s linear .22s}
+html.drw-on .drw-sc{opacity:1;visibility:visible;transition-delay:0s}
+.drw{position:fixed;top:0;bottom:0;left:0;z-index:61;width:min(84vw,320px);display:flex;flex-direction:column;background:var(--cd);color:var(--ctx);border-radius:0 24px 24px 0;box-shadow:12px 0 40px -14px rgba(40,28,0,.55);transform:translateX(-104%);visibility:hidden;transition:transform .26s cubic-bezier(.22,.8,.25,1),visibility 0s linear .26s;overscroll-behavior:contain;padding-bottom:env(safe-area-inset-bottom,0px)}
+.drw.open{transform:none;visibility:visible;transition-delay:0s}
+.drw-h{display:flex;align-items:center;gap:10px;padding:calc(14px + env(safe-area-inset-top,0px)) 14px 14px 18px;background:linear-gradient(100deg,#D4AF37,#E6C75A);color:#121212;border-radius:0 24px 0 0}
+.drw-h b{flex:1;min-width:0;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drw .drw-x{flex:none;width:34px;height:34px;min-width:0;padding:0;border:0;border-radius:50%;background:#ffffff40;box-shadow:none;color:#121212;font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center}
+.drw-l{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 0 16px}
+.drw-i{display:flex;align-items:center;gap:13px;margin:2px 10px;padding:10px 12px;border-radius:15px;color:var(--ctx);font-weight:600;font-size:15px;position:relative}
+.drw-i:active{background:var(--cd2)}
+.drw-i.on{background:var(--cd2);box-shadow:inset 3px 0 0 #D4AF37}
+.drw-i .ic{flex:none;width:36px;height:36px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:var(--cd2);border:1px solid var(--cln);color:#B8921F}
+.drw-i svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.drw-i .t{flex:1;min-width:0;line-height:1.25}
+.drw-i .t small{display:block;font-weight:500;font-size:11.5px;color:var(--cmu);margin-top:1px}
+.drw-p{margin:2px 10px 8px;padding:12px;background:linear-gradient(135deg,#F6DE8E,#D4AF37 58%,#BC9322);color:#2a1d00;box-shadow:0 10px 20px -12px rgba(140,100,8,.85),inset 0 1px 0 rgba(255,255,255,.55)}
+.drw-p:active{background:linear-gradient(135deg,#F6DE8E,#D4AF37 58%,#BC9322);filter:brightness(.95)}
+.drw-p .ic{background:rgba(255,255,255,.4);border-color:rgba(255,255,255,.55);color:#3b2a00}
+.drw-p .t small{color:rgba(42,29,0,.72)}
+.drw-sep{height:1px;margin:6px 22px 8px;background:var(--cln)}
+.drw-i .bd2{flex:none}
+.drw-r .ic{color:var(--cmu)}
+/* floating prediction button */
+.pfab-w{position:fixed;right:12px;bottom:calc(172px + env(safe-area-inset-bottom,0px));width:46px;height:46px;z-index:6;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;transition:opacity .16s ease}
+.pfab-w:not(.js){visibility:hidden}
+.pfab-w.js{right:auto;bottom:auto;left:0;top:0}
+.pfab-w.snap{transition:transform .3s cubic-bezier(.22,.9,.28,1),opacity .16s ease}
+.pfab-w.out{opacity:0}
+.pfab-w::before{content:"";position:absolute;inset:-7px;border-radius:50%;pointer-events:none;background:radial-gradient(circle,rgba(247,216,106,.8) 0,rgba(212,175,55,.4) 46%,rgba(212,175,55,0) 70%);animation:pfBreath 4.8s ease-in-out infinite}
+.pfab{position:relative;display:block;width:46px;height:46px;border-radius:50%;overflow:hidden;touch-action:none;cursor:grab;-webkit-user-drag:none;outline:0;-webkit-tap-highlight-color:transparent;background:radial-gradient(120% 120% at 30% 16%,#FFF6C9 0,#F8DE88 17%,#E3BD4B 42%,#C99B29 68%,#8E6411 100%);box-shadow:inset 0 1.5px 1px rgba(255,255,255,.88),inset 0 -3px 5px rgba(104,70,4,.55),inset 0 0 0 1px rgba(255,232,150,.5),0 0 0 1px rgba(143,101,16,.78),0 7px 14px -3px rgba(92,62,4,.55),0 2px 3px rgba(60,40,0,.35);transition:transform .15s ease,box-shadow .15s ease}
+.pfab:active,.pfab-w.drag .pfab{transform:scale(.94)}
+.pfab-w.drag .pfab{cursor:grabbing;transform:scale(1.07);box-shadow:inset 0 1.5px 1px rgba(255,255,255,.88),inset 0 -3px 5px rgba(104,70,4,.55),inset 0 0 0 1px rgba(255,232,150,.5),0 0 0 1px rgba(143,101,16,.78),0 14px 22px -6px rgba(92,62,4,.6)}
+.pfab:focus-visible{box-shadow:0 0 0 3px #fff,0 0 0 5px #8E6411}
+.pfab .rg{position:absolute;inset:4px;border-radius:50%;border:1px solid rgba(255,246,190,.68);box-shadow:inset 0 0 0 1px rgba(143,101,16,.22),0 1px 0 rgba(255,255,255,.28);pointer-events:none}
+.pfab svg{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;filter:drop-shadow(0 1px 0 rgba(255,244,182,.9));pointer-events:none}
+.pfab .gl{position:absolute;left:10%;right:10%;top:4%;height:46%;border-radius:50% 50% 60% 60%/72% 72% 38% 38%;background:linear-gradient(180deg,rgba(255,255,255,.78),rgba(255,255,255,0));pointer-events:none}
+.pfab .sh{position:absolute;top:-20%;bottom:-20%;left:-60%;width:36%;background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.7) 50%,rgba(255,255,255,0));transform:translateX(0) skewX(-18deg);opacity:0;animation:pfSheen 8.5s ease-in-out infinite;pointer-events:none}
+.pfab-x{position:absolute;top:-10px;left:-10px;width:18px;height:18px;min-width:0;margin:0;padding:0;border:1px solid var(--cln);border-radius:50%;background:var(--cd);color:var(--cmu);font-size:13px;line-height:1;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 5px rgba(0,0,0,.28);z-index:2}
+.pfab-x::after{content:"";position:absolute;inset:-7px 3px 3px -7px}
+.pfab-w.l .pfab-x{left:auto;right:-10px}
+.pfab-w.l .pfab-x::after{inset:-7px -7px 3px 3px}
+@keyframes pfBreath{0%,100%{transform:scale(.9);opacity:.5}50%{transform:scale(1.1);opacity:.95}}
+@keyframes pfSheen{0%,70%{transform:translateX(0) skewX(-18deg);opacity:0}74%{opacity:1}90%{transform:translateX(500%) skewX(-18deg);opacity:1}91%,100%{transform:translateX(500%) skewX(-18deg);opacity:0}}
+@media(prefers-reduced-motion:reduce){.pfab-w::before,.pfab .sh{animation:none}.pfab-w::before{opacity:.7}.drw,.drw-sc{transition:none}}
+.pf-toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:62;max-width:90vw;padding:9px 15px;border-radius:99px;background:#1c1c1c;color:#F5F4EF;font-size:13px;text-align:center;box-shadow:0 8px 20px -8px rgba(0,0,0,.6);animation:pfToast 3.1s ease both;pointer-events:none}
+@keyframes pfToast{0%{opacity:0;transform:translate(-50%,6px)}8%,86%{opacity:1;transform:translate(-50%,0)}100%{opacity:0}}
+/* prediction page */
+.pd-hi{flex:none;width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.38);box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}
+.pd-hi svg{width:26px;height:26px}
+.pd-pts{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:5px 12px;border-radius:99px;background:rgba(18,18,18,.13);font-size:13px;font-weight:700}
+.pd-note{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;margin-bottom:14px;border-radius:14px;background:var(--cd2);border:1px dashed var(--cln);color:var(--cmu);font-size:13px;line-height:1.55}
+.pd-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.pd-chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700;background:var(--ln);color:var(--tx)}
+.pd-chip.open{background:#0EA37126;color:#0B8A60}.pd-chip.upcoming{background:#D4AF3733;color:#9A7A12}.pd-chip.closed{background:#dc262622;color:#C0392B}.pd-chip.resolved{background:#252525;color:#D4AF37}
+.pd-q{font-size:19px;font-weight:700;line-height:1.4;margin:10px 0 4px;color:var(--tx)}
+.pd-opts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.pd-opts .pd-opt{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:96px;padding:12px 8px;border-radius:18px;border:1.5px solid var(--ln);background:var(--tint);color:var(--tx);box-shadow:none;font:inherit;cursor:pointer;transition:transform .12s ease,border-color .15s ease,box-shadow .15s ease}
+.pd-opts .pd-opt:active{transform:scale(.97)}
+.pd-opt .pd-ic{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;margin-bottom:3px}
+.pd-opt.yes .pd-ic{background:linear-gradient(135deg,#0EA371,#34D399)}.pd-opt.no .pd-ic{background:linear-gradient(135deg,#f87171,#dc2626)}
+.pd-opt b{font-size:19px;letter-spacing:.2px}.pd-opt small{color:var(--mut);font-size:12px}
+.pd-opts .pd-opt.sel{border-color:#D4AF37;background:linear-gradient(135deg,#F6DE8E22,#D4AF3733);box-shadow:0 0 0 3px #D4AF3733}
+.pd-opts .pd-opt.dis{cursor:default}
+.pd-opts .pd-opt.win{border-color:#0EA371}
+.pd-mine{position:absolute;top:-9px;left:50%;transform:translateX(-50%);padding:1px 9px;border-radius:99px;background:#D4AF37;color:#2a1d00;font-size:11px;font-weight:800;font-style:normal;white-space:nowrap}
+.pd-info{margin-top:10px;padding:11px 12px;border-radius:14px;background:var(--tint);border:1px solid var(--ln)}
+.pd-il{font-size:12.5px;font-weight:700;color:var(--mut);margin-bottom:7px}
+.pd-bar{display:flex;height:10px;border-radius:99px;overflow:hidden;background:var(--ln)}
+.pd-bar i{display:block;height:100%}.pd-bar .y{background:linear-gradient(90deg,#0EA371,#34D399)}.pd-bar .n{background:linear-gradient(90deg,#f87171,#dc2626)}
+.pd-bl{display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:6px}
+.pd-fine{font-size:11.5px;color:var(--mut);margin-top:6px;line-height:1.5}
+.pd-res{margin-top:12px;padding:12px;border-radius:14px;border:1px solid #D4AF37;background:linear-gradient(135deg,#F6DE8E1f,#D4AF3724);line-height:1.55}
+.pd-sec{font-weight:700;font-size:15px;margin:18px 2px 8px;color:var(--cmu)}
+@media(max-width:360px){.pd-q{font-size:17px}.pd-opts .pd-opt{min-height:86px}.pd-opt b{font-size:17px}}
 """
 
 JS = """
@@ -1415,11 +1512,11 @@ document.addEventListener('click',function(e){var a=e.target.closest&&e.target.c
   var nb=d.body;document.body.className=nb.className;
   ['poll','snd'].forEach(function(k){if(nb.dataset[k]!==undefined)document.body.dataset[k]=nb.dataset[k];else delete document.body.dataset[k]});
   var cur=document.body,keep=document.getElementById('ld');
-  ['.top','main','.nav','.fab'].forEach(function(sel){var o=cur.querySelector(sel),n=nb.querySelector(sel);
+  ['.top','main','.nav','.fab','.pfab-w'].forEach(function(sel){var o=cur.querySelector(sel),n=nb.querySelector(sel);
    if(o&&n)o.replaceWith(document.importNode(n,true));else if(o&&!n)o.remove();else if(!o&&n){var m=cur.querySelector('main');if(sel==='.top')cur.insertBefore(document.importNode(n,true),cur.firstChild);else if(sel==='main'){}else m.after(document.importNode(n,true))}});
   document.querySelectorAll('main script').forEach(function(o){var n=document.createElement('script');n.textContent=o.textContent;o.replaceWith(n)});
   var po=document.getElementById('pnov');if(po)po.remove();
-  if(push)history.pushState({},'',url);window.scrollTo(0,0);paintToggles();
+  if(push)history.pushState({},'',url);window.scrollTo(0,0);paintToggles();if(window.drwClose)drwClose();if(window.pfabInit)pfabInit();
   if(typeof pollNotif==='function')pollNotif();return true}
  var busyU=null;
  function go(url,push){if(push&&busyU===url)return;busyU=url;var my=++seq;ldShow();
@@ -1552,6 +1649,68 @@ document.addEventListener('input',function(e){var i=e.target;if(!i.matches||!i.m
  if(v.length>=6)n++;if(v.length>=9)n++;if(/[A-Za-z]/.test(v)&&/[0-9]/.test(v))n++;if(/[^A-Za-z0-9]/.test(v)||(/[a-z]/.test(v)&&/[A-Z]/.test(v)))n++;
  if(v.length)n=Math.max(1,n);m.dataset.s=n;var t=m.querySelector('em'),en=document.documentElement.lang==='en';
  if(t)t.textContent=n?(en?['','Weak','Fair','Good','Strong']:['','দুর্বল','মোটামুটি','ভালো','শক্তিশালী'])[n]:''});
+/* ===== Hamburger drawer + draggable Prediction button (additive) ===== */
+(function(){
+var SZ=46,M=12,KP='pfab:pos',KH='pfab:hide',cur={x:0,y:0},S={down:0,drag:0,id:null,sx:0,sy:0,ox:0,oy:0,blk:0},raf=0,tx=null;
+function en(){return document.documentElement.lang==='en'}
+function W(){return document.getElementById('pfw')}
+function clamp(v,a,b){return v<a?a:(v>b?b:v)}
+function lim(){var t=document.querySelector('.top'),n=document.querySelector('.nav'),w=window.innerWidth,h=window.innerHeight,
+ top=(t?t.offsetHeight:0)+10,bot=(n?n.offsetHeight:0)+14;
+ return{minX:M,maxX:Math.max(M,w-SZ-M),minY:top,maxY:Math.max(top,h-bot-SZ)}}
+function put(x,y){var e=W();if(!e)return;cur.x=x;cur.y=y;e.style.transform='translate3d('+Math.round(x)+'px,'+Math.round(y)+'px,0)'}
+function paintSide(e,s){e.classList.toggle('l',s==='l');e.classList.toggle('r',s!=='l')}
+function avoid(x,y){var f=document.querySelector('.fab');if(!f)return[x,y];var r=f.getBoundingClientRect(),g=12,L=lim();
+ if(x+SZ+g>r.left&&x<r.right+g&&y+SZ+g>r.top&&y<r.bottom+g){var ny=r.top-SZ-g;if(ny>=L.minY)return[x,ny];return[Math.max(L.minX,r.left-SZ-g),y]}
+ return[x,y]}
+function place(){var e=W();if(!e||e.hidden)return;var L=lim(),p=null,s='r',y,f;
+ try{p=JSON.parse(lsGet(KP)||'null')}catch(x){p=null}
+ if(p&&(p.s==='l'||p.s==='r')&&typeof p.f==='number'){s=p.s;y=L.minY+clamp(p.f,0,1)*(L.maxY-L.minY)}
+ else{f=document.querySelector('.fab');y=f?f.getBoundingClientRect().top-SZ-16:L.maxY-80}
+ y=clamp(y,L.minY,L.maxY);var a=avoid(s==='l'?L.minX:L.maxX,y);
+ paintSide(e,s);e.classList.add('js');put(clamp(a[0],L.minX,L.maxX),clamp(a[1],L.minY,L.maxY))}
+function snap(){var e=W();if(!e)return;var L=lim(),s=(cur.x+SZ/2)<window.innerWidth/2?'l':'r',x=s==='l'?L.minX:L.maxX,y=clamp(cur.y,L.minY,L.maxY),a=avoid(x,y),f;
+ paintSide(e,s);e.classList.add('snap');put(a[0],a[1]);setTimeout(function(){e.classList.remove('snap')},340);
+ f=L.maxY>L.minY?(a[1]-L.minY)/(L.maxY-L.minY):.5;lsSet(KP,JSON.stringify({s:s,f:Math.round(clamp(f,0,1)*1000)/1000}))}
+function toast(m){var o=document.querySelector('.pf-toast');if(o&&o.parentNode)o.parentNode.removeChild(o);
+ var t=document.createElement('div');t.className='pf-toast';t.setAttribute('role','status');t.textContent=m;document.body.appendChild(t);
+ setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t)},3200)}
+function syncRestore(){var r=document.getElementById('pfr');if(r)r.hidden=lsGet(KH)!=='1'}
+function hide(){var e=W();if(!e)return;lsSet(KH,'1');e.classList.add('out');
+ setTimeout(function(){e.hidden=true;e.classList.remove('out');syncRestore()},170);
+ toast(en()?'Prediction button hidden. Bring it back from the ☰ menu.':'প্রেডিকশন বাটন লুকানো হয়েছে। ☰ মেনু থেকে আবার চালু করুন।')}
+function init(){var e=W();syncRestore();if(!e)return;if(lsGet(KH)==='1'){e.hidden=true;return}e.hidden=false;place()}
+window.pfabInit=init;
+function dOpen(){var d=document.getElementById('drw');if(!d)return;syncRestore();d.classList.add('open');d.setAttribute('aria-hidden','false');
+ document.documentElement.classList.add('drw-on');document.querySelectorAll('.hbg').forEach(function(b){b.setAttribute('aria-expanded','true')});
+ var x=d.querySelector('.drw-x');if(x){try{x.focus({preventScroll:true})}catch(e){}}}
+function dClose(){var d=document.getElementById('drw');if(!d||!d.classList.contains('open'))return;d.classList.remove('open');d.setAttribute('aria-hidden','true');
+ document.documentElement.classList.remove('drw-on');document.querySelectorAll('.hbg').forEach(function(b){b.setAttribute('aria-expanded','false')})}
+window.drwClose=dClose;
+document.addEventListener('pointerdown',function(ev){var a=ev.target.closest&&ev.target.closest('.pfab');if(!a||(ev.pointerType==='mouse'&&ev.button!==0))return;
+ S.down=1;S.drag=0;S.id=ev.pointerId;S.sx=ev.clientX;S.sy=ev.clientY;S.ox=cur.x;S.oy=cur.y;try{a.setPointerCapture(ev.pointerId)}catch(x){}});
+document.addEventListener('pointermove',function(ev){if(!S.down||ev.pointerId!==S.id)return;var dx=ev.clientX-S.sx,dy=ev.clientY-S.sy,e=W(),L;
+ if(!S.drag){if(Math.abs(dx)<8&&Math.abs(dy)<8)return;S.drag=1;if(e){e.classList.add('drag');e.classList.remove('snap')}}
+ ev.preventDefault();L=lim();put(clamp(S.ox+dx,L.minX,L.maxX),clamp(S.oy+dy,L.minY,L.maxY))},{passive:false});
+function end(ev){if(!S.down||ev.pointerId!==S.id)return;S.down=0;var e=W();if(S.drag){S.blk=Date.now();if(e)e.classList.remove('drag');snap()}S.drag=0}
+document.addEventListener('pointerup',end);document.addEventListener('pointercancel',end);
+document.addEventListener('contextmenu',function(e){if(e.target.closest&&e.target.closest('.pfab-w'))e.preventDefault()});
+document.addEventListener('dragstart',function(e){if(e.target.closest&&e.target.closest('.pfab-w'))e.preventDefault()});
+document.addEventListener('click',function(ev){var t=ev.target;if(!t||!t.closest)return;
+ if(t.closest('.pfab')&&Date.now()-S.blk<450){ev.preventDefault();ev.stopPropagation();return}
+ if(t.closest('.pfab-x')){ev.preventDefault();ev.stopPropagation();hide();return}
+ if(t.closest('.hbg')){ev.preventDefault();dOpen();return}
+ if(t.closest('[data-drw-close]')){ev.preventDefault();dClose();return}
+ var a=t.closest('#drw a[href]');if(a){if(a.hasAttribute('data-pfab-restore'))lsSet(KH,'0');dClose()}},true);
+document.addEventListener('keydown',function(e){if(e.key==='Escape')dClose()});
+window.addEventListener('popstate',dClose);
+document.addEventListener('touchstart',function(e){var d=document.getElementById('drw');tx=(d&&d.classList.contains('open')&&e.touches.length===1)?e.touches[0].clientX:null},{passive:true});
+document.addEventListener('touchmove',function(e){if(tx===null)return;if(tx-e.touches[0].clientX>70){tx=null;dClose()}},{passive:true});
+function again(){cancelAnimationFrame(raf);raf=requestAnimationFrame(place)}
+window.addEventListener('resize',again);window.addEventListener('orientationchange',again);window.addEventListener('load',again);
+window.addEventListener('pageshow',init);
+init();
+})();
 """
 
 BASE = """<!doctype html><html lang="{{lang}}"><head><meta charset="utf-8">
@@ -1575,7 +1734,7 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 {% if u and u['is_admin'] %}<script>document.documentElement.setAttribute('data-theme','light')</script>{% endif %}
 <body class="{{'auth' if authpage}}{{' adm-on' if u and u['is_admin']}}"{% if u %} data-poll="1" data-snd="{{snd}}"{% endif %}>
 <div id="ld"></div>
-<div class="top"><b>{{site}}</b>{% if 'com.example.ewalletsupport' not in request.headers.get('X-Requested-With','') and '; wv)' not in request.headers.get('User-Agent','') %}<a id="apk-dl" class="apk-btn" href="/download/E-Wallet_Support.apk" download="E-Wallet_Support.apk" aria-label="Download App" title="Download App"><i><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 20h14"/></svg></i><span>App</span></a>{% endif %}<a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
+<div class="top">{% if u and not u['is_admin'] %}<button type="button" class="hbg" aria-label="{{'Open menu' if lang=='en' else 'মেনু খুলুন'}}" aria-controls="drw" aria-expanded="false"><i></i></button>{% endif %}<b>{{site}}</b>{% if 'com.example.ewalletsupport' not in request.headers.get('X-Requested-With','') and '; wv)' not in request.headers.get('User-Agent','') %}<a id="apk-dl" class="apk-btn" href="/download/E-Wallet_Support.apk" download="E-Wallet_Support.apk" aria-label="Download App" title="Download App"><i><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v10"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 20h14"/></svg></i><span>App</span></a>{% endif %}<a class="lgsw" href="/lang/{{'bn' if lang=='en' else 'en'}}?next={{nxt|urlencode}}">{{'বাংলা' if lang=='en' else 'English'}}</a>
 {% if u and not u['is_admin'] %}<span><a class="bell" href="/notifications">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% elif u %}<span><span style="font-size:13px;margin-right:14px">{{role_name}}</span><a class="bell" href="/admin/alerts">🔔<span class="dot" id="nd"{% if not unread %} hidden{% endif %}>{{unread}}</span></a></span>
 {% else %}<span><a href="/login">সাইন ইন</a> · <a href="/signup">সাইন আপ</a></span>{% endif %}</div>
@@ -1588,6 +1747,21 @@ if('serviceWorker' in navigator)w.addEventListener('load',function(){navigator.s
 <a class="{{'on' if active=='/vip'}}" href="/vip"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="d" d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg></i>VIP<span class="bd2" data-bd="/vip"{% if not nb('/vip') %} hidden{% endif %}>{{nb('/vip')}}</span></a><a class="{{'on' if active=='/insight'}}" href="/insight"><i><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="d" x="4" y="13" width="4" height="7" rx="1"/><rect class="d" x="10" y="9" width="4" height="11" rx="1"/><rect class="d" x="16" y="4" width="4" height="16" rx="1"/></svg></i>ইনসাইট<span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
 <a class="{{'on' if active=='/account'}}" href="/account"><i><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="d" cx="12" cy="8" r="4"/><path class="d" d="M4.5 20.5a7.5 7.5 0 0 1 15 0z"/></svg></i>অ্যাকাউন্ট<span class="bd2" data-bd="/account"{% if not nb('/account') %} hidden{% endif %}>{{nb('/account')}}</span></a></div>{% endif %}
 {% if fab %}<a class="fab" href="{{fab_href}}"{% if fab_tg %} target="_blank" rel="noopener"{% endif %} aria-label="{{fab_label}}" title="{{fab_label}}">💬</a>{% endif %}
+{% if pfab %}<div class="pfab-w r" id="pfw"><a class="pfab" href="/prediction" draggable="false" aria-label="{{'Prediction' if lang=='en' else 'প্রেডিকশন'}}" title="{{'Prediction' if lang=='en' else 'প্রেডিকশন'}}"><i class="rg"></i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.4 20h15.2" fill="none" stroke="#4a3200" stroke-width="1.5" stroke-linecap="round" opacity=".8"/><rect x="5.5" y="13.4" width="3" height="6.6" rx=".8" fill="#4a3200"/><rect x="10.5" y="10.6" width="3" height="9.4" rx=".8" fill="#4a3200"/><rect x="15.5" y="7.8" width="3" height="12.2" rx=".8" fill="#4a3200"/><path d="M4.6 10.2 9 6.6l3.5 2.3 6.2-4.9M15.6 4h3.4v3.4" fill="none" stroke="#4a3200" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.2 3.2v2.6M3.9 4.5h2.6" fill="none" stroke="#4a3200" stroke-width="1.2" stroke-linecap="round"/></svg><i class="gl"></i><i class="sh"></i></a><button type="button" class="pfab-x" aria-label="{{'Hide prediction button' if lang=='en' else 'প্রেডিকশন বাটন লুকান'}}">×</button></div>{% endif %}
+{% if u and not u['is_admin'] %}<div class="drw-sc" data-drw-close></div>
+<aside class="drw" id="drw" role="dialog" aria-modal="true" aria-hidden="true" aria-label="{{'Menu' if lang=='en' else 'মেনু'}}">
+<div class="drw-h"><b>{{site}}</b><button type="button" class="drw-x" data-drw-close aria-label="{{'Close menu' if lang=='en' else 'মেনু বন্ধ করুন'}}">×</button></div>
+<nav class="drw-l">
+<a class="drw-i drw-p" href="/prediction"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V4"/><path d="M4 20h16"/><path d="M8 15l3.5-4 3 2.5L19 7.5"/><path d="M15.5 7.5H19V11"/></svg></span><span class="t">{{'Prediction' if lang=='en' else 'প্রেডিকশন'}}<small>{{'Free poll · no real money' if lang=='en' else 'ফ্রি পোল · কোনো বাস্তব টাকা নেই'}}</small></span></a>
+<a class="drw-i{{' on' if active=='/vip'}}" href="/vip"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg></span><span class="t">{{'VIP Level' if lang=='en' else 'VIP লেভেল'}}</span><span class="bd2" data-bd="/vip"{% if not nb('/vip') %} hidden{% endif %}>{{nb('/vip')}}</span></a>
+<a class="drw-i{{' on' if active=='/referral'}}" href="/referral"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/><path d="M7.5 8a2.5 2.5 0 1 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 1 1 0 5"/></svg></span><span class="t">{{'Invite & Earn' if lang=='en' else 'ইনভাইট ও আর্ন'}}</span><span class="bd2" data-bd="/referral"{% if not nb('/referral') %} hidden{% endif %}>{{nb('/referral')}}</span></a>
+<a class="drw-i{{' on' if active=='/kyc'}}" href="/kyc"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.6 1.8-2.4 3-2.4s2.4.8 3 2.4M14.5 10h4M14.5 13h3"/></svg></span><span class="t">{{'KYC Verification' if lang=='en' else 'KYC যাচাই'}}</span></a>
+<div class="drw-sep"></div>
+<a class="drw-i{{' on' if active=='/notifications'}}" href="/notifications"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21a2 2 0 0 0 4 0"/></svg></span><span class="t">{{'Notifications' if lang=='en' else 'নোটিফিকেশন'}}</span><span class="bd2" data-bd="*"{% if not unread %} hidden{% endif %}>{{unread}}</span></a>
+<a class="drw-i{{' on' if active=='/insight'}}" href="/insight"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="13" width="3.5" height="7" rx=".8"/><rect x="10.2" y="8" width="3.5" height="12" rx=".8"/><rect x="16.5" y="4" width="3.5" height="16" rx=".8"/></svg></span><span class="t">{{'Insights' if lang=='en' else 'ইনসাইট'}}</span><span class="bd2" data-bd="/insight"{% if not nb('/insight') %} hidden{% endif %}>{{nb('/insight')}}</span></a>
+<a class="drw-i{{' on' if active=='/support'}}" href="/support"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/><path d="M19 19c0 1.5-1.5 2.5-4 2.5h-2"/></svg></span><span class="t">{{'Help & Support' if lang=='en' else 'হেল্প ও সাপোর্ট'}}</span><span class="bd2" data-bd="/support"{% if not nb('/support') %} hidden{% endif %}>{{nb('/support')}}</span></a>
+<a class="drw-i drw-r" id="pfr" href="/" data-pfab-restore hidden><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg></span><span class="t">{{'Show prediction button' if lang=='en' else 'প্রেডিকশন বাটন দেখান'}}<small>{{'Shows on the home screen' if lang=='en' else 'হোম স্ক্রিনে দেখাবে'}}</small></span></a>
+</nav></aside>{% endif %}
 <!--PN--><script src="/assets/app.js?v={{av}}"></script></body></html>"""
 
 AUTH_CSS = """
@@ -1696,7 +1870,7 @@ ADMIN_TABS = [("/admin", "ড্যাশবোর্ড", None), ("/admin/alert
               ("/admin/payment-numbers", "পেমেন্ট নম্বর", "payment_numbers"),
               ("/admin/referrals", "রেফারেল", "referrals"), ("/admin/vip", "VIP", "vip"), ("/admin/commission", "কমিশন", "commissions"), ("/admin/pool", "কমিশন পুল", "pool_view"),
               ("/admin/reports", "রিপোর্ট", "reports"), ("/admin/reconcile", "মিলানো", "reports"),
-              ("/admin/staff", "স্টাফ", "staff"), ("/admin/tickets", "টিকিট", "tickets"),
+              ("/admin/predictions", "প্রেডিকশন", "predictions"), ("/admin/staff", "স্টাফ", "staff"), ("/admin/tickets", "টিকিট", "tickets"),
               ("/admin/notices", "নোটিশ", "notices"), ("/admin/content", "কনটেন্ট", "notices"), ("/admin/settings", "সেটিংস", "settings"),
               ("/admin/audit", "অডিট লগ", "audit"), ("/admin/profile", "প্রোফাইল", None)]
 
@@ -1746,7 +1920,7 @@ def page(tpl, active="", foot="", authpage=False, **ctx):
     u = me()
     lang, tgu = cur_lang(), tg_url_active()
     html = render_str(BASE, body=body, av=ASSET_V, msgs=msgs, active=active, foot=foot, authpage=authpage,
-                                  fab=bool(u and not u["is_admin"] and active == "/"), lang=lang, nxt=request.path,
+                                  fab=bool(u and not u["is_admin"] and active == "/"), pfab=bool(u and not u["is_admin"] and active == "/"), lang=lang, nxt=request.path,
                                   fab_href=tgu or "/support", fab_tg=bool(tgu), fab_label=tg_label() if tgu else ("Support" if lang == "en" else "সাপোর্ট"),
                                   dtheme=setting("default_theme", "auto"), snd=setting("notif_sound", "1"))
     html = to_bdt(html)
@@ -3277,9 +3451,6 @@ def account():
 <div style="opacity:.92;margin-top:4px">📱 {{u['phone']}} &nbsp;·&nbsp; 🆔 #{{u['member_id']}}</div>
 <div style="opacity:.92;margin-top:8px">ব্যালেন্স: <b>৳ {{money(u['balance'])}}</b></div></div>
 <div class="card menu">
-<a class="li" href="/kyc"><span class="ic">🪪</span><span class="lt">KYC যাচাই</span><span class="ch">›</span></a>
-<a class="li" href="/vip"><span class="ic">👑</span><span class="lt">VIP লেভেল</span><span class="ch">›</span></a>
-<a class="li" href="/referral"><span class="ic">🎁</span><span class="lt">ইনভাইট ও আর্ন</span><span class="bd" data-bd="/referral"{% if not nb('/referral') %} hidden{% endif %}>{{nb('/referral')}}</span><span class="ch">›</span></a>
 <button type="button" class="li" onclick="toggleTheme()"><span class="ic">🌙</span><span class="lt">ডার্ক মোড</span><span class="k" id="thv"></span></button>
 <a class="li" href="/notifications"><span class="ic">🔔</span><span class="lt">নোটিফিকেশন</span>{% if unread %}<span class="bd">{{unread}}</span>{% endif %}<span class="ch">›</span></a>
 <button type="button" class="li" onclick="setSnd(!sndOn())"><span class="ic">🔊</span><span class="lt">নোটিফিকেশন সাউন্ড</span><span class="k" id="sndv"></span></button>
@@ -5228,7 +5399,7 @@ def alert_admins(title, body="", link="", perm=None):
 ADMIN_ICONS = {"/admin/alerts": "🔔", "/admin/requests": "📨", "/admin/deposits": "💰", "/admin/withdrawals": "🏧", "/admin/users": "👥", "/admin/kyc": "🪪",
                "/admin/payment-numbers": "💳", "/admin/referrals": "🎁", "/admin/vip": "👑", "/admin/commission": "💸", "/admin/pool": "🏦",
                "/admin/reports": "📊", "/admin/reconcile": "🧮", "/admin/staff": "🛡️", "/admin/tickets": "🎫", "/admin/notices": "📢",
-               "/admin/content": "📝", "/admin/settings": "⚙️", "/admin/audit": "📜", "/admin/profile": "👤"}
+               "/admin/content": "📝", "/admin/settings": "⚙️", "/admin/audit": "📜", "/admin/profile": "👤", "/admin/predictions": "🔮"}
 # longest path first so "/admin/payment-numbers" etc. match before any shorter prefix
 _BADGE_PATHS = sorted((p for p, _, _ in ADMIN_TABS if p not in ("/admin", "/admin/alerts")), key=len, reverse=True)
 _USER_BADGE_PATHS = ("/vip", "/requests", "/history", "/referral", "/support", "/payment-numbers", "/insight")
@@ -5367,7 +5538,7 @@ def admin_menu():
     layout = [("", ["/admin/alerts", "/admin/deposits", "/admin/withdrawals", "/admin/requests", "/admin/users", "/admin/tickets", "/admin/kyc"]),
               ("💸 কমিশন, VIP ও রেফারেল", ["/admin/commission", "/admin/vip", "/admin/pool", "/admin/referrals", "/admin/referral-rewards"]),
               ("📊 রিপোর্ট ও হিসাব", ["/admin/reports", "/admin/reconcile", "/admin/audit"]),
-              ("📝 কনটেন্ট ও পেমেন্ট নম্বর", ["/admin/payment-numbers", "/admin/notices", "/admin/content"]),
+              ("📝 কনটেন্ট ও পেমেন্ট নম্বর", ["/admin/payment-numbers", "/admin/notices", "/admin/content", "/admin/predictions"]),
               ("⚙️ সিস্টেম ও নিরাপত্তা", ["/admin/staff", "/admin/settings", "/admin/settings?open=security", "/admin/profile"])]
     groups, used = [], set()
     for title, keys in layout:
@@ -8260,6 +8431,395 @@ def admin_vip_user(uid):
     flash("VIP আপডেট হয়েছে।"); return back("/admin/vip")
 
 
+
+
+# ---------------------------------------------------------------- Prediction: FREE opinion poll (no money, no wallet, no payouts)
+# Participation = a free YES/NO vote. Correct voters may earn VIRTUAL points that live only in prediction_votes.points
+# (never in ledger / users.balance, never redeemable). Informational ratios are plain admin-entered text-numbers, not odds.
+PRED_RESULTS = ("yes", "no", "void")
+PRED_STATE_LBL = {"open": ("চলছে", "Open"), "upcoming": ("শীঘ্রই শুরু", "Upcoming"), "closed": ("ভোট বন্ধ", "Voting closed"),
+                  "resolved": ("ফলাফল প্রকাশিত", "Result published")}
+PRED_STATE_BN = {"open": "চলছে", "upcoming": "শীঘ্রই শুরু", "closed": "ভোট বন্ধ", "resolved": "ফলাফল প্রকাশিত"}
+PRED_PILL = {"open": "approved", "upcoming": "pending", "closed": "expired", "resolved": "paid"}
+
+
+def _T(bn, en):
+    return en if cur_lang() == "en" else bn
+
+
+def _pfmt(x):
+    return ("%.2f" % float(x or 0)).rstrip("0").rstrip(".") or "0"
+
+
+def _pred_state(e, t=None):
+    t = t or now()
+    if e["result"]:
+        return "resolved"
+    if t < e["opens"]:
+        return "upcoming"
+    if t >= e["closes"]:
+        return "closed"
+    return "open"
+
+
+def _pred_dt_in(s):
+    """datetime-local text (Bangladesh time) -> UTC 'YYYY-MM-DD HH:MM:SS' (what the database stores); None if invalid."""
+    s = (s or "").strip().replace(" ", "T")[:16]
+    try:
+        d = datetime.strptime(s, "%Y-%m-%dT%H:%M")
+    except ValueError:
+        return None
+    if not 2000 <= d.year <= 2100:
+        return None
+    return (d - BD_OFFSET).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _pred_dt_out(ts):
+    """UTC database string -> datetime-local value in Bangladesh time."""
+    try:
+        d = datetime.strptime((ts or "")[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return ""
+    return (d + BD_OFFSET).strftime("%Y-%m-%dT%H:%M")
+
+
+def _pred_log(eid, action, detail=""):
+    u = me()
+    db().execute("INSERT INTO prediction_log(event_id,action,detail,actor,actor_id,created) VALUES(?,?,?,?,?,?)",
+                 (eid, action, (detail or "")[:600], u["member_id"] if u else "system", u["id"] if u else None, now()))
+    audit("prediction_" + action, "event#%d %s" % (eid, (detail or "")[:300]))
+
+
+def _pred_counts(ids):
+    out = {}
+    if ids:
+        for r in qa("SELECT event_id, choice, COUNT(*) c FROM prediction_votes WHERE event_id IN (%s) GROUP BY event_id, choice" % ",".join("?" * len(ids)), list(ids)):
+            out.setdefault(r["event_id"], {})[r["choice"]] = int(r["c"])
+    return out
+
+
+# ---- customer pages
+PRED_PAGE = """<div class="hero2" style="padding:16px 18px"><div style="display:flex;align-items:center;gap:12px">
+<span class="pd-hi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.4 20h15.2" fill="none" stroke="#4a3200" stroke-width="1.5" stroke-linecap="round" opacity=".8"/><rect x="5.5" y="13.4" width="3" height="6.6" rx=".8" fill="#4a3200"/><rect x="10.5" y="10.6" width="3" height="9.4" rx=".8" fill="#4a3200"/><rect x="15.5" y="7.8" width="3" height="12.2" rx=".8" fill="#4a3200"/><path d="M4.6 10.2 9 6.6l3.5 2.3 6.2-4.9M15.6 4h3.4v3.4" fill="none" stroke="#4a3200" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+<div><div style="font-size:20px;font-weight:800">{{T('প্রেডিকশন','Prediction')}}</div><div style="opacity:.85;font-size:13px">{{T('ফ্রি প্রেডিকশন পোল — কোনো বাস্তব টাকা নেই','Free prediction poll — no real money')}}</div></div></div>
+<div class="pd-pts">⭐ {{T('ভার্চুয়াল পয়েন্ট','Virtual points')}}: {{pts}} <span style="font-weight:500;opacity:.8">· {{T('নগদ মূল্য নেই','no cash value')}}</span></div></div>
+<div class="pd-note"><span>ℹ️</span><div>{{T('এটি একটি ফ্রি প্রেডিকশন পোল। এতে কোনো টাকা লাগে না, ওয়ালেট থেকে কিছু কাটা হয় না, এবং কোনো ক্যাশ পেআউট বা রিডিমযোগ্য পুরস্কার নেই। পয়েন্ট শুধুই ভার্চুয়াল।','This is a free prediction poll. No money is needed, nothing is deducted from your wallet, and there are no cash payouts or redeemable rewards. Points are virtual only.')}}</div></div>
+{% if not evs %}<div class="card empty">{{T('এখন কোনো প্রেডিকশন ইভেন্ট নেই।','There are no prediction events right now.')}}</div>{% endif %}
+{% for e in evs %}<div class="card pd-ev">
+<div class="pd-top"><span class="pd-chip {{e.st}}">{{e.stl}}</span><span class="k">{{T('শেষ','Closes')}}: {{e.closes[:16]}}</span></div>
+<div class="pd-q">{{e.title}}</div>{% if e.desc %}<div class="k">{{e.desc}}</div>{% endif %}
+{% if e.st=='upcoming' %}<div class="k" style="margin-top:6px">{{T('ভোট শুরু','Voting opens')}}: {{e.opens[:16]}}</div>{% endif %}
+{% if e.st=='open' %}<form method="post" action="/prediction/vote"><input type="hidden" name="_csrf" value="{{csrf_token}}"><input type="hidden" name="event_id" value="{{e.id}}">{% endif %}
+<div class="pd-opts">{% for k in ('yes','no') %}{% if e.st=='open' %}<button name="choice" value="{{k}}" class="pd-opt {{k}}{{' sel' if e.mine==k}}">{% else %}<div class="pd-opt {{k}} dis{{' sel' if e.mine==k}}{{' win' if e.result==k}}">{% endif %}
+{% if e.mine==k %}<em class="pd-mine">{{T('আপনার ভোট','Your vote')}}</em>{% endif %}<span class="pd-ic">{{'✓' if k=='yes' else '✕'}}</span><b>{{(T('হ্যাঁ','YES') if k=='yes' else T('না','NO'))}}</b><small>{{(T('YES','হ্যাঁ') if k=='yes' else T('NO','না'))}}</small>
+{% if e.st=='open' %}</button>{% else %}</div>{% endif %}{% endfor %}</div>
+{% if e.st=='open' %}</form><div class="k" style="text-align:center;margin-top:-4px">{% if e.mine %}{{T('বন্ধ হওয়ার আগে ভোট বদলাতে পারবেন।','You can change your vote until voting closes.')}}{% else %}{{T('বিনামূল্যে ভোট দিন — একটি অপশন বেছে নিন।','Vote for free — pick one option.')}}{% endif %}</div>{% endif %}
+<div class="pd-info"><div class="pd-il">ℹ️ {{T('তথ্যমূলক অনুপাত (অ্যাডমিন নির্ধারিত)','Informational ratio (set by admin)')}}</div>
+<div class="pd-bar"><i class="y" style="width:{{e.yr}}%"></i><i class="n" style="width:{{e.nr}}%"></i></div>
+<div class="pd-bl"><span>{{T('হ্যাঁ','YES')}} {{e.yr}}%</span><span>{{T('না','NO')}} {{e.nr}}%</span></div>
+<div class="pd-fine">{{T('এটি বাজির অডস নয় — কোনো টাকা, পেআউট বা রিডিমযোগ্য পুরস্কার জড়িত নেই।','These are not betting odds — no money, payout or redeemable reward is involved.')}}</div></div>
+<div class="pd-info"><div class="pd-il">👥 {{T('কমিউনিটি ভোট (ফ্রি পোল)','Community votes (free poll)')}} · {{e.tot}}</div>
+{% if e.tot %}<div class="pd-bar"><i class="y" style="width:{{e.cy}}%"></i><i class="n" style="width:{{e.cn}}%"></i></div>
+<div class="pd-bl"><span>{{T('হ্যাঁ','YES')}} {{e.yv}} ({{e.cy}}%)</span><span>{{T('না','NO')}} {{e.nv}} ({{e.cn}}%)</span></div>{% else %}<div class="k">{{T('এখনও কোনো ভোট পড়েনি।','No votes yet.')}}</div>{% endif %}</div>
+{% if e.st=='resolved' %}<div class="pd-res"><b>{{T('যাচাইকৃত ফলাফল','Verified result')}}: {{e.res_lbl}}</b>{% if e.source %}<div class="k">{{T('সূত্র','Source')}}: {{e.source}}</div>{% endif %}
+{% if e.mine and e.result!='void' %}<div>{% if e.mine==e.result %}✅ {{T('আপনার ভবিষ্যদ্বাণী সঠিক ছিল','Your prediction was correct')}}{% if e.mypts %} · +{{e.mypts}} {{T('ভার্চুয়াল পয়েন্ট','virtual points')}}{% endif %}{% else %}❌ {{T('এবার সঠিক হয়নি','Not this time')}}{% endif %}</div>{% endif %}</div>{% endif %}
+</div>{% endfor %}"""
+
+
+@app.route("/prediction")
+@customer_required
+def prediction_page():
+    u = me()
+    t, lang = now(), cur_lang()
+    rows = qa("SELECT * FROM prediction_events WHERE active=1 ORDER BY id DESC LIMIT 30")
+    ids = [r["id"] for r in rows]
+    counts, mine = _pred_counts(ids), {}
+    if ids:
+        for r in qa("SELECT event_id, choice, points FROM prediction_votes WHERE user_id=? AND event_id IN (%s)" % ",".join("?" * len(ids)), [u["id"]] + ids):
+            mine[r["event_id"]] = r
+    pts = int(q1("SELECT COALESCE(SUM(points),0) s FROM prediction_votes WHERE user_id=?", (u["id"],))["s"] or 0)
+    evs = []
+    for r in rows:
+        st, c = _pred_state(r, t), counts.get(r["id"], {})
+        yv, nv = c.get("yes", 0), c.get("no", 0)
+        tot, m = yv + nv, mine.get(r["id"])
+        title = (r["title_en"] if lang == "en" else r["title_bn"]) or r["title_bn"] or r["title_en"]
+        desc = (r["desc_en"] if lang == "en" else r["desc_bn"]) or ""
+        res = r["result"]
+        evs.append(dict(id=r["id"], st=st, stl=PRED_STATE_LBL[st][1 if lang == "en" else 0], title=title, desc=desc, opens=r["opens"], closes=r["closes"],
+                        yr=_pfmt(r["yes_ratio"]), nr=_pfmt(r["no_ratio"]), yv=yv, nv=nv, tot=tot,
+                        cy=_pfmt(100.0 * yv / tot) if tot else "0", cn=_pfmt(100.0 * nv / tot) if tot else "0",
+                        mine=m["choice"] if m else None, mypts=int(m["points"] or 0) if m else 0, result=res, source=r["result_source"] or "",
+                        res_lbl={"yes": _T("হ্যাঁ", "YES"), "no": _T("না", "NO"), "void": _T("বাতিল (কোনো ফলাফল নেই)", "Void (no result)")}.get(res, "")))
+    evs.sort(key=lambda e: ({"open": 0, "upcoming": 1, "closed": 2, "resolved": 3}[e["st"]], -e["id"]))
+    return page(PRED_PAGE, active="/prediction", evs=evs, pts=pts, T=_T)
+
+
+@app.route("/prediction/vote", methods=["POST"])
+@customer_required
+def prediction_vote():
+    u = me()
+    eid, ch = request.form.get("event_id", type=int), request.form.get("choice", "")
+    if not eid or ch not in ("yes", "no"):
+        abort(400)
+    if rate_hit("pvote:%d" % u["id"], 20, 60):
+        err(_T("অনেক দ্রুত চেষ্টা হয়েছে, একটু পরে আবার চেষ্টা করুন।", "Too many attempts. Please try again shortly.")); return redirect("/prediction")
+    with atomic():
+        e = q1("SELECT * FROM prediction_events WHERE id=? AND active=1", (eid,))
+        if not e:
+            abort(404)
+        if _pred_state(e) != "open":
+            err(_T("এই ইভেন্টে এখন ভোট দেওয়া যাবে না।", "Voting is not open for this event.")); return redirect("/prediction")
+        v, t = q1("SELECT id, choice FROM prediction_votes WHERE event_id=? AND user_id=?", (eid, u["id"])), now()
+        if v:
+            if v["choice"] != ch:
+                db().execute("UPDATE prediction_votes SET choice=?, updated=? WHERE id=?", (ch, t, v["id"]))
+        else:
+            db().execute("INSERT INTO prediction_votes(event_id,user_id,choice,points,created,updated) VALUES(?,?,?,0,?,?)", (eid, u["id"], ch, t, t))
+    flash(_T("আপনার ভোট সংরক্ষিত হয়েছে।", "Your vote has been saved."))
+    return redirect("/prediction")
+
+
+# ---- admin
+PRED_FORM = """<form method="post"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<label>শিরোনাম (বাংলা)</label><input name="title_bn" required minlength="5" maxlength="200" value="{{f.title_bn}}">
+<label>Title (English)</label><input name="title_en" required minlength="5" maxlength="200" value="{{f.title_en}}">
+<label>বিবরণ (বাংলা, ঐচ্ছিক)</label><textarea name="desc_bn" rows="2" maxlength="600">{{f.desc_bn}}</textarea>
+<label>Description (English, optional)</label><textarea name="desc_en" rows="2" maxlength="600">{{f.desc_en}}</textarea>
+<div class="row"><div><label>তথ্যমূলক হ্যাঁ % (YES)</label><input name="yes_ratio" type="number" step="0.01" min="0" max="100" required value="{{f.yes_ratio}}" oninput="this.form.no_ratio.value=Math.round((100-this.value)*100)/100"></div>
+<div><label>তথ্যমূলক না % (NO)</label><input name="no_ratio" type="number" step="0.01" min="0" max="100" required value="{{f.no_ratio}}"></div></div>
+<div class="k" style="margin:-6px 0 10px">হ্যাঁ + না = ১০০ হতে হবে। এটি শুধু তথ্যমূলক — বাজির অডস নয়।</div>
+<div class="row"><div><label>ভোট শুরু (বাংলাদেশ সময়)</label><input name="opens" type="datetime-local" required value="{{f.opens}}"></div>
+<div><label>ভোট শেষ (বাংলাদেশ সময়)</label><input name="closes" type="datetime-local" required value="{{f.closes}}"></div></div>
+<label>সঠিক ভবিষ্যদ্বাণীর ভার্চুয়াল পয়েন্ট (০–১০০০, নগদ মূল্য নেই)</label><input name="points" type="number" min="0" max="1000" required value="{{f.points}}">
+<label class="ck"><input type="checkbox" name="active" value="1"{% if f.active %} checked{% endif %}> সক্রিয় (ইউজারদের দেখা যাবে)</label>
+<button style="width:100%">{{'সংরক্ষণ করুন' if eid else 'ইভেন্ট তৈরি করুন'}}</button></form>"""
+
+
+def _pred_form_defaults():
+    t = datetime.utcnow()
+    return dict(title_bn="", title_en="", desc_bn="", desc_en="", yes_ratio="50", no_ratio="50", points="10", active=False,
+                opens=_pred_dt_out(t.strftime("%Y-%m-%d %H:%M:%S")), closes=_pred_dt_out((t + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")))
+
+
+def _pred_form_from_event(e):
+    return dict(title_bn=e["title_bn"], title_en=e["title_en"], desc_bn=e["desc_bn"] or "", desc_en=e["desc_en"] or "",
+                yes_ratio=_pfmt(e["yes_ratio"]), no_ratio=_pfmt(e["no_ratio"]), points=str(int(e["points"] or 0)), active=bool(e["active"]),
+                opens=_pred_dt_out(e["opens"]), closes=_pred_dt_out(e["closes"]))
+
+
+def _pred_validate(form):
+    """Server-side validation of an admin form. Returns (clean values, error message or None)."""
+    g_ = lambda k, n: (form.get(k) or "").strip()[:n]
+    c = dict(title_bn=g_("title_bn", 200), title_en=g_("title_en", 200), desc_bn=g_("desc_bn", 600), desc_en=g_("desc_en", 600), active=1 if form.get("active") else 0)
+    if len(c["title_bn"]) < 5 or len(c["title_en"]) < 5:
+        return c, "বাংলা ও ইংরেজি দুই শিরোনামই দিন (কমপক্ষে ৫ অক্ষর)।"
+    try:
+        yr, nr = float(form.get("yes_ratio", "")), float(form.get("no_ratio", ""))
+    except ValueError:
+        return c, "হ্যাঁ/না অনুপাত সংখ্যা হতে হবে।"
+    if not (0 <= yr <= 100 and 0 <= nr <= 100) or abs(yr + nr - 100) > 0.01:
+        return c, "হ্যাঁ ও না অনুপাত ০–১০০ এর মধ্যে হতে হবে এবং যোগফল ১০০ হতে হবে।"
+    c["yes_ratio"], c["no_ratio"] = round(yr, 2), round(100 - round(yr, 2), 2)
+    c["opens"], c["closes"] = _pred_dt_in(form.get("opens")), _pred_dt_in(form.get("closes"))
+    if not c["opens"] or not c["closes"]:
+        return c, "ভোট শুরু ও শেষের তারিখ-সময় সঠিক দিন।"
+    if c["closes"] <= c["opens"]:
+        return c, "ভোট শেষের সময় শুরুর পরে হতে হবে।"
+    try:
+        c["points"] = int(form.get("points") or 0)
+    except ValueError:
+        return c, "পয়েন্ট পূর্ণসংখ্যা হতে হবে।"
+    if not 0 <= c["points"] <= 1000:
+        return c, "পয়েন্ট ০ থেকে ১০০০ এর মধ্যে হতে হবে।"
+    return c, None
+
+
+def _pred_form_back(c, form):
+    f = dict(c)
+    f["opens"], f["closes"] = (form.get("opens") or "")[:16], (form.get("closes") or "")[:16]
+    f["yes_ratio"], f["no_ratio"], f["points"] = form.get("yes_ratio", ""), form.get("no_ratio", ""), form.get("points", "")
+    return f
+
+
+@app.route("/admin/predictions")
+@staff_required("predictions")
+def admin_predictions():
+    rows = qa("SELECT * FROM prediction_events ORDER BY id DESC LIMIT 100")
+    counts, t, evs = _pred_counts([r["id"] for r in rows]), now(), []
+    for r in rows:
+        st, c = _pred_state(r, t), counts.get(r["id"], {})
+        evs.append(dict(id=r["id"], t_bn=r["title_bn"], t_en=r["title_en"], closes=r["closes"], active=bool(r["active"]), stl=PRED_STATE_BN[st], pill=PRED_PILL[st],
+                        yv=c.get("yes", 0), nv=c.get("no", 0), tot=c.get("yes", 0) + c.get("no", 0)))
+    return page("""<div class="row" style="margin-bottom:10px"><a class="btn" href="/admin/predictions/new">➕ নতুন ইভেন্ট</a></div>
+{% if not evs %}<div class="card empty">কোনো প্রেডিকশন ইভেন্ট নেই</div>{% endif %}
+{% for e in evs %}<div class="card"><a href="/admin/predictions/{{e.id}}"><div class="row" style="align-items:center"><b style="flex:3">{{e.t_bn}}</b>
+<span class="pill {{e.pill}}" style="flex:0;white-space:nowrap">{{e.stl}}</span></div><div class="k">{{e.t_en}}</div>
+<div class="k">ভোট: {{e.tot}} (হ্যাঁ {{e.yv}} · না {{e.nv}}) · শেষ: {{e.closes[:16]}}</div></a>
+<form method="post" action="/admin/predictions/{{e.id}}/toggle" style="margin-top:8px"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<span class="k">{{'✅ সক্রিয়' if e.active else '⏸ নিষ্ক্রিয় (ইউজারদের দেখা যায় না)'}}</span>
+<button class="btn sm {{'s' if e.active else 'g'}}" style="margin-top:6px;width:100%">{{'নিষ্ক্রিয় করুন' if e.active else 'সক্রিয় করুন'}}</button></form></div>{% endfor %}""",
+                active="/admin/predictions", evs=evs)
+
+
+@app.route("/admin/predictions/new", methods=["GET", "POST"])
+@staff_required("predictions")
+def admin_prediction_new():
+    f = _pred_form_defaults()
+    if request.method == "POST":
+        c, e1 = _pred_validate(request.form)
+        if e1:
+            err(e1)
+            f = _pred_form_back(c, request.form)
+        else:
+            u, t = me(), now()
+            with atomic():
+                cur = db().execute("INSERT INTO prediction_events(title_bn,title_en,desc_bn,desc_en,yes_ratio,no_ratio,opens,closes,active,points,created_by,created,updated) "
+                                   "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                   (c["title_bn"], c["title_en"], c["desc_bn"], c["desc_en"], c["yes_ratio"], c["no_ratio"], c["opens"], c["closes"], c["active"],
+                                    c["points"], u["member_id"], t, t))
+                eid = cur.lastrowid
+                _pred_log(eid, "create", "active=%d yes=%s no=%s opens=%s closes=%s points=%d" % (c["active"], _pfmt(c["yes_ratio"]), _pfmt(c["no_ratio"]), c["opens"], c["closes"], c["points"]))
+            flash("ইভেন্ট তৈরি হয়েছে।")
+            return redirect("/admin/predictions/%d" % eid)
+    return page("""<div class="card"><h2>➕ নতুন প্রেডিকশন ইভেন্ট</h2>""" + PRED_FORM + """</div><a class="btn s" href="/admin/predictions" style="width:100%">← সব ইভেন্ট</a>""",
+                active="/admin/predictions", f=f, eid=None)
+
+
+def _pred_stats(eid):
+    yes = no = pts = 0
+    for r in qa("SELECT choice, COUNT(*) c, COALESCE(SUM(points),0) p FROM prediction_votes WHERE event_id=? GROUP BY choice", (eid,)):
+        if r["choice"] == "yes":
+            yes = int(r["c"])
+        else:
+            no = int(r["c"])
+        pts += int(r["p"] or 0)
+    since = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+    tot = yes + no
+    return dict(yes=yes, no=no, tot=tot, yp=_pfmt(100.0 * yes / tot) if tot else "0", np=_pfmt(100.0 * no / tot) if tot else "0", pts=pts,
+                last24=int(q1("SELECT COUNT(*) c FROM prediction_votes WHERE event_id=? AND created>=?", (eid, since))["c"]))
+
+
+@app.route("/admin/predictions/<int:eid>", methods=["GET", "POST"])
+@staff_required("predictions")
+def admin_prediction_edit(eid):
+    e = q1("SELECT * FROM prediction_events WHERE id=?", (eid,))
+    if not e:
+        abort(404)
+    f = _pred_form_from_event(e)
+    if request.method == "POST":
+        if e["result"]:
+            err("ফলাফল প্রকাশের পর ইভেন্ট এডিট করা যায় না।"); return redirect("/admin/predictions/%d" % eid)
+        c, e1 = _pred_validate(request.form)
+        if e1:
+            err(e1)
+            f = _pred_form_back(c, request.form)
+        else:
+            with atomic():
+                cur_e = q1("SELECT * FROM prediction_events WHERE id=?", (eid,))
+                if cur_e["result"]:
+                    err("ফলাফল প্রকাশের পর ইভেন্ট এডিট করা যায় না।"); return redirect("/admin/predictions/%d" % eid)
+                diff = []
+                for k in ("title_bn", "title_en", "desc_bn", "desc_en", "opens", "closes", "points", "active"):
+                    old, new = cur_e[k], c[k]
+                    if k in ("desc_bn", "desc_en"):
+                        old = old or ""
+                    if str(old) != str(new):
+                        diff.append("%s: %s -> %s" % (k, str(old)[:60], str(new)[:60]))
+                for k in ("yes_ratio", "no_ratio"):
+                    if abs(float(cur_e[k] or 0) - float(c[k])) > 0.004:
+                        diff.append("%s: %s -> %s" % (k, _pfmt(cur_e[k]), _pfmt(c[k])))
+                db().execute("UPDATE prediction_events SET title_bn=?,title_en=?,desc_bn=?,desc_en=?,yes_ratio=?,no_ratio=?,opens=?,closes=?,active=?,points=?,updated=? "
+                             "WHERE id=? AND result IS NULL",
+                             (c["title_bn"], c["title_en"], c["desc_bn"], c["desc_en"], c["yes_ratio"], c["no_ratio"], c["opens"], c["closes"], c["active"], c["points"], now(), eid))
+                _pred_log(eid, "edit", "; ".join(diff) or "no field changed")
+            flash("ইভেন্ট সংরক্ষিত হয়েছে।")
+            return redirect("/admin/predictions/%d" % eid)
+    st = _pred_state(e)
+    hist = qa("SELECT * FROM prediction_log WHERE event_id=? ORDER BY id DESC LIMIT 50", (eid,))
+    return page("""<div class="card"><div class="row" style="align-items:center"><h2 style="margin:0;flex:3">🔮 ইভেন্ট #{{e['id']}}</h2><span class="pill {{pill}}" style="flex:0;white-space:nowrap">{{stl}}</span></div>
+<div class="k" style="margin-top:6px">{{'✅ সক্রিয়' if e['active'] else '⏸ নিষ্ক্রিয়'}} · শুরু: {{e['opens'][:16]}} · শেষ: {{e['closes'][:16]}}</div></div>
+<div class="card"><h3>📊 অংশগ্রহণের পরিসংখ্যান</h3><div class="kp" style="margin-top:8px">
+<div class="card"><div class="k">মোট ভোট</div><div class="v">{{s.tot}}</div></div><div class="card"><div class="k">গত ২৪ ঘণ্টায়</div><div class="v">{{s.last24}}</div></div>
+<div class="card"><div class="k">হ্যাঁ</div><div class="v">{{s.yes}} <span class="k">({{s.yp}}%)</span></div></div><div class="card"><div class="k">না</div><div class="v">{{s.no}} <span class="k">({{s.np}}%)</span></div></div></div>
+<div class="k">দেওয়া ভার্চুয়াল পয়েন্ট (নগদ মূল্য নেই): {{s.pts}}</div></div>
+{% if e['result'] %}<div class="card"><h3>✅ প্রকাশিত ফলাফল</h3><div><b>{{res_bn}}</b></div><div class="k">সূত্র: {{e['result_source']}}</div><div class="k">প্রকাশ: {{(e['result_at'] or '')[:16]}} · {{e['result_by']}}</div>
+<div class="k">ফলাফল প্রকাশের পর ইভেন্ট ও ফলাফল আর বদলানো যায় না।</div></div>
+{% else %}<div class="card"><h3>✏️ ইভেন্ট এডিট</h3>""" + PRED_FORM + """</div>
+<div class="card"><h3>🏁 যাচাইকৃত ফলাফল প্রকাশ</h3>
+{% if st=='closed' %}<form method="post" action="/admin/predictions/{{e['id']}}/result" data-confirm="ফলাফল প্রকাশ করলে আর বদলানো যাবে না। নিশ্চিত?"><input type="hidden" name="_csrf" value="{{csrf_token}}">
+<label>ফলাফল</label><select name="result" required><option value="">— বেছে নিন —</option><option value="yes">হ্যাঁ (YES)</option><option value="no">না (NO)</option><option value="void">বাতিল / ফলাফল নেই (VOID)</option></select>
+<label>যাচাইকৃত সূত্র (কমপক্ষে ৫ অক্ষর)</label><input name="source" required minlength="5" maxlength="300" placeholder="যেমন: নির্ভরযোগ্য সংবাদ সূত্র / সরকারি ঘোষণা">
+<label class="ck"><input type="checkbox" name="verified" value="1" required> আমি তথ্যটি যাচাই করেছি</label>
+<button class="btn" style="width:100%">ফলাফল প্রকাশ করুন</button></form>
+{% else %}<div class="k">ভোট বন্ধ হওয়ার পরেই ফলাফল প্রকাশ করা যাবে। আগে বন্ধ করতে ভোট শেষের সময় এডিট করুন।</div>{% endif %}</div>{% endif %}
+<div class="card"><h3>📜 অডিট ইতিহাস</h3>{% if not hist %}<div class="k">কিছু নেই</div>{% endif %}
+{% for h in hist %}<div class="hxr" style="display:block"><b>{{h['action']}}</b> <span class="k">· {{h['created'][:16]}} · #{{h['actor']}}</span><div class="k" style="overflow-wrap:anywhere">{{h['detail']}}</div></div>{% endfor %}</div>
+<a class="btn s" href="/admin/predictions" style="width:100%">← সব ইভেন্ট</a>""", active="/admin/predictions", e=e, f=f, eid=eid, s=_pred_stats(eid), hist=hist,
+                st=st, stl=PRED_STATE_BN[st], pill=PRED_PILL[st],
+                res_bn={"yes": "হ্যাঁ (YES)", "no": "না (NO)", "void": "বাতিল / ফলাফল নেই (VOID)"}.get(e["result"], ""))
+
+
+@app.route("/admin/predictions/<int:eid>/toggle", methods=["POST"])
+@staff_required("predictions")
+def admin_prediction_toggle(eid):
+    with atomic():
+        e = q1("SELECT * FROM prediction_events WHERE id=?", (eid,))
+        if not e:
+            abort(404)
+        n = 0 if e["active"] else 1
+        db().execute("UPDATE prediction_events SET active=?, updated=? WHERE id=?", (n, now(), eid))
+        _pred_log(eid, "activate" if n else "deactivate", "active=%d" % n)
+    flash("ইভেন্ট সক্রিয় করা হয়েছে।" if n else "ইভেন্ট নিষ্ক্রিয় করা হয়েছে।")
+    return redirect(request.referrer if (request.referrer or "").startswith(request.host_url) else "/admin/predictions")
+
+
+@app.route("/admin/predictions/<int:eid>/result", methods=["POST"])
+@staff_required("predictions")
+def admin_prediction_result(eid):
+    res, src, back_to = request.form.get("result", ""), (request.form.get("source") or "").strip()[:300], "/admin/predictions/%d" % eid
+    if res not in PRED_RESULTS or len(src) < 5 or not request.form.get("verified"):
+        err("ফলাফল বেছে নিন, যাচাইকৃত সূত্র লিখুন (কমপক্ষে ৫ অক্ষর) এবং যাচাই নিশ্চিত করুন।"); return redirect(back_to)
+    with atomic():
+        e = q1("SELECT * FROM prediction_events WHERE id=?", (eid,))
+        if not e:
+            abort(404)
+        if e["result"]:
+            err("এই ইভেন্টের ফলাফল আগেই প্রকাশিত হয়েছে।"); return redirect(back_to)
+        if now() < e["closes"]:
+            err("ভোট শেষ হওয়ার পর ফলাফল প্রকাশ করা যাবে।"); return redirect(back_to)
+        t, u = now(), me()
+        db().execute("UPDATE prediction_events SET result=?, result_source=?, result_by=?, result_at=?, updated=? WHERE id=? AND result IS NULL",
+                     (res, src, u["member_id"], t, t, eid))
+        if res in ("yes", "no"):  # virtual points only; wallet / ledger are never touched
+            db().execute("UPDATE prediction_votes SET points=? WHERE event_id=? AND choice=?", (int(e["points"] or 0), eid, res))
+        _pred_log(eid, "result", "result=%s source=%s" % (res, src))
+    flash("যাচাইকৃত ফলাফল প্রকাশিত হয়েছে।")
+    return redirect(back_to)
+
+
+def _pred_seed():
+    """Create the first event once (never again, even if an admin later deactivates it). Existing data is never touched."""
+    try:
+        with app.app_context():
+            if q1("SELECT 1 FROM meta WHERE k='pred_seeded'") or q1("SELECT 1 FROM prediction_events LIMIT 1"):
+                db().execute("INSERT OR REPLACE INTO meta VALUES('pred_seeded','1')")
+                return
+            t = now()
+            cur = db().execute("INSERT INTO prediction_events(title_bn,title_en,desc_bn,desc_en,yes_ratio,no_ratio,opens,closes,active,points,created_by,created,updated) "
+                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                         ("শেখ হাসিনা কি ডিসেম্বর ২০২৬ মাসে বাংলাদেশে ফিরবেন?", "Will Sheikh Hasina return to Bangladesh in December 2026?",
+                          "ফ্রি কমিউনিটি পোল — কোনো টাকা বা নগদ মূল্যের পুরস্কার নেই।", "A free community poll — no money or rewards of cash value.",
+                          50, 50, t, "2026-12-31 17:59:00", 1, 10, "system", t, t))
+            db().execute("INSERT INTO prediction_log(event_id,action,detail,actor,actor_id,created) VALUES(?,?,?,?,?,?)",
+                         (cur.lastrowid, "create", "initial event seeded by the system (active=1 yes=50 no=50 points=10)", "system", None, t))
+            db().execute("INSERT OR REPLACE INTO meta VALUES('pred_seeded','1')")
+    except Exception:
+        pass
+
+
+if not os.environ.get("EWALLET_SKIP_MIGRATE"):
+    _pred_seed()
 
 
 if __name__ == "__main__":
